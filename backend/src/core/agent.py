@@ -16,6 +16,7 @@ class QueuedUserMessage:
 class Agent:
     def __init__(self, *, name: str, model_config: ModelConfig,
                  system_instruction: str, user_instruction: str,
+                 tools_params: list[dict[str, Any]],
                  on_ai_content_delta: Callable[[str], None],
                  on_ai_reasoning_delta: Callable[[str], None]) -> None:
         self.name = name
@@ -23,6 +24,7 @@ class Agent:
         self._messages: list[dict[str, Any]] = []
         self._system_instruction = system_instruction
         self._user_instruction = user_instruction
+        self._tools_params = tools_params
         self._on_ai_content_delta = on_ai_content_delta
         self._on_ai_reasoning_delta = on_ai_reasoning_delta
 
@@ -61,6 +63,7 @@ class Agent:
     @staticmethod
     def _safe_stream(*, model_config: ModelConfig,
                      messages: list[dict[str, Any]],
+                     tools_params: list[dict[str, Any]],
                      on_ai_content_delta: Callable[[str], None],
                      on_ai_reasoning_delta: Callable[[str], None]) -> dict[str, Any]:
         # 如果 Agent 之前正在运行，然后结果突然被中断了，
@@ -71,6 +74,7 @@ class Agent:
 
         # 最后一条消息是user message
         return stream(model_config=model_config, messages=messages,
+                      tools_params=tools_params,
                       on_ai_content_delta=on_ai_content_delta,
                       on_ai_reasoning_delta=on_ai_reasoning_delta)
 
@@ -82,6 +86,7 @@ class Agent:
         while True:
             ai_msg_dict = self._safe_stream(model_config=self._model_config,
                                             messages=self._messages,
+                                            tools_params=self._tools_params,
                                             on_ai_content_delta=self._on_ai_content_delta,
                                             on_ai_reasoning_delta=self._on_ai_reasoning_delta
                                             )
