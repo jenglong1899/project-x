@@ -1,6 +1,5 @@
-from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, TypeAlias
+from typing import Any, Protocol, TypeAlias
 from litellm import completion
 
 from src.core.model_config import ModelConfig
@@ -10,28 +9,45 @@ def _noop(*args: Any, **kwargs: Any) -> None:
     return None
 
 
-@dataclass(frozen=True)
-class ToolCallStartedEvent:
-    index: int
-    tool_call_id: str | None
-    tool_name: str | None
+class OnAiContentDelta(Protocol):
+    def __call__(self, *, content_delta: str) -> None: ...
 
 
-@dataclass(frozen=True)
-class ToolCallArgumentsDeltaEvent:
-    index: int
-    tool_call_id: str | None
-    tool_name: str | None
-    arguments_delta: str
-    arguments: str
+class OnAiReasoningDelta(Protocol):
+    def __call__(self, *, reasoning_delta: str) -> None: ...
 
 
-@dataclass(frozen=True)
-class ToolCallFinishedEvent:
-    index: int
-    tool_call_id: str | None
-    tool_name: str | None
-    arguments: str
+class OnAiToolCallStarted(Protocol):
+    def __call__(
+        self,
+        *,
+        index: int,
+        tool_call_id: str | None,
+        tool_name: str | None,
+    ) -> None: ...
+
+
+class OnAiToolCallArgumentsDelta(Protocol):
+    def __call__(
+        self,
+        *,
+        index: int,
+        tool_call_id: str | None,
+        tool_name: str | None,
+        arguments_delta: str,
+        arguments: str,
+    ) -> None: ...
+
+
+class OnAiToolCallFinished(Protocol):
+    def __call__(
+        self,
+        *,
+        index: int,
+        tool_call_id: str | None,
+        tool_name: str | None,
+        arguments: str,
+    ) -> None: ...
 
 
 def _get_field(obj: Any, field_name: str, default: Any = None) -> Any:
@@ -100,7 +116,7 @@ def _maybe_emit_tool_call_started(*,
                                   started_tool_call_indexes: set[int],
                                   tool_calls_by_index: dict[int, dict[str, Any]],
                                   index: int,
-                                  on_ai_tool_call_started: Callable[[ToolCallStartedEvent], None]) -> None:
+                                  on_ai_tool_call_started: OnAiToolCallStarted) -> None:
     if index in started_tool_call_indexes:
         return
 
@@ -113,22 +129,20 @@ def _maybe_emit_tool_call_started(*,
 
     started_tool_call_indexes.add(index)
     on_ai_tool_call_started(
-        ToolCallStartedEvent(
-            index=index,
-            tool_call_id=tool_call_id,
-            tool_name=tool_name,
-        )
+        index=index,
+        tool_call_id=tool_call_id,
+        tool_name=tool_name,
     )
 
 
 def stream(*, model_config: ModelConfig,
            messages: list[dict[str, Any]],
            tools_params: list[dict[str, Any]],
-           on_ai_content_delta: Callable[[str], None],
-           on_ai_reasoning_delta: Callable[[str], None],
-           on_ai_tool_call_started: Callable[[ToolCallStartedEvent], None] = _noop,
-           on_ai_tool_call_arguments_delta: Callable[[ToolCallArgumentsDeltaEvent], None] = _noop,
-           on_ai_tool_call_finished: Callable[[ToolCallFinishedEvent], None] = _noop) -> dict[str, Any]:
+           on_ai_content_delta: OnAiContentDelta,
+           on_ai_reasoning_delta: OnAiReasoningDelta,
+           on_ai_tool_call_started: OnAiToolCallStarted = _noop,
+           on_ai_tool_call_arguments_delta: OnAiToolCallArgumentsDelta = _noop,
+           on_ai_tool_call_finished: OnAiToolCallFinished = _noop) -> dict[str, Any]:
     completion_kwargs: dict[str, Any] = {
         "model": model_config.model,
         "tools": tools_params,
@@ -161,14 +175,14 @@ def stream(*, model_config: ModelConfig,
         content_delta = _normalize_text_chunk(_get_field(delta, "content"))
         if content_delta:
             content_parts.append(content_delta)
-            on_ai_content_delta(content_delta)
+            on_ai_content_delta(content_delta=content_delta)
 
         reasoning_delta = _normalize_text_chunk(
             _get_field(delta, "reasoning_content", _get_field(delta, "reasoning"))
         )
         if reasoning_delta:
             reasoning_parts.append(reasoning_delta)
-            on_ai_reasoning_delta(reasoning_delta)
+            on_ai_reasoning_delta(reasoning_delta=reasoning_delta)
 
         for tool_call_delta in _get_field(delta, "tool_calls", []) or []:
             tool_call_index = _get_field(tool_call_delta, "index", 0)
@@ -185,13 +199,11 @@ def stream(*, model_config: ModelConfig,
             if arguments_delta:
                 tool_call = tool_calls_by_index[tool_call_index]
                 on_ai_tool_call_arguments_delta(
-                    ToolCallArgumentsDeltaEvent(
-                        index=tool_call_index,
-                        tool_call_id=tool_call["id"] or None,
-                        tool_name=tool_call["function"]["name"] or None,
-                        arguments_delta=arguments_delta,
-                        arguments=tool_call["function"]["arguments"],
-                    )
+                    index=tool_call_index,
+                    tool_call_id=tool_call["id"] or None,
+                    tool_name=tool_call["function"]["name"] or None,
+                    arguments_delta=arguments_delta,
+                    arguments=tool_call["function"]["arguments"],
                 )
 
     assistant_message: dict[str, Any] = {
@@ -213,12 +225,10 @@ def stream(*, model_config: ModelConfig,
             )
             tool_call = tool_calls_by_index[index]
             on_ai_tool_call_finished(
-                ToolCallFinishedEvent(
-                    index=index,
-                    tool_call_id=tool_call["id"] or None,
-                    tool_name=tool_call["function"]["name"] or None,
-                    arguments=tool_call["function"]["arguments"],
-                )
+                index=index,
+                tool_call_id=tool_call["id"] or None,
+                tool_name=tool_call["function"]["name"] or None,
+                arguments=tool_call["function"]["arguments"],
             )
         if not assistant_message["content"]:
             assistant_message["content"] = None

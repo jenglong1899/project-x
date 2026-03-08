@@ -7,3 +7,4 @@
 - `stream()` 需要兼容 `tool_calls` 的流式拼装，最终返回 OpenAI 风格的 assistant message dict。
 - `stream()` 现在还支持三类工具调用流式事件：开始、参数增量、结束；`Agent` 会把这三类回调继续向外透传。
 - `src/core/policies.py` 里有 DeepSeek 特殊规则：发送下一条 user message 前，要去掉上一轮 assistant message 的 `reasoning_content`。
+- `src/core/chat.py` 和 `src/core/agent.py` 的回调接口用的是Protocol而不是Callable，因为这样可读性更高。

@@ -1,14 +1,16 @@
 import queue
-from typing import Any, Callable
+from typing import Any, Protocol
 from dataclasses import dataclass
 
 from src.core.chat import (
     stream,
     execute_tool_and_append,
+    OnAiContentDelta,
+    OnAiReasoningDelta,
+    OnAiToolCallStarted,
+    OnAiToolCallArgumentsDelta,
+    OnAiToolCallFinished,
     ResetContextDirective,
-    ToolCallStartedEvent,
-    ToolCallArgumentsDeltaEvent,
-    ToolCallFinishedEvent,
 )
 from src.core.model_config import ModelConfig
 from src.core.policies import strip_reasoning_content_if_needed
@@ -18,6 +20,14 @@ from src.core.policies import strip_reasoning_content_if_needed
 class QueuedUserMessage:
     id: str  # 前端渲染要用到，这个id是前端生成并维护的
     content: str
+
+
+class OnUserMsgEnqueued(Protocol):
+    def __call__(self, *, msg_id: str) -> None: ...
+
+
+class OnQueuedUserMsgCommitted(Protocol):
+    def __call__(self, *, msg_id: str) -> None: ...
 
 
 class Agent:
@@ -30,13 +40,13 @@ class Agent:
     def __init__(self, *, name: str, model_config: ModelConfig,
                  system_instruction: str, user_instruction: str,
                  tools_params: list[dict[str, Any]],
-                 on_ai_content_delta: Callable[[str], None] | None=None,
-                 on_ai_reasoning_delta: Callable[[str], None]|None=None,
-                 on_ai_tool_call_started: Callable[[ToolCallStartedEvent], None] | None = None,
-                 on_ai_tool_call_arguments_delta: Callable[[ToolCallArgumentsDeltaEvent], None] | None = None,
-                 on_ai_tool_call_finished: Callable[[ToolCallFinishedEvent], None] | None = None,
-                 on_user_msg_enqueued: Callable[[str], None] | None = None,
-                 on_queued_user_msg_committed: Callable[[str], None] | None = None,
+                 on_ai_content_delta: OnAiContentDelta | None = None,
+                 on_ai_reasoning_delta: OnAiReasoningDelta | None = None,
+                 on_ai_tool_call_started: OnAiToolCallStarted | None = None,
+                 on_ai_tool_call_arguments_delta: OnAiToolCallArgumentsDelta | None = None,
+                 on_ai_tool_call_finished: OnAiToolCallFinished | None = None,
+                 on_user_msg_enqueued: OnUserMsgEnqueued | None = None,
+                 on_queued_user_msg_committed: OnQueuedUserMsgCommitted | None = None,
                  ) -> None:
         self.name = name
         self._model_config = model_config
@@ -53,7 +63,7 @@ class Agent:
         self._on_ai_tool_call_finished = on_ai_tool_call_finished or self._noop
 
         self._on_user_msg_enqueued = on_user_msg_enqueued or self._noop
-        self._on_queued_user_msg_committed=on_queued_user_msg_committed or self._noop()
+        self._on_queued_user_msg_committed=on_queued_user_msg_committed or self._noop
 
         self._user_msg_queue: queue.Queue[QueuedUserMessage] = queue.Queue()
 
@@ -68,7 +78,7 @@ class Agent:
 
     def enqueue_user_message(self, *, msg_id: str, user_message: str) -> None:
         self._user_msg_queue.put(QueuedUserMessage(msg_id, user_message))
-        self._on_user_msg_enqueued(msg_id)
+        self._on_user_msg_enqueued(msg_id=msg_id)
 
     def _safe_drain_user_message_queue(self, user_msg_queue: queue.Queue[QueuedUserMessage],
                                        messages: list[dict[str, Any]]) -> int:
@@ -82,17 +92,17 @@ class Agent:
             strip_reasoning_content_if_needed(model=self._model_config.model, messages=messages)
             drained += 1
             messages.append({"role": "user", "content": item.content})
-            self._on_queued_user_msg_committed(item.id)
+            self._on_queued_user_msg_committed(msg_id=item.id)
 
     @staticmethod
     def _safe_stream(*, model_config: ModelConfig,
                      messages: list[dict[str, Any]],
                      tools_params: list[dict[str, Any]],
-                     on_ai_content_delta: Callable[[str], None],
-                     on_ai_reasoning_delta: Callable[[str], None],
-                     on_ai_tool_call_started: Callable[[ToolCallStartedEvent], None],
-                     on_ai_tool_call_arguments_delta: Callable[[ToolCallArgumentsDeltaEvent], None],
-                     on_ai_tool_call_finished: Callable[[ToolCallFinishedEvent], None]) -> dict[str, Any]:
+                     on_ai_content_delta: OnAiContentDelta,
+                     on_ai_reasoning_delta: OnAiReasoningDelta,
+                     on_ai_tool_call_started: OnAiToolCallStarted,
+                     on_ai_tool_call_arguments_delta: OnAiToolCallArgumentsDelta,
+                     on_ai_tool_call_finished: OnAiToolCallFinished) -> dict[str, Any]:
         # 如果 Agent 之前正在运行，然后结果突然被中断了，
         # 那就可能导致 message 数组最后一个可能是 AI message with tool call，
         # 这种情况下就应该再续上之前的对话，不应该再调用 stream 以获得 AI message 了
