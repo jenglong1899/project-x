@@ -16,7 +16,7 @@ from src.core.policies import strip_reasoning_content_if_needed
 
 @dataclass(frozen=True)
 class QueuedUserMessage:
-    id: str  # 前端渲染要用到
+    id: str  # 前端渲染要用到，这个id是前端生成并维护的
     content: str
 
 
@@ -30,24 +30,30 @@ class Agent:
     def __init__(self, *, name: str, model_config: ModelConfig,
                  system_instruction: str, user_instruction: str,
                  tools_params: list[dict[str, Any]],
-                 on_ai_content_delta: Callable[[str], None],
-                 on_ai_reasoning_delta: Callable[[str], None],
+                 on_ai_content_delta: Callable[[str], None] | None=None,
+                 on_ai_reasoning_delta: Callable[[str], None]|None=None,
                  on_ai_tool_call_started: Callable[[ToolCallStartedEvent], None] | None = None,
                  on_ai_tool_call_arguments_delta: Callable[[ToolCallArgumentsDeltaEvent], None] | None = None,
-                 on_ai_tool_call_finished: Callable[[ToolCallFinishedEvent], None] | None = None) -> None:
+                 on_ai_tool_call_finished: Callable[[ToolCallFinishedEvent], None] | None = None,
+                 on_user_msg_enqueued: Callable[[str], None] | None = None,
+                 on_queued_user_msg_committed: Callable[[str], None] | None = None,
+                 ) -> None:
         self.name = name
         self._model_config = model_config
         self._messages: list[dict[str, Any]] = []
         self._system_instruction = system_instruction
         self._user_instruction = user_instruction
         self._tools_params = tools_params
-        self._on_ai_content_delta = on_ai_content_delta
-        self._on_ai_reasoning_delta = on_ai_reasoning_delta
+        self._on_ai_content_delta = on_ai_content_delta or self._noop
+        self._on_ai_reasoning_delta = on_ai_reasoning_delta or self._noop
 
         # started 不一定表示是函数的名字出来了，有些供应商是先给 ID 什么的
         self._on_ai_tool_call_started = on_ai_tool_call_started or self._noop
         self._on_ai_tool_call_arguments_delta = on_ai_tool_call_arguments_delta or self._noop
         self._on_ai_tool_call_finished = on_ai_tool_call_finished or self._noop
+
+        self._on_user_msg_enqueued = on_user_msg_enqueued or self._noop
+        self._on_queued_user_msg_committed=on_queued_user_msg_committed or self._noop()
 
         self._user_msg_queue: queue.Queue[QueuedUserMessage] = queue.Queue()
 
@@ -60,15 +66,12 @@ class Agent:
     def resume_session(self, *, session_id: str) -> None:
         pass
 
-    def enqueue_user_message(self, *, msg_id: str, user_message: str,
-                             on_user_msg_enqueued: Callable[[str, str], None]) -> None:
-
+    def enqueue_user_message(self, *, msg_id: str, user_message: str) -> None:
         self._user_msg_queue.put(QueuedUserMessage(msg_id, user_message))
-        on_user_msg_enqueued(msg_id, user_message)
+        self._on_user_msg_enqueued(msg_id)
 
     def _safe_drain_user_message_queue(self, user_msg_queue: queue.Queue[QueuedUserMessage],
-                                       messages: list[dict[str, Any]],
-                                       on_queued_user_msg_committed: Callable[[str], None]) -> int:
+                                       messages: list[dict[str, Any]]) -> int:
         drained = 0
         while True:
             try:
@@ -79,7 +82,7 @@ class Agent:
             strip_reasoning_content_if_needed(model=self._model_config.model, messages=messages)
             drained += 1
             messages.append({"role": "user", "content": item.content})
-            on_queued_user_msg_committed(item.id)
+            self._on_queued_user_msg_committed(item.id)
 
     @staticmethod
     def _safe_stream(*, model_config: ModelConfig,

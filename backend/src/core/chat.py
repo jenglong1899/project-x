@@ -129,7 +129,6 @@ def stream(*, model_config: ModelConfig,
            on_ai_tool_call_started: Callable[[ToolCallStartedEvent], None] = _noop,
            on_ai_tool_call_arguments_delta: Callable[[ToolCallArgumentsDeltaEvent], None] = _noop,
            on_ai_tool_call_finished: Callable[[ToolCallFinishedEvent], None] = _noop) -> dict[str, Any]:
-
     completion_kwargs: dict[str, Any] = {
         "model": model_config.model,
         "tools": tools_params,
@@ -246,5 +245,8 @@ class ContinueLoopDirective:
 OrchestratorDirective: TypeAlias = ContinueLoopDirective | ResetContextDirective
 
 
-def execute_tool_and_append() -> OrchestratorDirective:
+def execute_tool_and_append(*, ai_msg_dict: dict[str, Any],
+                            messages: list[dict[str, Any]],
+                            on_tool_result:Callable[str,str]) -> OrchestratorDirective:
+    # on tool result 的参数第一个是tool call id，第二个是result？
     raise NotImplementedError
