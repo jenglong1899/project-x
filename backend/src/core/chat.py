@@ -15,34 +15,34 @@ class OnAiReasoningDelta(Protocol):
 
 class OnAiToolCallStarted(Protocol):
     def __call__(
-        self,
-        *,
-        index: int,
-        tool_call_id: str | None,
-        tool_name: str | None,
+            self,
+            *,
+            index: int,
+            tool_call_id: str | None,
+            tool_name: str | None,
     ) -> None: ...
 
 
 class OnAiToolCallArgumentsDelta(Protocol):
     def __call__(
-        self,
-        *,
-        index: int,
-        tool_call_id: str | None,
-        tool_name: str | None,
-        arguments_delta: str,
-        arguments: str,
+            self,
+            *,
+            index: int,
+            tool_call_id: str | None,
+            tool_name: str | None,
+            arguments_delta: str,
+            arguments: str,
     ) -> None: ...
 
 
 class OnAiToolCallFinished(Protocol):
     def __call__(
-        self,
-        *,
-        index: int,
-        tool_call_id: str | None,
-        tool_name: str | None,
-        arguments: str,
+            self,
+            *,
+            index: int,
+            tool_call_id: str | None,
+            tool_name: str | None,
+            arguments: str,
     ) -> None: ...
 
 
@@ -251,8 +251,13 @@ class ContinueLoopDirective:
 OrchestratorDirective: TypeAlias = ContinueLoopDirective | ResetContextDirective
 
 
+class OnToolResult(Protocol):
+    def __call__(self, *,
+                 tool_call_id: str,
+                 result_json_str: str) -> None: ...
+
+
 def execute_tool_and_append(*, ai_msg_dict: dict[str, Any],
                             messages: list[dict[str, Any]],
-                            on_tool_result:Callable[str,str]) -> OrchestratorDirective:
-    # on tool result 的参数第一个是tool call id，第二个是result？
+                            on_tool_result: OnToolResult) -> OrchestratorDirective:
     raise NotImplementedError
