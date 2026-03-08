@@ -10,7 +10,9 @@ from src.core.chat import (
     OnAiToolCallStarted,
     OnAiToolCallArgumentsDelta,
     OnAiToolCallFinished,
+    OnToolResult,
     ResetContextDirective,
+    ToolSpec,
 )
 from src.core.model_config import ModelConfig
 from src.core.policies import strip_reasoning_content_if_needed
@@ -39,12 +41,13 @@ class Agent:
 
     def __init__(self, *, name: str, model_config: ModelConfig,
                  system_instruction: str, user_instruction: str,
-                 tools_params: list[dict[str, Any]],
+                 tools: list[ToolSpec],
                  on_ai_content_delta: OnAiContentDelta | None = None,
                  on_ai_reasoning_delta: OnAiReasoningDelta | None = None,
                  on_ai_tool_call_started: OnAiToolCallStarted | None = None,
                  on_ai_tool_call_arguments_delta: OnAiToolCallArgumentsDelta | None = None,
                  on_ai_tool_call_finished: OnAiToolCallFinished | None = None,
+                 on_tool_result: OnToolResult | None = None,
                  on_user_msg_enqueued: OnUserMsgEnqueued | None = None,
                  on_queued_user_msg_committed: OnQueuedUserMsgCommitted | None = None,
                  ) -> None:
@@ -53,7 +56,10 @@ class Agent:
         self._messages: list[dict[str, Any]] = []
         self._system_instruction = system_instruction
         self._user_instruction = user_instruction
-        self._tools_params = tools_params
+        self._tools = tools
+        self._tools_by_name = {tool.name: tool for tool in tools}
+        if len(self._tools_by_name) != len(self._tools):
+            raise ValueError("tools 里存在重复的 name")
         self._on_ai_content_delta = on_ai_content_delta or self._noop
         self._on_ai_reasoning_delta = on_ai_reasoning_delta or self._noop
 
@@ -61,9 +67,10 @@ class Agent:
         self._on_ai_tool_call_started = on_ai_tool_call_started or self._noop
         self._on_ai_tool_call_arguments_delta = on_ai_tool_call_arguments_delta or self._noop
         self._on_ai_tool_call_finished = on_ai_tool_call_finished or self._noop
+        self._on_tool_result = on_tool_result or self._noop
 
         self._on_user_msg_enqueued = on_user_msg_enqueued or self._noop
-        self._on_queued_user_msg_committed=on_queued_user_msg_committed or self._noop
+        self._on_queued_user_msg_committed = on_queued_user_msg_committed or self._noop
 
         self._user_msg_queue: queue.Queue[QueuedUserMessage] = queue.Queue()
 
@@ -76,9 +83,9 @@ class Agent:
     def resume_session(self, *, session_id: str) -> None:
         pass
 
-    def enqueue_user_message(self, *, msg_id: str, user_message: str) -> None:
-        self._user_msg_queue.put(QueuedUserMessage(msg_id, user_message))
-        self._on_user_msg_enqueued(msg_id=msg_id)
+    def enqueue_user_message(self, *, frontend_msg_id: str, user_message: str) -> None:
+        self._user_msg_queue.put(QueuedUserMessage(frontend_msg_id, user_message))
+        self._on_user_msg_enqueued(frontend_msg_id=frontend_msg_id)
 
     def _safe_drain_user_message_queue(self, user_msg_queue: queue.Queue[QueuedUserMessage],
                                        messages: list[dict[str, Any]]) -> int:
@@ -92,12 +99,12 @@ class Agent:
             strip_reasoning_content_if_needed(model=self._model_config.model, messages=messages)
             drained += 1
             messages.append({"role": "user", "content": item.content})
-            self._on_queued_user_msg_committed(msg_id=item.frontend_id)
+            self._on_queued_user_msg_committed(frontend_msg_id=item.frontend_msg_id)
 
     @staticmethod
     def _safe_stream(*, model_config: ModelConfig,
                      messages: list[dict[str, Any]],
-                     tools_params: list[dict[str, Any]],
+                     tools: list[ToolSpec],
                      on_ai_content_delta: OnAiContentDelta,
                      on_ai_reasoning_delta: OnAiReasoningDelta,
                      on_ai_tool_call_started: OnAiToolCallStarted,
@@ -111,7 +118,7 @@ class Agent:
 
         # 最后一条消息是user message
         return stream(model_config=model_config, messages=messages,
-                      tools_params=tools_params,
+                      tools=tools,
                       on_ai_content_delta=on_ai_content_delta,
                       on_ai_reasoning_delta=on_ai_reasoning_delta,
                       on_ai_tool_call_started=on_ai_tool_call_started,
@@ -126,7 +133,7 @@ class Agent:
         while True:
             ai_msg_dict = self._safe_stream(model_config=self._model_config,
                                             messages=self._messages,
-                                            tools_params=self._tools_params,
+                                            tools=self._tools,
                                             on_ai_content_delta=self._on_ai_content_delta,
                                             on_ai_reasoning_delta=self._on_ai_reasoning_delta,
                                             on_ai_tool_call_started=self._on_ai_tool_call_started,
@@ -136,7 +143,12 @@ class Agent:
             if not ai_msg_dict.get("tool_calls"):
                 return ai_msg_dict
 
-            orchestrator_directive = execute_tool_and_append()
+            orchestrator_directive = execute_tool_and_append(
+                ai_msg_dict=ai_msg_dict,
+                messages=self._messages,
+                tools_by_name=self._tools_by_name,
+                on_tool_result=self._on_tool_result,
+            )
             if isinstance(orchestrator_directive, ResetContextDirective):
                 self._reset_context()
                 continue

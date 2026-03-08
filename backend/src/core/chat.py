@@ -1,3 +1,5 @@
+import json
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol, TypeAlias
 from litellm import completion
@@ -44,6 +46,28 @@ class OnAiToolCallFinished(Protocol):
             tool_name: str | None,
             arguments: str,
     ) -> None: ...
+
+
+class ToolHandler(Protocol):
+    def __call__(self, *, arguments: dict[str, Any]) -> Any: ...
+
+
+@dataclass(frozen=True)
+class ToolSpec:
+    name: str
+    description: str
+    parameters_json_schema: dict[str, Any]
+    handler: ToolHandler
+
+    def to_tool_param(self) -> dict[str, Any]:
+        return {
+            "type": "function",
+            "function": {
+                "name": self.name,
+                "description": self.description,
+                "parameters": self.parameters_json_schema,
+            },
+        }
 
 
 def _get_field(obj: Any, field_name: str, default: Any = None) -> Any:
@@ -133,7 +157,7 @@ def _maybe_emit_tool_call_started(*,
 
 def stream(*, model_config: ModelConfig,
            messages: list[dict[str, Any]],
-           tools_params: list[dict[str, Any]],
+           tools: list[ToolSpec],
            on_ai_content_delta: OnAiContentDelta,
            on_ai_reasoning_delta: OnAiReasoningDelta,
            on_ai_tool_call_started: OnAiToolCallStarted,
@@ -141,7 +165,7 @@ def stream(*, model_config: ModelConfig,
            on_ai_tool_call_finished: OnAiToolCallFinished) -> dict[str, Any]:
     completion_kwargs: dict[str, Any] = {
         "model": model_config.model,
-        "tools": tools_params,
+        "tools": [tool.to_tool_param() for tool in tools],
         "messages": messages,
         "api_base": model_config.base_url,
         "api_key": model_config.api_key,
@@ -241,8 +265,9 @@ class ResetContextDirective:
     prompt_to_my_future_self: str
 
 
-# 做这个只是为了对称，实际上目前只会判断是不是ResetContextDirective
-# 不会判断是不是ContinueLoopDirective
+# 做这个只是为了对称，实际上目前run()只会判断是不是ResetContextDirective
+# 不会判断是不是ContinueLoopDirective，
+# 也就是说run()是默认"只要不是reset context，那就是continue
 @dataclass
 class ContinueLoopDirective:
     pass
@@ -253,11 +278,57 @@ OrchestratorDirective: TypeAlias = ContinueLoopDirective | ResetContextDirective
 
 class OnToolResult(Protocol):
     def __call__(self, *,
-                 tool_call_id: str,
+                 tool_call_id: str | None,
                  result_json_str: str) -> None: ...
+
+
+def _parse_tool_arguments(*, tool_name: str, arguments: str) -> dict[str, Any]:
+    if not arguments:
+        return {}
+
+    parsed_arguments = json.loads(arguments)
+    if not isinstance(parsed_arguments, dict):
+        raise ValueError(f"tool {tool_name} arguments 必须是 JSON object")
+    return parsed_arguments
+
+
+def _stringify_tool_result(result: Any) -> str:
+    if isinstance(result, str):
+        return result
+    return json.dumps(result, ensure_ascii=False)
 
 
 def execute_tool_and_append(*, ai_msg_dict: dict[str, Any],
                             messages: list[dict[str, Any]],
+                            tools_by_name: Mapping[str, ToolSpec],
                             on_tool_result: OnToolResult) -> OrchestratorDirective:
-    raise NotImplementedError
+    for tool_call in ai_msg_dict.get("tool_calls", []):
+        function_payload = _get_field(tool_call, "function", {})
+        tool_name = _get_field(function_payload, "name")
+        if not tool_name:
+            raise ValueError("tool call 缺少 function.name")
+
+        tool_spec = tools_by_name.get(tool_name)
+        if tool_spec is None:
+            raise ValueError(f"未注册的工具: {tool_name}")
+
+        arguments = _get_field(function_payload, "arguments", "") or ""
+        parsed_arguments = _parse_tool_arguments(tool_name=tool_name, arguments=arguments)
+        tool_result = tool_spec.handler(arguments=parsed_arguments)
+
+        result_json_str = _stringify_tool_result(tool_result)
+        tool_call_id = _get_field(tool_call, "id")
+        tool_msg: dict[str, Any] = {
+            "role": "tool",
+            "content": result_json_str,
+        }
+        if tool_call_id:
+            tool_msg["tool_call_id"] = tool_call_id
+        messages.append(tool_msg)
+
+        on_tool_result(
+            tool_call_id=tool_call_id,
+            result_json_str=result_json_str,
+        )
+
+    return ContinueLoopDirective()
