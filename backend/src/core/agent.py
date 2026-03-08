@@ -2,7 +2,14 @@ import queue
 from typing import Any, Callable
 from dataclasses import dataclass
 
-from src.core.chat import stream, execute_tool_and_append, ResetContextDirective, ContinueLoopDirective
+from src.core.chat import (
+    stream,
+    execute_tool_and_append,
+    ResetContextDirective,
+    ToolCallStartedEvent,
+    ToolCallArgumentsDeltaEvent,
+    ToolCallFinishedEvent,
+)
 from src.core.model_config import ModelConfig
 from src.core.policies import strip_reasoning_content_if_needed
 
@@ -14,11 +21,20 @@ class QueuedUserMessage:
 
 
 class Agent:
+
+    # 见调用处，有了这个函数就不用每次都写 if callback is not None
+    @staticmethod
+    def _noop(*args: Any, **kwargs: Any) -> None:
+        return None
+
     def __init__(self, *, name: str, model_config: ModelConfig,
                  system_instruction: str, user_instruction: str,
                  tools_params: list[dict[str, Any]],
                  on_ai_content_delta: Callable[[str], None],
-                 on_ai_reasoning_delta: Callable[[str], None]) -> None:
+                 on_ai_reasoning_delta: Callable[[str], None],
+                 on_ai_tool_call_started: Callable[[ToolCallStartedEvent], None] | None = None,
+                 on_ai_tool_call_arguments_delta: Callable[[ToolCallArgumentsDeltaEvent], None] | None = None,
+                 on_ai_tool_call_finished: Callable[[ToolCallFinishedEvent], None] | None = None) -> None:
         self.name = name
         self._model_config = model_config
         self._messages: list[dict[str, Any]] = []
@@ -27,6 +43,11 @@ class Agent:
         self._tools_params = tools_params
         self._on_ai_content_delta = on_ai_content_delta
         self._on_ai_reasoning_delta = on_ai_reasoning_delta
+
+        # started 不一定表示是函数的名字出来了，有些供应商是先给 ID 什么的
+        self._on_ai_tool_call_started = on_ai_tool_call_started or self._noop
+        self._on_ai_tool_call_arguments_delta = on_ai_tool_call_arguments_delta or self._noop
+        self._on_ai_tool_call_finished = on_ai_tool_call_finished or self._noop
 
         self._user_msg_queue: queue.Queue[QueuedUserMessage] = queue.Queue()
 
@@ -65,18 +86,24 @@ class Agent:
                      messages: list[dict[str, Any]],
                      tools_params: list[dict[str, Any]],
                      on_ai_content_delta: Callable[[str], None],
-                     on_ai_reasoning_delta: Callable[[str], None]) -> dict[str, Any]:
+                     on_ai_reasoning_delta: Callable[[str], None],
+                     on_ai_tool_call_started: Callable[[ToolCallStartedEvent], None],
+                     on_ai_tool_call_arguments_delta: Callable[[ToolCallArgumentsDeltaEvent], None],
+                     on_ai_tool_call_finished: Callable[[ToolCallFinishedEvent], None]) -> dict[str, Any]:
         # 如果 Agent 之前正在运行，然后结果突然被中断了，
         # 那就可能导致 message 数组最后一个可能是 AI message with tool call，
         # 这种情况下就应该再续上之前的对话，不应该再调用 stream 以获得 AI message 了
-        if messages[-1] is not None and messages[-1].get("role") == "assistant" and messages[-1].get("tool_call"):
+        if messages[-1] is not None and messages[-1].get("role") == "assistant" and messages[-1].get("tool_calls"):
             return messages[-1]
 
         # 最后一条消息是user message
         return stream(model_config=model_config, messages=messages,
                       tools_params=tools_params,
                       on_ai_content_delta=on_ai_content_delta,
-                      on_ai_reasoning_delta=on_ai_reasoning_delta)
+                      on_ai_reasoning_delta=on_ai_reasoning_delta,
+                      on_ai_tool_call_started=on_ai_tool_call_started,
+                      on_ai_tool_call_arguments_delta=on_ai_tool_call_arguments_delta,
+                      on_ai_tool_call_finished=on_ai_tool_call_finished)
 
     def _reset_context(self):
         pass
@@ -88,7 +115,10 @@ class Agent:
                                             messages=self._messages,
                                             tools_params=self._tools_params,
                                             on_ai_content_delta=self._on_ai_content_delta,
-                                            on_ai_reasoning_delta=self._on_ai_reasoning_delta
+                                            on_ai_reasoning_delta=self._on_ai_reasoning_delta,
+                                            on_ai_tool_call_started=self._on_ai_tool_call_started,
+                                            on_ai_tool_call_arguments_delta=self._on_ai_tool_call_arguments_delta,
+                                            on_ai_tool_call_finished=self._on_ai_tool_call_finished,
                                             )
             if not ai_msg_dict.get("tool_calls"):
                 return ai_msg_dict

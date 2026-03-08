@@ -6,6 +6,34 @@ from litellm import completion
 from src.core.model_config import ModelConfig
 
 
+def _noop(*args: Any, **kwargs: Any) -> None:
+    return None
+
+
+@dataclass(frozen=True)
+class ToolCallStartedEvent:
+    index: int
+    tool_call_id: str | None
+    tool_name: str | None
+
+
+@dataclass(frozen=True)
+class ToolCallArgumentsDeltaEvent:
+    index: int
+    tool_call_id: str | None
+    tool_name: str | None
+    arguments_delta: str
+    arguments: str
+
+
+@dataclass(frozen=True)
+class ToolCallFinishedEvent:
+    index: int
+    tool_call_id: str | None
+    tool_name: str | None
+    arguments: str
+
+
 def _get_field(obj: Any, field_name: str, default: Any = None) -> Any:
     if obj is None:
         return default
@@ -68,11 +96,39 @@ def _merge_tool_call_delta(tool_calls_by_index: dict[int, dict[str, Any]], tool_
         tool_call["function"]["arguments"] += function_arguments_delta
 
 
+def _maybe_emit_tool_call_started(*,
+                                  started_tool_call_indexes: set[int],
+                                  tool_calls_by_index: dict[int, dict[str, Any]],
+                                  index: int,
+                                  on_ai_tool_call_started: Callable[[ToolCallStartedEvent], None]) -> None:
+    if index in started_tool_call_indexes:
+        return
+
+    tool_call = tool_calls_by_index[index]
+    tool_call_id = tool_call["id"] or None
+    tool_name = tool_call["function"]["name"] or None
+    arguments = tool_call["function"]["arguments"]
+    if not tool_call_id and not tool_name and not arguments:
+        return
+
+    started_tool_call_indexes.add(index)
+    on_ai_tool_call_started(
+        ToolCallStartedEvent(
+            index=index,
+            tool_call_id=tool_call_id,
+            tool_name=tool_name,
+        )
+    )
+
+
 def stream(*, model_config: ModelConfig,
            messages: list[dict[str, Any]],
            tools_params: list[dict[str, Any]],
            on_ai_content_delta: Callable[[str], None],
-           on_ai_reasoning_delta: Callable[[str], None]) -> dict[str, Any]:
+           on_ai_reasoning_delta: Callable[[str], None],
+           on_ai_tool_call_started: Callable[[ToolCallStartedEvent], None] = _noop,
+           on_ai_tool_call_arguments_delta: Callable[[ToolCallArgumentsDeltaEvent], None] = _noop,
+           on_ai_tool_call_finished: Callable[[ToolCallFinishedEvent], None] = _noop) -> dict[str, Any]:
 
     completion_kwargs: dict[str, Any] = {
         "model": model_config.model,
@@ -86,6 +142,7 @@ def stream(*, model_config: ModelConfig,
     content_parts: list[str] = []
     reasoning_parts: list[str] = []
     tool_calls_by_index: dict[int, dict[str, Any]] = {}
+    started_tool_call_indexes: set[int] = set()
     assistant_role = "assistant"
 
     response_stream = completion(**completion_kwargs)
@@ -115,7 +172,28 @@ def stream(*, model_config: ModelConfig,
             on_ai_reasoning_delta(reasoning_delta)
 
         for tool_call_delta in _get_field(delta, "tool_calls", []) or []:
+            tool_call_index = _get_field(tool_call_delta, "index", 0)
             _merge_tool_call_delta(tool_calls_by_index, tool_call_delta)
+            _maybe_emit_tool_call_started(
+                started_tool_call_indexes=started_tool_call_indexes,
+                tool_calls_by_index=tool_calls_by_index,
+                index=tool_call_index,
+                on_ai_tool_call_started=on_ai_tool_call_started,
+            )
+
+            function_delta = _get_field(tool_call_delta, "function")
+            arguments_delta = _get_field(function_delta, "arguments") if function_delta else None
+            if arguments_delta:
+                tool_call = tool_calls_by_index[tool_call_index]
+                on_ai_tool_call_arguments_delta(
+                    ToolCallArgumentsDeltaEvent(
+                        index=tool_call_index,
+                        tool_call_id=tool_call["id"] or None,
+                        tool_name=tool_call["function"]["name"] or None,
+                        arguments_delta=arguments_delta,
+                        arguments=tool_call["function"]["arguments"],
+                    )
+                )
 
     assistant_message: dict[str, Any] = {
         "role": assistant_role,
@@ -127,6 +205,22 @@ def stream(*, model_config: ModelConfig,
             tool_calls_by_index[index]
             for index in sorted(tool_calls_by_index)
         ]
+        for index in sorted(tool_calls_by_index):
+            _maybe_emit_tool_call_started(
+                started_tool_call_indexes=started_tool_call_indexes,
+                tool_calls_by_index=tool_calls_by_index,
+                index=index,
+                on_ai_tool_call_started=on_ai_tool_call_started,
+            )
+            tool_call = tool_calls_by_index[index]
+            on_ai_tool_call_finished(
+                ToolCallFinishedEvent(
+                    index=index,
+                    tool_call_id=tool_call["id"] or None,
+                    tool_name=tool_call["function"]["name"] or None,
+                    arguments=tool_call["function"]["arguments"],
+                )
+            )
         if not assistant_message["content"]:
             assistant_message["content"] = None
 
