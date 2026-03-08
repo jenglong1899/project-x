@@ -18,16 +18,16 @@ from src.core.policies import strip_reasoning_content_if_needed
 
 @dataclass(frozen=True)
 class QueuedUserMessage:
-    id: str  # 前端渲染要用到，这个id是前端生成并维护的
+    frontend_id: str  # 前端渲染要用到，这个id是前端生成并维护的
     content: str
 
 
 class OnUserMsgEnqueued(Protocol):
-    def __call__(self, *, msg_id: str) -> None: ...
+    def __call__(self, *, frontend_msg_id: str) -> None: ...
 
 
 class OnQueuedUserMsgCommitted(Protocol):
-    def __call__(self, *, msg_id: str) -> None: ...
+    def __call__(self, *, frontend_msg_id: str) -> None: ...
 
 
 class Agent:
@@ -92,7 +92,7 @@ class Agent:
             strip_reasoning_content_if_needed(model=self._model_config.model, messages=messages)
             drained += 1
             messages.append({"role": "user", "content": item.content})
-            self._on_queued_user_msg_committed(msg_id=item.id)
+            self._on_queued_user_msg_committed(msg_id=item.frontend_id)
 
     @staticmethod
     def _safe_stream(*, model_config: ModelConfig,
