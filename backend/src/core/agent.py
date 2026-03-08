@@ -18,7 +18,7 @@ from src.core.policies import strip_reasoning_content_if_needed
 
 @dataclass(frozen=True)
 class QueuedUserMessage:
-    frontend_id: str  # 前端渲染要用到，这个id是前端生成并维护的
+    frontend_msg_id: str  # 前端渲染要用到，这个id是前端生成并维护的
     content: str
 
 
