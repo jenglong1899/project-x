@@ -13,13 +13,15 @@ def stream(*, model_config: ModelConfig,
 
 
 @dataclass
-class ContinueLoopDirective:
-    pass
-
-
-@dataclass
 class ResetContextDirective:
     prompt_to_my_future_self: str
+
+
+# 做这个只是为了对称，实际上目前只会判断是不是ResetContextDirective
+# 不会判断是不是ContinueLoopDirective
+@dataclass
+class ContinueLoopDirective:
+    pass
 
 
 OrchestratorDirective: TypeAlias = ContinueLoopDirective | ResetContextDirective

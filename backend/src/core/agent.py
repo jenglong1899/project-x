@@ -43,17 +43,20 @@ class Agent:
         self._user_msg_queue.put(QueuedUserMessage(msg_id, user_message))
         on_user_msg_enqueued(msg_id, user_message)
 
-    def _safe_drain_user_message_queue(self, user_msg_queue: queue.Queue, messages: list[dict[str, Any]]) -> int:
+    def _safe_drain_user_message_queue(self, user_msg_queue: queue.Queue[QueuedUserMessage],
+                                       messages: list[dict[str, Any]],
+                                       on_queued_user_msg_committed: Callable[[str], None]) -> int:
         drained = 0
         while True:
             try:
-                msg = user_msg_queue.get_nowait()
+                item = user_msg_queue.get_nowait()
             except queue.Empty:
                 return drained
 
-            strip_reasoning_content_if_needed(model=self._model_config, messages=messages)
+            strip_reasoning_content_if_needed(model=self._model_config.model, messages=messages)
             drained += 1
-            messages.append({"role": "user", "content": msg})
+            messages.append({"role": "user", "content": item.content})
+            on_queued_user_msg_committed(item.id)
 
     @staticmethod
     def _safe_stream(*, model_config: ModelConfig,
