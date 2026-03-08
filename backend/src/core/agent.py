@@ -81,7 +81,7 @@ class Agent:
         ]
 
     def resume_session(self, *, session_id: str) -> None:
-        pass
+        raise NotImplementedError
 
     def enqueue_user_message(self, *, frontend_msg_id: str, user_message: str) -> None:
         self._user_msg_queue.put(QueuedUserMessage(frontend_msg_id, user_message))
@@ -126,7 +126,7 @@ class Agent:
                       on_ai_tool_call_finished=on_ai_tool_call_finished)
 
     def _reset_context(self):
-        pass
+        raise NotImplementedError
 
     def run(self) -> dict[str, Any]:
         self._safe_drain_user_message_queue(self._user_msg_queue, self._messages)
