@@ -5,10 +5,6 @@ from litellm import completion
 from src.core.model_config import ModelConfig
 
 
-def _noop(*args: Any, **kwargs: Any) -> None:
-    return None
-
-
 class OnAiContentDelta(Protocol):
     def __call__(self, *, content_delta: str) -> None: ...
 
@@ -140,9 +136,9 @@ def stream(*, model_config: ModelConfig,
            tools_params: list[dict[str, Any]],
            on_ai_content_delta: OnAiContentDelta,
            on_ai_reasoning_delta: OnAiReasoningDelta,
-           on_ai_tool_call_started: OnAiToolCallStarted = _noop,
-           on_ai_tool_call_arguments_delta: OnAiToolCallArgumentsDelta = _noop,
-           on_ai_tool_call_finished: OnAiToolCallFinished = _noop) -> dict[str, Any]:
+           on_ai_tool_call_started: OnAiToolCallStarted,
+           on_ai_tool_call_arguments_delta: OnAiToolCallArgumentsDelta,
+           on_ai_tool_call_finished: OnAiToolCallFinished) -> dict[str, Any]:
     completion_kwargs: dict[str, Any] = {
         "model": model_config.model,
         "tools": tools_params,
