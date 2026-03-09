@@ -302,7 +302,7 @@ def execute_tool_and_append(*, ai_msg_dict: dict[str, Any],
                             messages: list[dict[str, Any]],
                             tools_by_name: Mapping[str, ToolSpec],
                             on_tool_result: OnToolResult) -> OrchestratorDirective:
-    for tool_call in ai_msg_dict.get("tool_calls", []):
+    for index, tool_call in enumerate(ai_msg_dict.get("tool_calls", [])):
         function_payload = _get_field(tool_call, "function", {})
         tool_name = _get_field(function_payload, "name")
         if not tool_name:
@@ -318,12 +318,7 @@ def execute_tool_and_append(*, ai_msg_dict: dict[str, Any],
 
         result_json_str = _stringify_tool_result(tool_result)
         tool_call_id = _get_field(tool_call, "id")
-        tool_msg: dict[str, Any] = {
-            "role": "tool",
-            "content": result_json_str,
-        }
-        if tool_call_id:
-            tool_msg["tool_call_id"] = tool_call_id
+        tool_msg: dict[str, Any] = {"role": "tool", "content": result_json_str, "tool_call_id": tool_call_id}
         messages.append(tool_msg)
 
         on_tool_result(

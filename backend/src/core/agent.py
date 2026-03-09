@@ -87,6 +87,9 @@ class Agent:
         self._user_msg_queue.put(QueuedUserMessage(frontend_msg_id, user_message))
         self._on_user_msg_enqueued(frontend_msg_id=frontend_msg_id)
 
+    def has_pending_user_messages(self) -> bool:
+        return not self._user_msg_queue.empty()
+
     def _safe_drain_user_message_queue(self, user_msg_queue: queue.Queue[QueuedUserMessage],
                                        messages: list[dict[str, Any]]) -> int:
         drained = 0

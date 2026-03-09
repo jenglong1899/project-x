@@ -52,6 +52,7 @@ body {
   margin: 0;
   min-width: 320px;
   min-height: 100vh;
+  overflow: hidden;
 }
 
 .dark {
@@ -133,6 +134,11 @@ body {
 @layer base {
   * {
     @apply border-border outline-ring/50;
+  }
+  html,
+  body,
+  #root {
+    height: 100%;
   }
   body {
     @apply bg-background text-foreground;
