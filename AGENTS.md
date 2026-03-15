@@ -22,8 +22,6 @@
 
 ## 前端
 - 前端在 `frontend/`，当前是 Vite + React 19 + TypeScript。
-- 面向当前用户教学的浏览器基础讲义放在 `docs/teach/teach_browser_basics.md`，用于承接 DOM / 布局 / 滚动 / React 与浏览器关系这类更底层的问题。
-- 面向当前用户教学的前端基础讲义放在 `docs/teach/teach_frontend_store_basics.md`，后续关于 App / protocol / zustand selector / store 基础问题优先在这份文档对应小节补充，而不是在末尾追加。
 - `frontend/src/App.tsx` ：左侧信息侧栏，右侧单栏时间线，底部输入区；侧栏里的新会话、刷新列表、工作目录、暂停等当前后端未提供的功能只做禁用态 mock。
 - `frontend/src/App.css` 只保留根节点占满视口，其余样式由 Tailwind 负责。
 - `frontend` 已接入 Tailwind CSS v4：`vite.config.ts` 使用 `@tailwindcss/vite` 插件，`src/index.css` 已导入 `tailwindcss`、`tw-animate-css`、`shadcn/tailwind.css` 和 Geist 字体，并定义了 shadcn 主题变量。
@@ -42,3 +40,8 @@
 ## 产品约束
 - `docs/spec/brief.md` 明确网页端当前只支持流式交互。
 - `docs/spec/frontend.md` 要求前端 UI 保持简约，整体接近 ChatGPT 的单栏聊天页；思维链和工具调用默认展开；同一个工具调用的 tool call 与 tool result 要放在同一张卡片里；前端技术栈为 `ts + zustand store + tailwind + shadcn + zod`。
+
+## 教学
+- 面向当前用户教学的浏览器基础讲义放在 `docs/teach/teach_browser_basics.md`，用于承接 DOM / 布局 / 滚动 / React 与浏览器关系这类更底层的问题。
+- 面向当前用户教学的前端基础讲义放在 `docs/teach/teach_frontend_store_basics.md`，后续关于 App / protocol / zustand selector / store 基础问题优先在这份文档对应小节补充，而不是在末尾追加。
+- 面向当前用户教学的后端 WebSocket / `web_app.py` / `ChatSession` 基础讲义放在 `docs/teach/teach_backend_web_app_basics.md`，后续关于 `asyncio` 事件循环、线程桥接、WebSocket 会话流转的问题优先在这份文档对应小节补充。
