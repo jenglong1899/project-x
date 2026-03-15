@@ -82,7 +82,7 @@ mode:Literal['w','a']
 用replace来做追加写的话，你还要读一下最后的内容。
 
 # session store
-用jsonl存储，路径在~/.bionic-claw/sessions/中
+用jsonl存储，路径在~/.bionic-claw/memory/originals/中
 分为两大部分，一个是 meta 元数据，一个是 messages 数组
 名字用coolname+时间戳（coolname要用第三方库，不要自己手搓）
 

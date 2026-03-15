@@ -25,6 +25,7 @@ from src.core.model_config import (
     ModelConfig,
 )
 from src.tools.bash import BASH_TOOL
+from src.prompts.builder import build_system_level_instruction_zh,build_user_level_instruction_zh
 
 
 logger = logging.getLogger(__name__)
@@ -37,13 +38,6 @@ MODEL_CONFIGS: dict[str, ModelConfig] = {
     "minimax_mainland": MINIMAX_MAINLAND,
     "minimax_oversea": MINIMAX_OVERSEA,
 }
-
-SYSTEM_INSTRUCTION = (
-    "请直接回答用户问题；需要执行命令时优先使用工具；"
-    "除非用户要求，否则不要展示多余铺垫。"
-)
-USER_INSTRUCTION = "你正在通过 Web 端与用户持续对话。"
-
 
 class SendUserMessageCommand(BaseModel):
     type: Literal["send_user_message"]
@@ -94,8 +88,8 @@ class ChatSession:
         self._agent = Agent(
             name="bionic-claw-web",
             model_config=resolve_model_config(),
-            system_instruction=SYSTEM_INSTRUCTION,
-            user_instruction=USER_INSTRUCTION,
+            system_instruction=build_system_level_instruction_zh(),
+            user_instruction=build_user_level_instruction_zh(),
             tools=[BASH_TOOL],
             on_ai_content_delta=self._on_ai_content_delta,
             on_ai_reasoning_delta=self._on_ai_reasoning_delta,

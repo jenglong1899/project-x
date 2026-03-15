@@ -12,6 +12,7 @@
 - `src/core/chat.py` 的 `execute_tool_and_append()` 会按工具名查找 `ToolSpec`、解析 JSON arguments、调用 `handler`、追加 tool message，并通过最小化的 `OnToolResult(tool_call_id, result_json_str)` 回调把工具执行结果向外透传；当前默认始终返回 `ContinueLoopDirective`。如果模型没给 tool_call_id，会按工具在该 assistant message 里的顺序兜底生成 `tool_call_{index}`。
 - `src/core/policies.py` 里有 DeepSeek 特殊规则：发送下一条 user message 前，要去掉上一轮 assistant message 的 `reasoning_content`。
 - `src/core/chat.py` 和 `src/core/agent.py` 的回调接口用的是Protocol而不是Callable，因为这样可读性更高。
+- `src/prompts/builder.py` 里的记忆路径常量保留 `~` 形式，给 system instruction 复用；真正读写文件时再 `expanduser()`。`build_user_level_instruction_zh()` 会确保 `~/.bionic-claw/memory/summary/main.md` 存在；首次缺失时自动创建，并写入默认记忆“用户刚完成bionic-claw的安装，还没让我做什么事情”。
 - `src/tools/bash.py` 提供最基础的 `BASH_TOOL`：入参用 `BashToolInput` 的 pydantic model 校验，只接收 `command`，通过 `bash -lc` 执行并返回 `stdout`、`stderr`、`returncode`。
 - `src/core/agent.py` 新增了 `has_pending_user_messages()`，供服务层在一次 run 完成后继续消费排队中的用户消息。
 - 后端现在用 `Starlette` 做服务层：`backend/main.py` 暴露 `app` 并通过 `uvicorn.run()` 启动；`src/web_app.py` 提供 `/healthz` 和 `/ws`。
