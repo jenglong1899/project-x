@@ -7,66 +7,62 @@ const sessionStartedEventSchema = z.object({
   sessionId: nonEmptyString,
 })
 
-const userTurnEnqueuedEventSchema = z.object({
-  type: z.literal('user.turn.enqueued'),
-  userTurnId: nonEmptyString,
+const generationStartedEventSchema = z.object({
+  type: z.literal('generation.started'),
 })
 
-const userTurnCommittedEventSchema = z.object({
-  type: z.literal('user.turn.committed'),
-  userTurnId: nonEmptyString,
+const generationCompletedEventSchema = z.object({
+  type: z.literal('generation.completed'),
 })
 
-const assistantTurnStartedEventSchema = z.object({
-  type: z.literal('assistant.turn.started'),
-  assistantTurnId: nonEmptyString,
+const userMessageCommittedEventSchema = z.object({
+  type: z.literal('user.message.committed'),
+  userMessageId: nonEmptyString,
+  content: z.string(),
 })
 
-const assistantContentDeltaEventSchema = z.object({
-  type: z.literal('assistant.content.delta'),
-  assistantTurnId: nonEmptyString,
+const assistantMessageStartedEventSchema = z.object({
+  type: z.literal('assistant.message.started'),
+  messageId: nonEmptyString,
+})
+
+const assistantMessageDeltaEventSchema = z.object({
+  type: z.literal('assistant.message.delta'),
+  messageId: nonEmptyString,
+  channel: z.enum(['reasoning', 'content']),
   delta: z.string(),
 })
 
-const assistantReasoningDeltaEventSchema = z.object({
-  type: z.literal('assistant.reasoning.delta'),
-  assistantTurnId: nonEmptyString,
-  delta: z.string(),
+const assistantMessageCompletedEventSchema = z.object({
+  type: z.literal('assistant.message.completed'),
+  messageId: nonEmptyString,
 })
 
-const assistantToolStartedEventSchema = z.object({
-  type: z.literal('assistant.tool.started'),
-  assistantTurnId: nonEmptyString,
+const toolStartedEventSchema = z.object({
+  type: z.literal('tool.started'),
   toolCallId: nonEmptyString,
   toolName: nonEmptyString,
   index: z.number().int().nonnegative(),
 })
 
-const assistantToolArgumentsDeltaEventSchema = z.object({
-  type: z.literal('assistant.tool.arguments.delta'),
-  assistantTurnId: nonEmptyString,
+const toolArgumentsDeltaEventSchema = z.object({
+  type: z.literal('tool.arguments.delta'),
   toolCallId: nonEmptyString,
-  delta: z.string(),
-  arguments: z.string(),
+  toolName: nonEmptyString,
+  argumentsDelta: z.string(),
 })
 
-const assistantToolCompletedEventSchema = z.object({
-  type: z.literal('assistant.tool.completed'),
-  assistantTurnId: nonEmptyString,
+const toolCompletedEventSchema = z.object({
+  type: z.literal('tool.completed'),
   toolCallId: nonEmptyString,
+  toolName: nonEmptyString,
   arguments: z.string(),
 })
 
 const toolResultEventSchema = z.object({
   type: z.literal('tool.result'),
-  assistantTurnId: nonEmptyString,
   toolCallId: nonEmptyString,
   result: z.string(),
-})
-
-const assistantTurnCompletedEventSchema = z.object({
-  type: z.literal('assistant.turn.completed'),
-  assistantTurnId: nonEmptyString,
 })
 
 const errorEventSchema = z.object({
@@ -77,22 +73,22 @@ const errorEventSchema = z.object({
 
 export const serverEventSchema = z.discriminatedUnion('type', [
   sessionStartedEventSchema,
-  userTurnEnqueuedEventSchema,
-  userTurnCommittedEventSchema,
-  assistantTurnStartedEventSchema,
-  assistantContentDeltaEventSchema,
-  assistantReasoningDeltaEventSchema,
-  assistantToolStartedEventSchema,
-  assistantToolArgumentsDeltaEventSchema,
-  assistantToolCompletedEventSchema,
+  generationStartedEventSchema,
+  generationCompletedEventSchema,
+  userMessageCommittedEventSchema,
+  assistantMessageStartedEventSchema,
+  assistantMessageDeltaEventSchema,
+  assistantMessageCompletedEventSchema,
+  toolStartedEventSchema,
+  toolArgumentsDeltaEventSchema,
+  toolCompletedEventSchema,
   toolResultEventSchema,
-  assistantTurnCompletedEventSchema,
   errorEventSchema,
 ])
 
 const sendUserMessageCommandSchema = z.object({
   type: z.literal('send_user_message'),
-  userTurnId: nonEmptyString,
+  userMessageId: nonEmptyString,
   content: z.string().trim().min(1),
 })
 

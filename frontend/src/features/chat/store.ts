@@ -9,13 +9,13 @@ export type UserMessageItem = {
   id: string
   kind: 'user'
   text: string
-  userTurnId: string
+  userMessageId: string
 }
 
 export type AssistantMessageItem = {
   id: string
   kind: 'assistant'
-  assistantTurnId: string
+  messageId: string
   reasoning: string
   text: string
   streaming: boolean
@@ -24,7 +24,6 @@ export type AssistantMessageItem = {
 export type ToolMessageItem = {
   id: string
   kind: 'tool'
-  assistantTurnId: string
   toolCallId: string
   toolName: string
   index: number | null
@@ -46,19 +45,17 @@ type ChatState = {
   errorMessage: string | null
   items: ChatItem[]
   pendingUserMessages: PendingUserMessage[]
-  activeAssistantTurnId: string | null
-  activeAssistantItemIdByTurnId: Record<string, string>
-  toolItemIdByCallId: Record<string, string>
+  isGenerating: boolean
 }
 
-type StageUserTurnInput = {
-  userTurnId: string
+type StageUserMessageInput = {
+  userMessageId: string
   content: string
 }
 
 type ChatActions = {
   setConnectionStatus: (status: ConnectionStatus) => void
-  stageUserTurn: (input: StageUserTurnInput) => void
+  stageUserMessage: (input: StageUserMessageInput) => void
   applyServerEvent: (event: ServerEvent) => void
   clearError: () => void
   reset: () => void
@@ -72,38 +69,39 @@ const initialChatState: ChatState = {
   errorMessage: null,
   items: [],
   pendingUserMessages: [],
-  activeAssistantTurnId: null,
-  activeAssistantItemIdByTurnId: {},
-  toolItemIdByCallId: {},
+  isGenerating: false,
 }
 
-function createAssistantItem(assistantTurnId: string): AssistantMessageItem {
+function createAssistantItem(messageId: string): AssistantMessageItem {
   return {
-    id: `assistant:${crypto.randomUUID()}`,
+    id: `assistant:${messageId}`,
     kind: 'assistant',
-    assistantTurnId,
+    messageId,
     reasoning: '',
     text: '',
     streaming: true,
   }
 }
 
-function createToolItem(
-  assistantTurnId: string,
-  toolCallId: string,
-  toolName = '',
-  index: number | null = null,
-): ToolMessageItem {
+function createToolItem(toolCallId: string): ToolMessageItem {
   return {
     id: `tool:${toolCallId}`,
     kind: 'tool',
-    assistantTurnId,
     toolCallId,
-    toolName,
-    index,
+    toolName: '',
+    index: null,
     args: '',
     result: '',
     status: 'streaming',
+  }
+}
+
+function createUserItem(userMessageId: string, content: string): UserMessageItem {
+  return {
+    id: `user:${userMessageId}`,
+    kind: 'user',
+    text: content,
+    userMessageId,
   }
 }
 
@@ -143,78 +141,54 @@ function updateItemById<T extends ChatItem>(
   return nextItems
 }
 
-function closeAssistantSegment(state: ChatState, assistantTurnId: string): Partial<ChatState> {
-  const assistantItemId = state.activeAssistantItemIdByTurnId[assistantTurnId]
-  if (!assistantItemId) {
-    return {}
-  }
-
-  const restActiveAssistantItemIdByTurnId = { ...state.activeAssistantItemIdByTurnId }
-  delete restActiveAssistantItemIdByTurnId[assistantTurnId]
-
-  return {
-    items: updateItemById<AssistantMessageItem>(state.items, assistantItemId, (item) =>
-      item.streaming ? { ...item, streaming: false } : item,
-    ),
-    activeAssistantItemIdByTurnId: restActiveAssistantItemIdByTurnId,
-  }
-}
-
-function ensureAssistantSegment(
-  state: ChatState,
-  assistantTurnId: string,
+function ensureAssistantItem(
+  items: ChatItem[],
+  messageId: string,
 ): {
   items: ChatItem[]
-  activeAssistantItemIdByTurnId: Record<string, string>
-  assistantItemId: string
+  itemId: string
 } {
-  const existingAssistantItemId = state.activeAssistantItemIdByTurnId[assistantTurnId]
-  if (existingAssistantItemId) {
-    return {
-      items: state.items,
-      activeAssistantItemIdByTurnId: state.activeAssistantItemIdByTurnId,
-      assistantItemId: existingAssistantItemId,
-    }
+  const itemId = `assistant:${messageId}`
+  if (items.some((item) => item.id === itemId)) {
+    return { items, itemId }
   }
 
-  const assistantItem = createAssistantItem(assistantTurnId)
   return {
-    items: [...state.items, assistantItem],
-    activeAssistantItemIdByTurnId: {
-      ...state.activeAssistantItemIdByTurnId,
-      [assistantTurnId]: assistantItem.id,
-    },
-    assistantItemId: assistantItem.id,
+    items: [...items, createAssistantItem(messageId)],
+    itemId,
   }
 }
 
 function ensureToolItem(
-  state: ChatState,
-  assistantTurnId: string,
+  items: ChatItem[],
   toolCallId: string,
 ): {
   items: ChatItem[]
-  toolItemIdByCallId: Record<string, string>
-  toolItemId: string
+  itemId: string
 } {
-  const existingToolItemId = state.toolItemIdByCallId[toolCallId]
-  if (existingToolItemId) {
-    return {
-      items: state.items,
-      toolItemIdByCallId: state.toolItemIdByCallId,
-      toolItemId: existingToolItemId,
-    }
+  const itemId = `tool:${toolCallId}`
+  if (items.some((item) => item.id === itemId)) {
+    return { items, itemId }
   }
 
-  const toolItem = createToolItem(assistantTurnId, toolCallId)
   return {
-    items: [...state.items, toolItem],
-    toolItemIdByCallId: {
-      ...state.toolItemIdByCallId,
-      [toolCallId]: toolItem.id,
-    },
-    toolItemId: toolItem.id,
+    items: [...items, createToolItem(toolCallId)],
+    itemId,
   }
+}
+
+function upsertUserItem(
+  items: ChatItem[],
+  userMessageId: string,
+  content: string,
+): ChatItem[] {
+  const nextItem = createUserItem(userMessageId, content)
+  const existingIndex = items.findIndex((item) => item.id === nextItem.id)
+  if (existingIndex === -1) {
+    return [...items, nextItem]
+  }
+
+  return updateItemById<UserMessageItem>(items, nextItem.id, () => nextItem)
 }
 
 function reduceServerEvent(state: ChatState, event: ServerEvent): Partial<ChatState> {
@@ -224,164 +198,103 @@ function reduceServerEvent(state: ChatState, event: ServerEvent): Partial<ChatSt
         sessionId: event.sessionId,
       }
 
-    case 'user.turn.enqueued':
+    case 'generation.started':
       return {
-        pendingUserMessages: upsertPendingMessage(
-          state.pendingUserMessages,
-          event.userTurnId,
-          state.pendingUserMessages.find((message) => message.id === event.userTurnId)?.text ?? '',
+        isGenerating: true,
+      }
+
+    case 'generation.completed':
+      return {
+        isGenerating: false,
+      }
+
+    case 'user.message.committed':
+      return {
+        items: upsertUserItem(state.items, event.userMessageId, event.content),
+        pendingUserMessages: state.pendingUserMessages.filter(
+          (message) => message.id !== event.userMessageId,
         ),
       }
 
-    case 'user.turn.committed': {
-      const pendingMessage = state.pendingUserMessages.find(
-        (message) => message.id === event.userTurnId,
-      )
-      const nextPendingUserMessages = state.pendingUserMessages.filter(
-        (message) => message.id !== event.userTurnId,
-      )
-      const nextUserItem: UserMessageItem = {
-        id: `user:${event.userTurnId}`,
-        kind: 'user',
-        text: pendingMessage?.text ?? '',
-        userTurnId: event.userTurnId,
-      }
-      const existingItemIndex = state.items.findIndex((item) => item.id === nextUserItem.id)
-      const nextItems =
-        existingItemIndex === -1
-          ? [...state.items, nextUserItem]
-          : updateItemById<UserMessageItem>(state.items, nextUserItem.id, () => nextUserItem)
-
+    case 'assistant.message.started': {
+      const ensuredAssistant = ensureAssistantItem(state.items, event.messageId)
       return {
-        items: nextItems,
-        pendingUserMessages: nextPendingUserMessages,
+        items: ensuredAssistant.items,
       }
     }
 
-    case 'assistant.turn.started':
-      return {
-        activeAssistantTurnId: event.assistantTurnId,
-      }
-
-    case 'assistant.reasoning.delta': {
-      const ensuredAssistantSegment = ensureAssistantSegment(state, event.assistantTurnId)
+    case 'assistant.message.delta': {
+      const ensuredAssistant = ensureAssistantItem(state.items, event.messageId)
       return {
         items: updateItemById<AssistantMessageItem>(
-          ensuredAssistantSegment.items,
-          ensuredAssistantSegment.assistantItemId,
-          (item) => ({
-            ...item,
-            reasoning: item.reasoning + event.delta,
-            streaming: true,
-          }),
+          ensuredAssistant.items,
+          ensuredAssistant.itemId,
+          (item) =>
+            event.channel === 'reasoning'
+              ? {
+                  ...item,
+                  reasoning: item.reasoning + event.delta,
+                  streaming: true,
+                }
+              : {
+                  ...item,
+                  text: item.text + event.delta,
+                  streaming: true,
+                },
         ),
-        activeAssistantItemIdByTurnId: ensuredAssistantSegment.activeAssistantItemIdByTurnId,
-        activeAssistantTurnId: event.assistantTurnId,
       }
     }
 
-    case 'assistant.content.delta': {
-      const ensuredAssistantSegment = ensureAssistantSegment(state, event.assistantTurnId)
+    case 'assistant.message.completed':
       return {
-        items: updateItemById<AssistantMessageItem>(
-          ensuredAssistantSegment.items,
-          ensuredAssistantSegment.assistantItemId,
-          (item) => ({
-            ...item,
-            text: item.text + event.delta,
-            streaming: true,
-          }),
+        items: updateItemById<AssistantMessageItem>(state.items, `assistant:${event.messageId}`, (item) =>
+          item.streaming ? { ...item, streaming: false } : item,
         ),
-        activeAssistantItemIdByTurnId: ensuredAssistantSegment.activeAssistantItemIdByTurnId,
-        activeAssistantTurnId: event.assistantTurnId,
       }
-    }
 
-    case 'assistant.tool.started': {
-      const closedAssistantSegment = closeAssistantSegment(state, event.assistantTurnId)
-      const toolState = ensureToolItem(
-        {
-          ...state,
-          ...closedAssistantSegment,
-          items: closedAssistantSegment.items ?? state.items,
-          activeAssistantItemIdByTurnId:
-            closedAssistantSegment.activeAssistantItemIdByTurnId ??
-            state.activeAssistantItemIdByTurnId,
-        },
-        event.assistantTurnId,
-        event.toolCallId,
-      )
-
+    case 'tool.started': {
+      const ensuredTool = ensureToolItem(state.items, event.toolCallId)
       return {
-        items: updateItemById<ToolMessageItem>(toolState.items, toolState.toolItemId, (item) => ({
+        items: updateItemById<ToolMessageItem>(ensuredTool.items, ensuredTool.itemId, (item) => ({
           ...item,
-          assistantTurnId: event.assistantTurnId,
-          toolCallId: event.toolCallId,
           toolName: event.toolName,
           index: event.index,
           status: 'streaming',
         })),
-        activeAssistantItemIdByTurnId:
-          closedAssistantSegment.activeAssistantItemIdByTurnId ??
-          state.activeAssistantItemIdByTurnId,
-        toolItemIdByCallId: toolState.toolItemIdByCallId,
-        activeAssistantTurnId: event.assistantTurnId,
       }
     }
 
-    case 'assistant.tool.arguments.delta': {
-      const toolState = ensureToolItem(state, event.assistantTurnId, event.toolCallId)
+    case 'tool.arguments.delta': {
+      const ensuredTool = ensureToolItem(state.items, event.toolCallId)
       return {
-        items: updateItemById<ToolMessageItem>(toolState.items, toolState.toolItemId, (item) => ({
+        items: updateItemById<ToolMessageItem>(ensuredTool.items, ensuredTool.itemId, (item) => ({
           ...item,
-          assistantTurnId: event.assistantTurnId,
-          toolCallId: event.toolCallId,
-          args: event.arguments,
+          toolName: event.toolName,
+          args: item.args + event.argumentsDelta,
           status: 'streaming',
         })),
-        toolItemIdByCallId: toolState.toolItemIdByCallId,
-        activeAssistantTurnId: event.assistantTurnId,
       }
     }
 
-    case 'assistant.tool.completed': {
-      const toolState = ensureToolItem(state, event.assistantTurnId, event.toolCallId)
+    case 'tool.completed': {
+      const ensuredTool = ensureToolItem(state.items, event.toolCallId)
       return {
-        items: updateItemById<ToolMessageItem>(toolState.items, toolState.toolItemId, (item) => ({
+        items: updateItemById<ToolMessageItem>(ensuredTool.items, ensuredTool.itemId, (item) => ({
           ...item,
-          assistantTurnId: event.assistantTurnId,
-          toolCallId: event.toolCallId,
+          toolName: event.toolName,
           args: event.arguments,
           status: 'completed',
         })),
-        toolItemIdByCallId: toolState.toolItemIdByCallId,
       }
     }
 
     case 'tool.result': {
-      const toolState = ensureToolItem(state, event.assistantTurnId, event.toolCallId)
+      const ensuredTool = ensureToolItem(state.items, event.toolCallId)
       return {
-        items: updateItemById<ToolMessageItem>(toolState.items, toolState.toolItemId, (item) => ({
+        items: updateItemById<ToolMessageItem>(ensuredTool.items, ensuredTool.itemId, (item) => ({
           ...item,
-          assistantTurnId: event.assistantTurnId,
-          toolCallId: event.toolCallId,
           result: event.result,
         })),
-        toolItemIdByCallId: toolState.toolItemIdByCallId,
-      }
-    }
-
-    case 'assistant.turn.completed': {
-      const closedAssistantSegment = closeAssistantSegment(state, event.assistantTurnId)
-      return {
-        items: closedAssistantSegment.items ?? state.items,
-        activeAssistantItemIdByTurnId:
-          closedAssistantSegment.activeAssistantItemIdByTurnId ??
-          state.activeAssistantItemIdByTurnId,
-        activeAssistantTurnId:
-          state.activeAssistantTurnId === event.assistantTurnId
-            ? null
-            : state.activeAssistantTurnId,
       }
     }
 
@@ -389,6 +302,7 @@ function reduceServerEvent(state: ChatState, event: ServerEvent): Partial<ChatSt
       return {
         connectionStatus: 'error',
         errorMessage: `${event.code}: ${event.message}`,
+        isGenerating: false,
       }
   }
 }
@@ -400,9 +314,9 @@ export const useChatStore = create<ChatStore>()((set) => ({
       connectionStatus: status,
     })
   },
-  stageUserTurn: ({ userTurnId, content }) => {
+  stageUserMessage: ({ userMessageId, content }) => {
     set((state) => ({
-      pendingUserMessages: upsertPendingMessage(state.pendingUserMessages, userTurnId, content),
+      pendingUserMessages: upsertPendingMessage(state.pendingUserMessages, userMessageId, content),
     }))
   },
   applyServerEvent: (event) => {

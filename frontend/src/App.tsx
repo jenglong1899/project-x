@@ -28,7 +28,7 @@ function App() {
   const sessionId = useChatStore((state) => state.sessionId)
   const items = useChatStore((state) => state.items)
   const pendingUserMessages = useChatStore((state) => state.pendingUserMessages)
-  const activeAssistantTurnId = useChatStore((state) => state.activeAssistantTurnId)
+  const isGenerating = useChatStore((state) => state.isGenerating)
   const clearError = useChatStore((state) => state.clearError)
 
   const feedbackText =
@@ -160,8 +160,8 @@ function App() {
     setComposerError(null)
 
     try {
-      const userTurnId = chatClient.sendUserMessage(draft)
-      if (!userTurnId) {
+      const userMessageId = chatClient.sendUserMessage(draft)
+      if (!userMessageId) {
         return
       }
       setDraft('')
@@ -196,8 +196,6 @@ function App() {
   return (
     <div className="flex h-full overflow-hidden bg-zinc-950 text-zinc-100">
       <ChatSidebar
-        activeAssistantTurnId={activeAssistantTurnId}
-        connectionStatus={connectionStatus}
         mobileVisible={mobileSidebarOpen}
         onCloseMobile={() => setMobileSidebarOpen(false)}
         sessionEntries={sessionEntries}
@@ -219,7 +217,7 @@ function App() {
               <div className="min-w-0 truncate">
                 WebSocket：{connectionStatus}
                 {sessionId ? ` · 会话：${previewText(sessionId)}` : ' · 等待会话启动'}
-                {activeAssistantTurnId ? ' · 生成中' : ''}
+                {isGenerating ? ' · 生成中' : ''}
                 {errorMessage ? ` · 错误：${errorMessage}` : ''}
               </div>
             </div>

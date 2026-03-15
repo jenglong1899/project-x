@@ -8,8 +8,6 @@ type SessionEntry = {
 }
 
 type ChatSidebarProps = {
-  activeAssistantTurnId: string | null
-  connectionStatus: string
   mobileVisible: boolean
   onCloseMobile: () => void
   sessionEntries: SessionEntry[]

@@ -133,19 +133,19 @@ export class ChatClient {
       throw new Error('WebSocket 尚未连接，无法发送消息。')
     }
 
-    const userTurnId = crypto.randomUUID()
+    const userMessageId = crypto.randomUUID()
     const command = parseClientCommand({
       type: 'send_user_message',
-      userTurnId,
+      userMessageId,
       content: trimmedContent,
     })
 
-    useChatStore.getState().stageUserTurn({
-      userTurnId,
+    useChatStore.getState().stageUserMessage({
+      userMessageId,
       content: trimmedContent,
     })
     socket.send(JSON.stringify(command))
-    return userTurnId
+    return userMessageId
   }
 
   ping() {
