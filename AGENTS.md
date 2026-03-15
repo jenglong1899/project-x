@@ -22,14 +22,6 @@
 ## 前端
 - 前端在 `frontend/`，当前是 Vite + React 19 + TypeScript。
 - 面向当前用户教学的浏览器基础讲义放在 `docs/teach/teach_browser_basics.md`，用于承接 DOM / 布局 / 滚动 / React 与浏览器关系这类更底层的问题。
-- `docs/teach/teach_browser_basics.md` 已补充 `App.tsx` 中聊天主区域三层结构（占位层 / 滚动层 / 内容层）的讲解，重点解释 `flex-1`、`min-h-0`、`overflow-auto`、`w-full + max-w-* + mx-auto` 这类组合为什么常一起出现。
-- 当前用户对 `min-h-0` 最容易卡住的点是“内容”这个词太抽象；教学时应改用“内部盒子自然想占的空间 / 高度”来解释，而不是说文本内容。
-- `docs/teach/teach_browser_basics.md` 的 `min-h-0` 段落已补充 800px 页面高度的 ASCII 示意图，用“父布局只给 600px，但内部自然想要 3000px”的冲突来解释为什么不加 `min-h-0` 会把布局顶坏。
-- 当前用户还会把 `h-full` 理解成“凭空等于屏幕高度”；教学时要强调它更接近“吃满父元素已经确定下来的内容区高度”，前提是父元素先有高度。
-- 当前用户还会追问“内容区”“算好的高度”是什么意思；教学时要拆成两层：`内容区` 是盒模型里给子元素摆放的那块区域，`算好的高度` 是浏览器完成布局计算后得到的实际高度结果。
-- 当前用户已经能用“视角窗口 / 内容纸带”来理解滚动；后续讲第二层和第三层时，可以顺着这个比喻说：第二层近似是滚动容器 / 可视窗口，第三层近似是内容承载层，但真正的消息卡片还在第三层里面。
-- 当前用户对 `relative / absolute` 的卡点主要不是语法名词，而是“`absolute` 到底相对谁定位”；教学时优先用“参照物 / 坐标系”解释，并直接绑定到 `App.tsx` 里右下角“跳到最新”按钮。
-- 针对当前用户这类“布局 / 滚动为什么这样写”的问题，教学上优先引导他先看浏览器 DevTools 的 `Elements` / `Computed` / 盒模型；React DevTools 主要用于补充组件树、props、state，不是第一观察工具。
 - 面向当前用户教学的前端基础讲义放在 `docs/teach/teach_frontend_store_basics.md`，后续关于 App / protocol / zustand selector / store 基础问题优先在这份文档对应小节补充，而不是在末尾追加。
 - `frontend/src/App.tsx` ：左侧信息侧栏，右侧单栏时间线，底部输入区；侧栏里的新会话、刷新列表、工作目录、暂停等当前后端未提供的功能只做禁用态 mock。
 - `frontend/src/App.css` 只保留根节点占满视口，其余样式由 Tailwind 负责。
