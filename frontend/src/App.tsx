@@ -5,7 +5,6 @@ import { chatClient } from '@/features/chat/client'
 import { AssistantTurnBubble } from '@/features/chat/components/assistant-turn-bubble'
 import { ChatComposer } from '@/features/chat/components/chat-composer'
 import { ChatSidebar } from '@/features/chat/components/chat-sidebar'
-import { EmptyChatState } from '@/features/chat/components/empty-chat-state'
 import { ToolCallCard } from '@/features/chat/components/tool-call-card'
 import { UserTurnBubble } from '@/features/chat/components/user-turn-bubble'
 import { useChatStore } from '@/features/chat/store'
@@ -199,12 +198,9 @@ function App() {
       <ChatSidebar
         activeAssistantTurnId={activeAssistantTurnId}
         connectionStatus={connectionStatus}
-        itemCount={items.length}
         mobileVisible={mobileSidebarOpen}
         onCloseMobile={() => setMobileSidebarOpen(false)}
-        pendingCount={pendingUserMessages.length}
         sessionEntries={sessionEntries}
-        sessionId={sessionId}
       />
 
       <main className="flex min-h-0 min-w-0 flex-1 flex-col lg:pl-0">
@@ -227,9 +223,6 @@ function App() {
                 {errorMessage ? ` · 错误：${errorMessage}` : ''}
               </div>
             </div>
-            <div className="hidden shrink-0 text-zinc-500 sm:block">
-              时间线风格 · tool 同卡展示
-            </div>
           </div>
         </header>
 
@@ -248,9 +241,7 @@ function App() {
 
                   return <ToolCallCard key={item.id} item={item} />
                 })
-              ) : (
-                <EmptyChatState />
-              )}
+              ) : null}
             </div>
           </div>
 

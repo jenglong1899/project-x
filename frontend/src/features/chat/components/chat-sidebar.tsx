@@ -10,12 +10,9 @@ type SessionEntry = {
 type ChatSidebarProps = {
   activeAssistantTurnId: string | null
   connectionStatus: string
-  itemCount: number
   mobileVisible: boolean
   onCloseMobile: () => void
-  pendingCount: number
   sessionEntries: SessionEntry[]
-  sessionId: string | null
 }
 
 function sidebarVisibilityClassName(mobileVisible: boolean): string {
@@ -23,14 +20,9 @@ function sidebarVisibilityClassName(mobileVisible: boolean): string {
 }
 
 export function ChatSidebar({
-  activeAssistantTurnId,
-  connectionStatus,
-  itemCount,
   mobileVisible,
   onCloseMobile,
-  pendingCount,
   sessionEntries,
-  sessionId,
 }: ChatSidebarProps) {
   return (
     <>
@@ -52,13 +44,8 @@ export function ChatSidebar({
         <div className="flex items-center justify-between gap-2">
           <div>
             <div className="text-sm font-semibold text-zinc-100">CatClaw</div>
-            <div className="mt-1 text-xs text-zinc-400">timeline workspace</div>
           </div>
           <div className="flex items-center gap-2">
-            <div className="text-right text-xs text-zinc-400">
-              <div>{connectionStatus}</div>
-              <div>{activeAssistantTurnId ? '生成中' : '空闲'}</div>
-            </div>
             <Button className="lg:hidden" onClick={onCloseMobile} size="sm" type="button" variant="ghost">
               关闭
             </Button>
@@ -72,12 +59,6 @@ export function ChatSidebar({
           <Button disabled size="sm" type="button" variant="secondary">
             刷新列表
           </Button>
-        </div>
-
-        <div className="mt-3 rounded-md border border-zinc-800 bg-zinc-900/60 p-3 text-xs text-zinc-400">
-          <div>当前会话：{sessionId ?? '等待会话建立'}</div>
-          <div className="mt-2">时间线条目：{itemCount}</div>
-          <div className="mt-2">待发送消息：{pendingCount}</div>
         </div>
 
         <div className="mt-3">
