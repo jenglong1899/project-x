@@ -386,13 +386,16 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                 )
                 continue
 
-            if isinstance(command, PingCommand):
-                continue
+            match command:
+                case PingCommand():
+                    continue
+                case SendUserMessageCommand(userTurnId=user_turn_id, content=content):
+                    session.enqueue_user_message(
+                        user_turn_id=user_turn_id,
+                        content=content,
+                    )
+                # 这里不需要再做容错，因为一开始已经过滤掉了不认识的command
 
-            session.enqueue_user_message(
-                user_turn_id=command.userTurnId,
-                content=command.content,
-            )
     except WebSocketDisconnect:
         pass
     finally:
