@@ -81,6 +81,17 @@ mode:Literal['w','a']
 有时候你就是想追加写，那么直接用这个就可以了
 用replace来做追加写的话，你还要读一下最后的内容。
 
+# session store
+用jsonl存储，路径在~/.bionic-claw/sessions/中
+分为两大部分，一个是 meta 元数据，一个是 messages 数组
+名字用coolname+时间戳（coolname要用第三方库，不要自己手搓）
+
+meta包括：
+- display-name：用户发的第一句话。这个是给前端展示用的，前端不展示这个jsonl的名字，而是展示这个。
+
+messages中，每个message还要有个meta字段，包括
+- timestamp
+
 # 记忆
 发现messages中是第一次调用reset context，那么第一次调用的时候先不执行，而是返回提示，类似于“请再检查一下你的记忆文档写的怎么样了”
 
