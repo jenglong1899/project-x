@@ -43,7 +43,7 @@ export function ChatSidebar({
       >
         <div className="flex items-center justify-between gap-2">
           <div>
-            <div className="text-sm font-semibold text-zinc-100">CatClaw</div>
+            <div className="text-sm font-semibold text-zinc-100">Bionic Claw</div>
           </div>
           <div className="flex items-center gap-2">
             <Button className="lg:hidden" onClick={onCloseMobile} size="sm" type="button" variant="ghost">

@@ -68,12 +68,12 @@ def parse_client_command(payload: dict[str, Any]) -> ClientCommand:
 
 
 def resolve_model_config() -> ModelConfig:
-    model_key = os.getenv("CATCLAW_MODEL_CONFIG", "qwen35plus")
+    model_key = os.getenv("BIONIC_CLAW_MODEL_CONFIG", "qwen35plus")
     model_config = MODEL_CONFIGS.get(model_key)
     if model_config is None:
         supported = ", ".join(sorted(MODEL_CONFIGS))
         raise RuntimeError(
-            f"CATCLAW_MODEL_CONFIG={model_key} 不受支持，可选值: {supported}"
+            f"BIONIC_CLAW_MODEL_CONFIG={model_key} 不受支持，可选值: {supported}"
         )
     if not model_config.api_key:
         raise RuntimeError(f"{model_key} 对应的 API key 未配置")
@@ -92,7 +92,7 @@ class ChatSession:
         self._closed = False
 
         self._agent = Agent(
-            name="catclaw-web",
+            name="bionic-claw-web",
             model_config=resolve_model_config(),
             system_instruction=SYSTEM_INSTRUCTION,
             user_instruction=USER_INSTRUCTION,
