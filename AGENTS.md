@@ -65,4 +65,4 @@
 ## 教学资料
 - 浏览器基础讲义位于 `docs/teach/teach_browser_basics.md`，用于承接 DOM、布局、滚动、React 与浏览器关系等更底层的问题。
 - 前端基础讲义位于 `docs/teach/teach_frontend_store_basics.md`；后续关于 App、protocol、zustand selector、store 基础问题，优先在这份文档对应小节补充，而不是在文末追加。
-- 后端异步基础讲义位于 `docs/teach/teach_backend_asyncio_basics.md`；后续关于 `asyncio`、事件循环、`await`、`create_task()`、`to_thread()`、WebSocket 会话并发模型的问题，优先在这份文档对应小节补充。
+- 后端异步基础讲义位于 `docs/teach/teach_backend_asyncio_basics.md`；后续关于 `asyncio`、事件循环、`await`、`create_task()`、`to_thread()`、`AbstractEventLoop`、WebSocket 会话并发模型的问题，优先在这份文档对应小节补充。
