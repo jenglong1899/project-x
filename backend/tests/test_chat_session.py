@@ -58,7 +58,6 @@ class ChatSessionTests(unittest.IsolatedAsyncioTestCase):
                 tool_call_id="call_1",
                 tool_name="bash",
                 arguments_delta='{"command":"pwd"}',
-                arguments='{"command":"pwd"}',
             )
             callbacks.on_ai_tool_call_finished(
                 index=0,

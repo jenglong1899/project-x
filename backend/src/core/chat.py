@@ -33,7 +33,6 @@ class OnAiToolCallArgumentsDelta(Protocol):
             tool_call_id: str | None,
             tool_name: str | None,
             arguments_delta: str,
-            arguments: str,
     ) -> None: ...
 
 
@@ -223,7 +222,6 @@ def stream(*, model_config: ModelConfig,
                     tool_call_id=tool_call["id"] or None,
                     tool_name=tool_call["function"]["name"] or None,
                     arguments_delta=arguments_delta,
-                    arguments=tool_call["function"]["arguments"],
                 )
 
     assistant_message: dict[str, Any] = {

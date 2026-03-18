@@ -103,7 +103,6 @@ class ToolProjectionState:
     tool_call_id: str
     tool_name: str
     index: int
-    arguments: str = ""
 
 
 class ChatEventProjector:
@@ -160,7 +159,6 @@ class ChatEventProjector:
         tool_call_id: str | None,
         tool_name: str | None,
         arguments_delta: str,
-        arguments: str,
     ) -> None:
         resolved_tool_call_id = self._require_tool_call_id(tool_call_id)
         self._close_assistant_message()
@@ -169,10 +167,6 @@ class ChatEventProjector:
             tool_call_id=resolved_tool_call_id,
             tool_name=tool_name,
         )
-        tool_state.arguments += arguments_delta
-        # 用底层累计快照兜底，避免上游分片异常时本地状态漂移。
-        if tool_state.arguments != arguments:
-            tool_state.arguments = arguments
         self._emit(
             {
                 "type": "tool.arguments.delta",
@@ -196,7 +190,6 @@ class ChatEventProjector:
             tool_call_id=resolved_tool_call_id,
             tool_name=tool_name,
         )
-        tool_state.arguments = arguments
         self._emit(
             {
                 "type": "tool.completed",
