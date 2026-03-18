@@ -310,7 +310,6 @@ class ChatSession:
         self._loop = loop
         self._outgoing_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
         self._closed = False
-        self._run_lock = asyncio.Lock()
         self._pending_user_contents: dict[str, str] = {}
         self._pending_user_contents_lock = threading.Lock()
         self._runner_task: asyncio.Task[None] | None = None
@@ -340,26 +339,24 @@ class ChatSession:
         return await self._outgoing_queue.get()
 
     async def submit_user_message(self, *, user_message_id: str, content: str) -> None:
-        async with self._run_lock:
-            if self._closed:
-                raise RuntimeError("session 已关闭")
+        if self._closed:
+            raise RuntimeError("session 已关闭")
 
-            with self._pending_user_contents_lock:
-                self._pending_user_contents[user_message_id] = content
+        with self._pending_user_contents_lock:
+            self._pending_user_contents[user_message_id] = content
 
-            self._agent.enqueue_user_message(
-                frontend_msg_id=user_message_id,
-                user_message=content,
-            )
+        self._agent.enqueue_user_message(
+            frontend_msg_id=user_message_id,
+            user_message=content,
+        )
 
-            if self._runner_task is None or self._runner_task.done():
-                self._runner_task = asyncio.create_task(self._run_agent_until_idle())
+        if self._runner_task is None or self._runner_task.done():
+            self._runner_task = asyncio.create_task(self._run_agent_until_idle())
 
     async def close(self) -> None:
-        async with self._run_lock:
-            if self._closed:
-                return
-            self._closed = True
+        if self._closed:
+            return
+        self._closed = True
         await self._outgoing_queue.put(None)
 
     async def _emit(self, event: dict[str, Any]) -> None:
@@ -378,17 +375,15 @@ class ChatSession:
             while True:
                 await asyncio.to_thread(self._agent.run)
                 self._projector.on_agent_run_completed()
-                async with self._run_lock:
-                    if self._closed:
-                        self._runner_task = None
-                        return
-                    if not self._agent.has_pending_user_messages():
-                        self._runner_task = None
-                        return
+                if self._closed:
+                    self._runner_task = None
+                    return
+                if not self._agent.has_pending_user_messages():
+                    self._runner_task = None
+                    return
         except Exception as exc:
             logger.exception("ChatSession agent.run 失败")
-            async with self._run_lock:
-                self._runner_task = None
+            self._runner_task = None
             await self._emit(
                 {
                     "type": "error",

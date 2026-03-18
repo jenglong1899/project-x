@@ -1,3 +1,15 @@
+# 总结
+asyncio是单线程交替执行任务（concurrent，并发），create_task是创建一个任务，在一个任务的代码中调用await比如`await asyncio.sleep(0)`，就表示这个任务主动让出CPU，让这个线程内的其他任务去跑。
+如果是
+```
+if var is none:
+  await do_something()
+  init_var(var)
+```
+这种就有共享变量的风险（即使是在单线程），因为await会让当前任务让出cpu，其他任务就可能会在这期间修改var
+
+asyncio.to_thread才是多线程
+
 # 后端异步基础
 
 ## 你的问题：什么是 `asyncio` 的事件循环？
