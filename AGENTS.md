@@ -1,8 +1,5 @@
 # 项目记忆
 
-## 基础信息
-- 仓库目录名是 `bionic-claw`，项目对外展示名用 `Bionic Claw`。
-
 ## 前端
 
 ### 技术栈与基础设施
@@ -30,6 +27,7 @@
 ## 产品约束
 - `docs/spec/brief.md` 明确网页端当前只支持流式交互。
 - `docs/spec/frontend.md` 要求前端 UI 保持简约，整体接近 ChatGPT 的单栏聊天页；思维链和工具调用默认展开；同一个工具调用的 tool call 与 tool result 必须放在同一张卡片里；前端技术栈固定为 `ts + zustand store + tailwind + shadcn + zod`。
+- `docs/zh/spec/memory_and_multiagent.md` 定义了一个草案：基于 steer conversation 的 multi-agent 机制中，agent 之间通过 user message 异步通信；需要 `Create subagent` 和 `send message to agent` 两类工具；消息体用 `<msg from="agent_name">...</msg>` 包裹；还要有一个独立的 memory agent 负责为工作 agent 做遗忘/摘要决策，并能监听会话日志增量、检索历史 JSONL 聊天记录后写入记忆文档。
 
 ## 后端
 
@@ -63,6 +61,6 @@
 - `backend/tests/test_chat_session.py` 用假 `Agent` 覆盖了两类关键时序：`assistant -> tool -> assistant` 的流式事件顺序，以及同一生成期内连续消费多条排队 user message。
 
 ## 教学资料
-- 浏览器基础讲义位于 `docs/teach/teach_browser_basics.md`，用于承接 DOM、布局、滚动、React 与浏览器关系等更底层的问题。
-- 前端基础讲义位于 `docs/teach/teach_frontend_store_basics.md`；后续关于 App、protocol、zustand selector、store 基础问题，优先在这份文档对应小节补充，而不是在文末追加。
-- 后端异步基础讲义位于 `docs/teach/teach_backend_asyncio_basics.md`；后续关于 `asyncio`、事件循环、`await`、`create_task()`、`to_thread()`、`AbstractEventLoop`、WebSocket 会话并发模型的问题，优先在这份文档对应小节补充。
+- 浏览器基础讲义位于 `docs/zh/teach/teach_browser_basics.md`，用于承接 DOM、布局、滚动、React 与浏览器关系等更底层的问题。
+- 前端基础讲义位于 `docs/zh/teach/teach_frontend_store_basics.md`；后续关于 App、protocol、zustand selector、store 基础问题，优先在这份文档对应小节补充，而不是在文末追加。
+- 后端异步基础讲义位于 `docs/zh/teach/teach_backend_asyncio_basics.md`；后续关于 `asyncio`、事件循环、`await`、`create_task()`、`to_thread()`、`AbstractEventLoop`、WebSocket 会话并发模型的问题，优先在这份文档对应小节补充。

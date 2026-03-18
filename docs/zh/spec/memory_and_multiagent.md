@@ -1,0 +1,10 @@
+我要基于Steer conversation做一个multiagent机制。
+Agent之间通过user message来沟通，就是通过steer conversation。这样的话你就可以异步地沟通，模型可以选择立刻回复还是稍后回复。用user message而不是tool call，就是因为如果你发了tool call的话，那么你必须在下一轮附上tool result，这样就没法实现异步沟通。
+要有一个工具叫做Create subagent，参数是agent的名字。还有一个first msg参数，就是就是给这个subagent的第一句话，就是说交给他的任务吧。
+要有一个工具叫做send message to agent，参数agent_name和msg，底层就是通过enqueue user message
+系统要用XML包裹msg，类似这样 <msg from="agent_name"> some content </msg> 
+
+另外一个我要做的东西就是基于这个multiagent，我想做一个和现在市面上常见的记忆机制不一样的记忆机制
+原理就和人脑类似。人的大脑分成慢系统和快系统。快系统的功能之一就是他会搞那个记忆嘛。就是他会自主地决定遗忘什么、记住什么。人类不会记住前几天自己说过的就是完整的话，但是他会记住一个大概，他会有个大概的印象。
+你是可以在指令里面告诉Agent要频繁地记录自己的记忆，但是这样会让他分心。所以我希望是有两个Agent，一个Agent就是负责干活的（和用户交互的），另外一个Agent就是给那个干活的Agent记录记忆的。他会做摘要，他会决定要不要对某个内容做摘要，还是判定直接遗忘就可以了。它这个记忆Agent还可以搜索之前的完整聊天记录（jsonl文件）
+我感觉我这个系统就是要有个工具用来监控这个慢系统Agent的谈话记录。如果谈话记录的文件有新增内容，就自动发送一个User Message来提醒那个记忆Agent，让他决定要不要做摘要，然后写入到文档里面。
