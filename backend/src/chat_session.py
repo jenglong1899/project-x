@@ -373,6 +373,10 @@ class ChatSession:
         self._projector.on_generation_started()
         try:
             while True:
+                # 耗时间的任务要await异步跑，把cpu让给其他任务
+                # 那为啥使用to_thread而不是create_task？
+                # 因为agent的run()一开始就是设计成sync的
+                # TODO：把run整个调用链改成异步的，run主要是等网络，不吃cpu，用不着并行
                 await asyncio.to_thread(self._agent.run)
                 self._projector.on_agent_run_completed()
                 if self._closed:

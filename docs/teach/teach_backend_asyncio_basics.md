@@ -362,6 +362,53 @@ await fake_receive_user_messages(session_queue)
   - 共享数据要更小心
   - 取消 `await to_thread(...)`，通常也不等于强行杀掉那个线程里已经开始执行的函数
 
+## 你的问题：那是不是把 `run()` 改成异步函数就更好？
+
+- 先说结论
+  - 只有“端到端都改成真正异步”时，通常才算更好
+  - 只是把函数声明从 `def run(...)` 改成 `async def run(...)`，本身没有意义
+
+- 为什么“只改声明”没意义
+  - `async def` 不是性能开关
+  - 一个函数就算声明成异步，如果里面仍然是同步阻塞代码，而且中间没有真正的 `await`
+  - 那它运行起来还是会长时间占着事件循环线程
+
+- 什么时候改成异步是更好的方向
+  - 当这个函数的大部分耗时都在“等 IO”
+  - 比如：
+    - 等模型接口流式返回 chunk
+    - 等网络响应
+    - 等异步子进程完成
+  - 这种场景下，如果底层 API 本身支持异步，那么改成真正 async 往往更自然
+  - 因为等待期间它可以 `await`，把事件循环让出去
+
+- 什么时候改成异步也没什么帮助
+  - 当耗时主要是纯 CPU 计算
+  - 或者底层依赖仍然是同步阻塞 API
+  - 例如一个 `async def run()` 里面还是直接调用同步的模型 SDK、同步 `subprocess.run(...)`
+  - 那它只是“看起来像异步”，本质上还是会堵住事件循环
+
+- 回到我们项目当前代码
+  - [backend/src/chat_session.py](/home/bruce/projects/bionic-claw/backend/src/chat_session.py) 里现在用的是 `await asyncio.to_thread(self._agent.run)`
+  - [backend/src/core/agent.py](/home/bruce/projects/bionic-claw/backend/src/core/agent.py) 里的 `run()` 目前是同步函数
+  - [backend/src/core/chat.py](/home/bruce/projects/bionic-claw/backend/src/core/chat.py) 里的 `stream()` 也是同步迭代模型流
+  - [backend/src/tools/bash.py](/home/bruce/projects/bionic-claw/backend/src/tools/bash.py) 里的工具执行是同步 `subprocess.run(...)`
+  - 所以当前这条链路属于“同步阻塞流程”，`to_thread()` 是一个合理的桥接办法
+
+- 如果以后要做成真正更好的异步版本
+  - 重点不是先把 `run()` 改名成 `async def`
+  - 而是把它依赖的阻塞点逐个换成异步实现
+  - 比如：
+    - 模型流读取改成异步 client
+    - 工具执行改成异步子进程
+    - 回调和事件投影保持在事件循环线程内完成
+  - 这样最后才会自然变成 `await agent.run()`
+
+- 所以更准确的判断应该是
+  - “把 `run()` 改成异步”不一定更好
+  - “把整个调用链异步化”如果底层条件允许，通常会比 `to_thread()` 更整洁
+  - 但在当前代码状态下，`to_thread()` 比“假异步”更正确
+
 ## 你的问题：`loop = asyncio.get_running_loop()` 是什么鬼？
 
 - 你现在卡住的点，其实是“什么叫正在运行的 loop”
