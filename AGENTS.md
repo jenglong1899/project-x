@@ -27,7 +27,6 @@
 ## 产品约束
 - `docs/spec/brief.md` 明确网页端当前只支持流式交互。
 - `docs/spec/frontend.md` 要求前端 UI 保持简约，整体接近 ChatGPT 的单栏聊天页；思维链和工具调用默认展开；同一个工具调用的 tool call 与 tool result 必须放在同一张卡片里；前端技术栈固定为 `ts + zustand store + tailwind + shadcn + zod`。
-- `docs/zh/spec/memory_and_multiagent.md` 定义了一个草案：基于 steer conversation 的 multi-agent 机制中，agent 之间通过 user message 异步通信；需要 `Create subagent` 和 `send message to agent` 两类工具；消息体用 `<msg from="agent_name">...</msg>` 包裹；还要有一个独立的 memory agent 负责为工作 agent 做遗忘/摘要决策，并能监听会话日志增量、检索历史 JSONL 聊天记录后写入记忆文档。
 
 ## 后端
 
