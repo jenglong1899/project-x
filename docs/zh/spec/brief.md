@@ -25,12 +25,15 @@ llm是锯齿状智能，应给监督 LLM 的工作过程提供便利。用户如
 ## read
 filepath:str #绝对或相对路径。支持普通文本文件或图片文件。
 context_percentage_limit:float=5 #默认一次性最多读取5%的上下文的内容，如果超过了，就返回空内容并报错，提示总共有多少百分比的内容。
-line_display:bool # 是否显示行号。用sed的那种风格来显示行号
+line_display:bool=True # 是否显示行号。用sed的那种风格来显示行号
 
 ->str
 类似：
 ```
-some_filepath:1-200
+<some_file_path>
+1   some content line 1
+2   some content line 2
+</some_file_path>
 ```
 
 为什么超过了百分比就直接返回空内容，而不是返回5%的内容？我潜意识中有这个答案，但是我一时想不起来了。一种情况好像是，不完整的答案有时候还不如不要
@@ -57,6 +60,7 @@ line_display 之前吃过亏，就是 DS 3.2或者 Minimax 这种算是比较智
 ```
 使用形式为"beginning.*?end-of-text-to-be-replaced"的正则表达式能让你引用一大段文字而无需完整输入它们
 如果是要编辑json文件，你自己现场写个python脚本，用它的json库来编辑可能会更方便。
+编辑html的时候不推荐用正则表达式，很容易出事，推荐用beautifulsoup来编辑。
 ```
 
 这里虽然是用了 Pydantic 的那个 description，但是到时候用的时候还是不要用这个
