@@ -48,7 +48,8 @@
 
 ### Prompt 与记忆
 - `src/prompts/builder.py` 里的记忆路径常量保留 `~` 形式，给 system instruction 复用；真正读写文件时再 `expanduser()`。
-- `build_user_level_instruction_zh()` 会确保 `~/.bionic-claw/memory/summary/main.md` 存在；首次缺失时自动创建，并写入默认记忆“用户刚完成bionic-claw的安装，还没让我做什么事情”。
+- `build_user_level_instruction_zh()` 会确保 `~/.bionic-claw/memories/summary/main.md` 存在；首次缺失时自动创建，并写入默认记忆“用户刚完成bionic-claw的安装，还没让我做什么事情”。
+- 当前主记忆是 `build_user_level_instruction_zh()` 在 agent 构造时一次性读入 `user_instruction` 的快照；运行中的 agent 不会因为 `main.md` 被异步改写而自动看到最新内容，除非后续显式重建 instruction 或 reset context。
 
 ### 服务层与会话编排
 - 后端当前使用 Starlette 做服务层：`backend/main.py` 暴露 `app` 并通过 `uvicorn.run()` 启动；`src/web_app.py` 只保留 `/healthz`、`/ws` 路由和 WebSocket 收发。

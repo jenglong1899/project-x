@@ -48,13 +48,13 @@ def build_system_level_instruction_zh() -> str:
 """
 
 
-# 目录设计成 memory/summary/，是考虑到以后AI可能会为某一些记忆创建一个文件夹，
-# 如果是 memory/，那目录就会变成：
-# memory/originals
-# memory/some_ai_created_folder_1
-# memory/some_ai_created_folder_2
-# memory/main.md
-# memory/some_mem.md
+# 目录设计成 memories/summary/，是考虑到以后AI可能会为某一些记忆创建一个文件夹，
+# 如果是 memories/，那目录就会变成：
+# memories/originals
+# memories/some_ai_created_folder_1
+# memories/some_ai_created_folder_2
+# memories/main.md
+# memories/some_mem.md
 # 看起来很乱
 
 
