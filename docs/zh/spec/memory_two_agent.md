@@ -68,6 +68,8 @@ tool message 5
 
 要不干脆不要“保留最近xx条消息”算了，让文档记录所有的必要信息？
 
+要不不要固定成20条，让记忆agent自己决定要copy哪些。
+
 ### todo reset-context后，要在jsonl的metadata中存储上一个jsonl文件是什么
 metadata见brief.md的session store小节
 
