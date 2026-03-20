@@ -135,7 +135,10 @@ tool: send_msg_to_im_platform(platform_name:str,msg:str)
 
 ai在完成工作后调用send_msg_to_im_platform来发消息给用户。
 
-如果用户想看工作过程，那么应该在 Web 端查看。
+如果用户想看工作过程，那么应该在 Web 端查看？
+
+agent没事做的时候，就查看一下群聊 get_group_chat_msg_since_last_read(im_platform:str,group_id:str)
+能否获得群聊中每个消息的准确发送时间（精准到毫秒？），记录一下最后一次读的消息，其发送时间是多少。
 
 # 上下文百分比相关工具
 一开始是想搞个工具叫count_token_percentage，后面想着做：
