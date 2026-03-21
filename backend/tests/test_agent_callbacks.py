@@ -37,7 +37,7 @@ class AgentCallbackTests(unittest.TestCase):
             on_queued_user_msg_committed=lambda *, frontend_msg_id: committed_ids.append(frontend_msg_id),
         )
 
-        agent.new_session()
+        agent.new_conversation()
         agent.enqueue_user_message(frontend_msg_id="frontend-1", user_message="world")
         drained = agent._safe_drain_user_message_queue(agent._user_msg_queue, agent._messages)
 
@@ -143,7 +143,7 @@ class AgentCallbackTests(unittest.TestCase):
             tools=[self._echo_tool()],
             on_tool_result=lambda **kwargs: tool_results.append(kwargs),
         )
-        agent.new_session()
+        agent.new_conversation()
 
         ai_msg_with_tool_call = {
             "role": "assistant",

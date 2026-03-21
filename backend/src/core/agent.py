@@ -74,13 +74,13 @@ class Agent:
 
         self._user_msg_queue: queue.Queue[QueuedUserMessage] = queue.Queue()
 
-    def new_session(self) -> None:
+    def new_conversation(self) -> None:
         self._messages = [
             {"role": "system", "content": self._system_instruction},
             {"role": "user", "content": self._user_instruction},
         ]
 
-    def resume_session(self, *, session_id: str) -> None:
+    def resume_conversation(self, *, conversation_id: str) -> None:
         raise NotImplementedError
 
     def enqueue_user_message(self, *, frontend_msg_id: str, user_message: str) -> None:
