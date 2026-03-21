@@ -38,11 +38,11 @@
 
 ### 模型流式调用与工具系统
 - `src/core/model_config.py` 里的 `ModelConfig` 提供 `model`、`base_url`、`api_key`，供聊天模型调用使用。
-- `src/core/agent_turn.py` 的 `stream()` 负责发起流式模型请求，把 assistant 消息追加回 `messages`，并分别通过回调推送正文增量和思维链增量。
+- `src/core/agent_turn.py` 的 `stream()` 负责发起流式模型请求，返回最终 assistant message dict，并分别通过回调推送正文增量和思维链增量；它本身不再往 `messages` 里 append。
 - `stream()` 需要兼容 `tool_calls` 的流式拼装，最终返回 OpenAI 风格的 assistant message dict。
 - `stream()` 还支持三类工具调用流式事件：开始、参数增量、结束；`Agent` 会把这三类回调继续向外透传。
 - 工具系统合并成 `src/core/agent_turn.py` 里的单一抽象 `ToolSpec`：同一份定义同时包含给模型看的声明信息和本地 `handler` 实现；`Agent` 构造函数接收 `tools: list[ToolSpec]`，并会拒绝重复工具名。
-- `src/core/agent_turn.py` 的 `execute_tool_and_append()` 会按工具名查找 `ToolSpec`、解析 JSON arguments、调用 `handler`、追加 tool message，并通过最小化的 `OnToolResult(tool_call_id, result_json_str)` 回调把工具执行结果向外透传；当前默认始终返回 `ContinueLoopDirective`。如果模型没给 `tool_call_id`，会按工具在该 assistant message 里的顺序兜底生成 `tool_call_{index}`。
+- `src/core/agent_turn.py` 的 `execute_tool_calls()` 会按工具名查找 `ToolSpec`、解析 JSON arguments、调用 `handler`，并通过最小化的 `OnToolResult(tool_call_id, result_json_str)` 回调把工具执行结果向外透传；它返回待 append 的 `tool_messages`，但不直接改 `messages`。
 - `src/core/policies.py` 里有 DeepSeek 特殊规则：发送下一条 user message 前，要去掉上一轮 assistant message 的 `reasoning_content`。
 - `src/core/agent_turn.py` 和 `src/core/agent.py` 的回调接口都用 Protocol，而不是 Callable，以提升可读性。
 - `src/tools/bash.py` 提供最基础的 `BASH_TOOL`：入参用 `BashToolInput` 的 pydantic model 校验，只接收 `command`，通过 `bash -lc` 执行并返回 `stdout`、`stderr`、`returncode`。
@@ -51,6 +51,9 @@
 - `src/prompts/builder.py` 里的记忆路径常量保留 `~` 形式，给 system instruction 复用；真正读写文件时再 `expanduser()`。
 - `build_user_level_instruction_zh()` 会确保 `~/.bionic-claw/memories/summary/main.md` 存在；首次缺失时自动创建，并写入默认记忆“用户刚完成bionic-claw的安装，还没让我做什么事情”。
 - 当前主记忆是 `build_user_level_instruction_zh()` 在 agent 构造时一次性读入 `user_instruction` 的快照；运行中的 agent 不会因为 `main.md` 被异步改写而自动看到最新内容，除非后续显式重建 instruction 或 reset context。
+- `src/conversation_store.py` 会把原始对话以 JSON 文件存到 `~/.bionic-claw/memories/originals/`；文件名格式是 `coolname + UTC时间戳 + .json`，根结构固定为 `meta + messages`，并用 `has_persisted_conversation()` 表示“这轮会话已经有落地 JSON”。
+- conversation JSON 只会在“首条 committed 的后续 user message 进入 `_messages`”时创建，不会在 `new_conversation()` 或 `enqueue_user_message()` 时创建空会话文件。
+- conversation JSON 的 `meta.display-name` 取首条 committed 的后续 user message，最多保留 10 个字符；`messages` 中每条消息都会额外带一个 `meta.timestamp`。
 
 ### 服务层与会话编排
 - 后端当前使用 Starlette 做服务层：`backend/main.py` 暴露 `app` 并通过 `uvicorn.run()` 启动；`src/web_app.py` 只保留 `/healthz`、`/ws` 路由和 WebSocket 收发。

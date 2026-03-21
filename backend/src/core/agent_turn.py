@@ -254,7 +254,6 @@ def stream(*, model_config: ModelConfig,
     if reasoning_parts:
         assistant_message["reasoning_content"] = "".join(reasoning_parts)
 
-    messages.append(assistant_message)
     return assistant_message
 
 
@@ -272,6 +271,12 @@ class ContinueLoopDirective:
 
 
 OrchestratorDirective: TypeAlias = ContinueLoopDirective | ResetContextDirective
+
+
+@dataclass(frozen=True)
+class ToolExecutionOutcome:
+    tool_messages: list[dict[str, Any]]
+    directive: OrchestratorDirective
 
 
 class OnToolResult(Protocol):
@@ -296,10 +301,10 @@ def _stringify_tool_result(result: Any) -> str:
     return json.dumps(result, ensure_ascii=False)
 
 
-def execute_tool_and_append(*, ai_msg_dict: dict[str, Any],
-                            messages: list[dict[str, Any]],
-                            tools_by_name: Mapping[str, ToolSpec],
-                            on_tool_result: OnToolResult) -> OrchestratorDirective:
+def execute_tool_calls(*, ai_msg_dict: dict[str, Any],
+                       tools_by_name: Mapping[str, ToolSpec],
+                       on_tool_result: OnToolResult) -> ToolExecutionOutcome:
+    tool_messages: list[dict[str, Any]] = []
     for index, tool_call in enumerate(ai_msg_dict.get("tool_calls", [])):
         function_payload = _get_field(tool_call, "function", {})
         tool_name = _get_field(function_payload, "name")
@@ -317,11 +322,14 @@ def execute_tool_and_append(*, ai_msg_dict: dict[str, Any],
         result_json_str = _stringify_tool_result(tool_result)
         tool_call_id = _get_field(tool_call, "id")
         tool_msg: dict[str, Any] = {"role": "tool", "content": result_json_str, "tool_call_id": tool_call_id}
-        messages.append(tool_msg)
+        tool_messages.append(tool_msg)
 
         on_tool_result(
             tool_call_id=tool_call_id,
             result_json_str=result_json_str,
         )
 
-    return ContinueLoopDirective()
+    return ToolExecutionOutcome(
+        tool_messages=tool_messages,
+        directive=ContinueLoopDirective(),
+    )

@@ -39,7 +39,7 @@ def build_system_level_instruction_zh() -> str:
 
 你会被提供一个工具叫reset_context，这个工具执行后，你当前的上下文（记忆）会被清空，然后系统会给你加载main.md
 
-你所有的完整记忆（和用户的对话、你做的事情）都存储在 {ORIGINALS_DIR.as_posix()}/ 的jsonl文件中，你可以用 grep 来搜索，你不能修改这其中的任何jsonl文件。
+你所有的完整记忆（和用户的对话、你做的事情）都存储在 {ORIGINALS_DIR.as_posix()}/ 的json文件中，你可以用 grep 来搜索，你不能修改这其中的任何json文件。
 </reference_method>
 
 </memory_mechanism>

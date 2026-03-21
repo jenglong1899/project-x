@@ -2,9 +2,10 @@ import queue
 from typing import Any, Protocol
 from dataclasses import dataclass
 
+from src.conversation_store import ConversationStore
 from src.core.agent_turn import (
     stream,
-    execute_tool_and_append,
+    execute_tool_calls,
     OnAiContentDelta,
     OnAiReasoningDelta,
     OnAiToolCallStarted,
@@ -74,11 +75,19 @@ class Agent:
 
         self._user_msg_queue: queue.Queue[QueuedUserMessage] = queue.Queue()
 
+        # 调用Agent的必须选择 new_conversation 或者 resume_conversation，
+        # self._conversation_store 会在这两个函数中被初始化。
+        self._conversation_store: ConversationStore | None = None
+
     def new_conversation(self) -> None:
         self._messages = [
             {"role": "system", "content": self._system_instruction},
             {"role": "user", "content": self._user_instruction},
         ]
+        self._conversation_store = ConversationStore(
+            system_instruction=self._system_instruction,
+            user_instruction=self._user_instruction,
+        )
 
     def resume_conversation(self, *, conversation_id: str) -> None:
         raise NotImplementedError
@@ -101,8 +110,22 @@ class Agent:
 
             strip_reasoning_content_if_needed(model=self._model_config.model, messages=messages)
             drained += 1
-            messages.append({"role": "user", "content": item.content})
+            user_message = {"role": "user", "content": item.content}
+            self._messages.append(user_message)
+            # 只有等到用户发送了一个消息 之后，才创建对话文件。
+            # 不然用户创建了一个会话，但是没有说任何内容，然后这个对话文件就被持久化下来了，
+            # 然后用户 resume conversation ，结果发现这玩意是空的，这就很不合理。
+            if not self._conversation_store.has_persisted_conversation():
+                self._conversation_store.start_with_first_user_message(user_content=item.content)
+            else:
+                self._conversation_store.append_message(user_message)
             self._on_queued_user_msg_committed(frontend_msg_id=item.frontend_msg_id)
+
+    def _append_runtime_message(self, message: dict[str, Any]) -> None:
+        # 这个函数被用的地方都是在 run 函数的后方，
+        # run开头就drain user message，这函数出来之后一定是已经有持久化文件了。
+        self._messages.append(message)
+        self._conversation_store.append_message(message)
 
     @staticmethod
     def _safe_stream(*, model_config: ModelConfig,
@@ -113,6 +136,9 @@ class Agent:
                      on_ai_tool_call_started: OnAiToolCallStarted,
                      on_ai_tool_call_arguments_delta: OnAiToolCallArgumentsDelta,
                      on_ai_tool_call_finished: OnAiToolCallFinished) -> dict[str, Any]:
+        """
+        :return: ai message dict
+        """
         # 如果 Agent 之前正在运行，然后结果突然被中断了，
         # 那就可能导致 message 数组最后一个可能是 AI message with tool call，
         # 这种情况下就应该再续上之前的对话，不应该再调用 stream 以获得 AI message 了
@@ -143,16 +169,20 @@ class Agent:
                                             on_ai_tool_call_arguments_delta=self._on_ai_tool_call_arguments_delta,
                                             on_ai_tool_call_finished=self._on_ai_tool_call_finished,
                                             )
+            if not self._messages or ai_msg_dict is not self._messages[-1]:
+                self._append_runtime_message(ai_msg_dict)
             if not ai_msg_dict.get("tool_calls"):
                 return ai_msg_dict
 
-            orchestrator_directive = execute_tool_and_append(
+            tool_execution = execute_tool_calls(
                 ai_msg_dict=ai_msg_dict,
-                messages=self._messages,
                 tools_by_name=self._tools_by_name,
                 on_tool_result=self._on_tool_result,
             )
-            if isinstance(orchestrator_directive, ResetContextDirective):
+            for tool_message in tool_execution.tool_messages:
+                self._append_runtime_message(tool_message)
+
+            if isinstance(tool_execution.directive, ResetContextDirective):
                 self._reset_context()
                 continue
 
