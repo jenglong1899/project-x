@@ -78,7 +78,6 @@ class ChatSessionTests(unittest.IsolatedAsyncioTestCase):
                 scripted_runs=[scripted_run],
             ),
         )
-        await session.send_session_started()
         await session.submit_user_message(user_message_id="user-1", content="你好")
 
         events = await self._collect_events_until_generation_completed(session)
@@ -86,7 +85,6 @@ class ChatSessionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [event["type"] for event in events],
             [
-                "session.started",
                 "generation.started",
                 "user.message.committed",
                 "assistant.message.started",
@@ -104,24 +102,24 @@ class ChatSessionTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
         self.assertEqual(
-            events[2],
+            events[1],
             {
                 "type": "user.message.committed",
                 "userMessageId": "user-1",
                 "content": "你好",
             },
         )
-        first_message_id = events[3]["messageId"]
-        second_message_id = events[11]["messageId"]
+        first_message_id = events[2]["messageId"]
+        second_message_id = events[10]["messageId"]
         self.assertNotEqual(first_message_id, second_message_id)
+        self.assertEqual(events[3]["messageId"], first_message_id)
         self.assertEqual(events[4]["messageId"], first_message_id)
         self.assertEqual(events[5]["messageId"], first_message_id)
-        self.assertEqual(events[6]["messageId"], first_message_id)
+        self.assertEqual(events[11]["messageId"], second_message_id)
         self.assertEqual(events[12]["messageId"], second_message_id)
-        self.assertEqual(events[13]["messageId"], second_message_id)
-        self.assertEqual(events[7]["toolCallId"], "call_1")
+        self.assertEqual(events[6]["toolCallId"], "call_1")
         self.assertEqual(
-            events[8],
+            events[7],
             {
                 "type": "tool.arguments.delta",
                 "toolCallId": "call_1",
@@ -130,7 +128,7 @@ class ChatSessionTests(unittest.IsolatedAsyncioTestCase):
             },
         )
         self.assertEqual(
-            events[9],
+            events[8],
             {
                 "type": "tool.completed",
                 "toolCallId": "call_1",
@@ -138,7 +136,7 @@ class ChatSessionTests(unittest.IsolatedAsyncioTestCase):
                 "arguments": '{"command":"pwd"}',
             },
         )
-        self.assertEqual(events[10]["result"], '{"stdout":"/tmp"}')
+        self.assertEqual(events[9]["result"], '{"stdout":"/tmp"}')
 
         await session.close()
 
@@ -163,7 +161,6 @@ class ChatSessionTests(unittest.IsolatedAsyncioTestCase):
                 ],
             ),
         )
-        await session.send_session_started()
         await session.submit_user_message(user_message_id="user-1", content="第一条")
         await session.submit_user_message(user_message_id="user-2", content="第二条")
 

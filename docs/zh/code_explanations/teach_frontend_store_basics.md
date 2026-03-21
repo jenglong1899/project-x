@@ -27,7 +27,6 @@
 
 - `connectionStatus`
 - `errorMessage`
-- `sessionId`
 - `items`
 - `pendingUserMessages`
 - `activeAssistantTurnId`
@@ -816,19 +815,7 @@ useEffect(() => {
 
 错误既可能来自前端本地逻辑，也可能来自后端通过 WebSocket 发来的 `error` 事件。
 
-### 4.3 `sessionId`
-
-它表示“后端已经成功创建的聊天会话 ID”。
-
-之所以需要 `session.started` 这个协议事件，是因为：
-
-- 会话 ID 的权威来源在后端
-- WebSocket 已连接，不代表聊天会话一定初始化成功
-- 前端界面确实要显示这个会话 ID
-
-所以 `session.started` 的意思不是“连接建立了”，而是“后端业务会话建立好了，而且它的 ID 是这个”。
-
-### 4.4 `items`
+### 4.3 `items`
 
 它是时间线卡片数组，也是最核心的状态。
 
@@ -836,7 +823,7 @@ useEffect(() => {
 
 这就是为什么 store 里会有很多“根据事件更新状态”的逻辑。
 
-### 4.5 `pendingUserMessages`
+### 4.4 `pendingUserMessages`
 
 它表示“用户已经点发送，但后端还没正式确认提交进会话”的消息。
 
@@ -845,7 +832,7 @@ useEffect(() => {
 1. 前端本地先暂存
 2. 后端确认后，才真正进入时间线 `items`
 
-### 4.6 `activeAssistantTurnId`
+### 4.5 `activeAssistantTurnId`
 
 它表示“当前是否有一轮 assistant 正在生成”。
 
@@ -857,7 +844,6 @@ useEffect(() => {
 
 前端不是直接拿到一整块最终结果，而是持续收到很多事件，例如：
 
-- `session.started`
 - `user.turn.enqueued`
 - `user.turn.committed`
 - `assistant.content.delta`

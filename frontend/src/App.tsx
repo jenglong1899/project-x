@@ -13,11 +13,6 @@ import './App.css'
 
 const SCROLL_BOTTOM_THRESHOLD_PX = 60
 
-function previewText(text: string): string {
-  const normalized = text.replace(/\s+/g, ' ').trim()
-  return normalized || '等待内容...'
-}
-
 function App() {
   const [draft, setDraft] = useState('')
   const [composerError, setComposerError] = useState<string | null>(null)
@@ -25,7 +20,6 @@ function App() {
 
   const connectionStatus = useChatStore((state) => state.connectionStatus)
   const errorMessage = useChatStore((state) => state.errorMessage)
-  const sessionId = useChatStore((state) => state.sessionId)
   const items = useChatStore((state) => state.items)
   const pendingUserMessages = useChatStore((state) => state.pendingUserMessages)
   const isGenerating = useChatStore((state) => state.isGenerating)
@@ -37,7 +31,6 @@ function App() {
   const scrollRef = useRef<HTMLDivElement>(null)
   const scrollToBottomRafIdRef = useRef<number | null>(null)
   const shouldFollowOutputRef = useRef(true)
-  const shouldForceScrollOnNextUpdateRef = useRef(false)
   const lastContentFingerprintRef = useRef('')
   const [isAtBottom, setIsAtBottom] = useState(true)
   const [hasNewContent, setHasNewContent] = useState(false)
@@ -102,24 +95,13 @@ function App() {
 
   useEffect(() => {
     const unsubscribe = useChatStore.subscribe((next, prev) => {
-      if (
-        next.items === prev.items &&
-        next.pendingUserMessages === prev.pendingUserMessages &&
-        next.sessionId === prev.sessionId
-      ) {
+      if (next.items === prev.items && next.pendingUserMessages === prev.pendingUserMessages) {
         return
-      }
-
-      if (next.sessionId !== prev.sessionId) {
-        shouldForceScrollOnNextUpdateRef.current = true
-        setHasNewContent(false)
-        lastContentFingerprintRef.current = ''
       }
 
       const lastItem = next.items.at(-1)
       const lastPendingMessage = next.pendingUserMessages.at(-1)
       const contentFingerprint = [
-        next.sessionId ?? 'no-session',
         next.items.length,
         lastItem?.id ?? 'no-item',
         lastItem?.kind ?? 'none',
@@ -137,12 +119,6 @@ function App() {
         return
       }
       lastContentFingerprintRef.current = contentFingerprint
-
-      if (shouldForceScrollOnNextUpdateRef.current) {
-        shouldForceScrollOnNextUpdateRef.current = false
-        requestScrollToBottom()
-        return
-      }
 
       if (shouldFollowOutputRef.current) {
         requestScrollToBottom()
@@ -170,28 +146,14 @@ function App() {
     }
   }
 
-  const sessionEntries = sessionId
-    ? [
-        {
-          id: sessionId,
-          label: previewText(sessionId),
-          active: true,
-        },
-        {
-          id: 'mock-more-sessions',
-          label: '更多会话功能待接入',
-          active: false,
-          mock: true,
-        },
-      ]
-    : [
-        {
-          id: 'waiting-session',
-          label: '等待会话建立',
-          active: true,
-          mock: true,
-        },
-      ]
+  const sessionEntries = [
+    {
+      id: 'session-list-placeholder',
+      label: '会话列表功能待接入',
+      active: true,
+      mock: true,
+    },
+  ]
 
   return (
     <div className="flex h-full overflow-hidden bg-zinc-950 text-zinc-100">
@@ -216,7 +178,6 @@ function App() {
               </Button>
               <div className="min-w-0 truncate">
                 WebSocket：{connectionStatus}
-                {sessionId ? ` · 会话：${previewText(sessionId)}` : ' · 等待会话启动'}
                 {isGenerating ? ' · 生成中' : ''}
                 {errorMessage ? ` · 错误：${errorMessage}` : ''}
               </div>
