@@ -32,6 +32,8 @@
 
 ### 基础约束
 - Python 项目位于 `backend/`，使用 `uv` 管理依赖和运行命令。
+- `backend/pyproject.toml` 已配置 pytest 的 `pythonpath = ["."]`，这样从 `backend/` 运行测试时，`from src...` 导入可以直接工作。
+- `backend` 已通过 `[dependency-groups].dev` 声明 `pytest`，可以直接在 `backend/` 下运行 `uv run pytest -q`。
 - 仓库从 `catclaw` 重命名到 `bionic-claw` 后，PyCharm 终端可能暂时保留旧的 `VIRTUAL_ENV=/home/bruce/projects/catclaw/backend/.venv`；`uv` 会忽略它并使用当前项目的 `.venv`，关闭终端标签或重启 PyCharm 后通常恢复正常。
 
 ### 模型流式调用与工具系统
