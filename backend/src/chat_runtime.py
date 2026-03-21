@@ -44,7 +44,7 @@ MODEL_CONFIGS: dict[str, ModelConfig] = {
 
 
 class AgentLike(Protocol):
-    def new_session(self) -> None: ...
+    def new_conversation(self) -> None: ...
 
     def enqueue_user_message(self, *, frontend_msg_id: str, user_message: str) -> None: ...
 
@@ -317,7 +317,7 @@ class ChatRuntime:
             on_queued_user_msg_committed=self._on_queued_user_msg_committed,
         )
         self._agent = (agent_factory or create_default_agent)(callbacks=callbacks)
-        self._agent.new_session()
+        self._agent.new_conversation()
 
     async def next_event(self) -> dict[str, Any] | None:
         return await self._outgoing_queue.get()
@@ -370,7 +370,7 @@ class ChatRuntime:
                     self._runner_task = None
                     return
         except Exception as exc:
-            logger.exception("ChatSession agent.run 失败")
+            logger.exception("ChatRuntime agent.run 失败")
             self._runner_task = None
             await self._emit(
                 {

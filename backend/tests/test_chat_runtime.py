@@ -14,7 +14,7 @@ class FakeAgent:
         self._scripted_runs = scripted_runs
         self._queued_messages: list[tuple[str, str]] = []
 
-    def new_session(self) -> None:
+    def new_conversation(self) -> None:
         return None
 
     def enqueue_user_message(self, *, frontend_msg_id: str, user_message: str) -> None:
@@ -31,7 +31,7 @@ class FakeAgent:
         return {"role": "assistant", "content": "done"}
 
 
-class ChatSessionTests(unittest.IsolatedAsyncioTestCase):
+class ChatRuntimeTests(unittest.IsolatedAsyncioTestCase):
     async def _collect_events_until_generation_completed(
         self,
         session: ChatRuntime,
@@ -44,7 +44,7 @@ class ChatSessionTests(unittest.IsolatedAsyncioTestCase):
             if event["type"] == "generation.completed":
                 return events
 
-    async def test_chat_session_streams_message_and_tool_events(self) -> None:
+    async def test_chat_runtime_streams_message_and_tool_events(self) -> None:
         def scripted_run(callbacks: AgentCallbacks, _user_message_id: str, _content: str) -> None:
             callbacks.on_ai_reasoning_delta(reasoning_delta="先想")
             callbacks.on_ai_content_delta(content_delta="先说")
@@ -140,7 +140,7 @@ class ChatSessionTests(unittest.IsolatedAsyncioTestCase):
 
         await session.close()
 
-    async def test_chat_session_drains_multiple_user_messages_in_one_generation(self) -> None:
+    async def test_chat_runtime_drains_multiple_user_messages_in_one_generation(self) -> None:
         def make_scripted_run(reply_text: str) -> ScriptedRun:
             def scripted_run(
                 callbacks: AgentCallbacks,
