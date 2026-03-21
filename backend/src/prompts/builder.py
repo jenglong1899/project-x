@@ -71,7 +71,7 @@ def build_user_level_instruction_zh() -> str:
     _user_level_instruction = f"""
 <user_level_instruction>
 - 要有批判性思考精神，如果你觉得用户说的话难以理解或者要求很奇怪，要询问用户获取确认。
-- 你可能被训练成了“不管用户说什么话都要回复”，不要有这种倾向，人类不是什么话都会回复的，如果你不知道回复什么，输出`（bionic-claw不知道说什么）`就行了
+- 如果用户让你做你做不到的事，直接跟用户说你做不到，而不是假装做了这件事。
 
 <main_memory>
 {main_memory}
