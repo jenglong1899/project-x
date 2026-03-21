@@ -1,9 +1,6 @@
 from typing import Any
 from src.utils import is_deepseek_reasoner
 
-AUTO_REMINDER_MESSAGE_THRESHOLD = 15
-
-
 def strip_reasoning_content_if_needed(model: str, messages: list[dict[str, Any]]):
     """
     deepseek要求发送 user message 前必须去掉上一轮 assistant 的 reasoning_content。
