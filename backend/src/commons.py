@@ -1,6 +1,6 @@
 from pathlib import Path
 
-MEMORY_ROOT = Path("~/.bionic-claw/memories")
-SUMMARY_DIR = MEMORY_ROOT / "summary"
-MAIN_MEMORY_PATH = SUMMARY_DIR / "main.md"
-ORIGINALS_DIR = MEMORY_ROOT / "originals"
+MEMORIES_ROOT = Path("~/.bionic-claw/memories")
+SUMMARIES_DIR = MEMORIES_ROOT / "summaries"
+MAIN_MEMORY_PATH = SUMMARIES_DIR / "main.md"
+ORIGINALS_DIR = MEMORIES_ROOT / "originals"
