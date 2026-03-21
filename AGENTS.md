@@ -38,13 +38,13 @@
 
 ### 模型流式调用与工具系统
 - `src/core/model_config.py` 里的 `ModelConfig` 提供 `model`、`base_url`、`api_key`，供聊天模型调用使用。
-- `src/core/chat.py` 的 `stream()` 负责发起流式模型请求，把 assistant 消息追加回 `messages`，并分别通过回调推送正文增量和思维链增量。
+- `src/core/agent_turn.py` 的 `stream()` 负责发起流式模型请求，把 assistant 消息追加回 `messages`，并分别通过回调推送正文增量和思维链增量。
 - `stream()` 需要兼容 `tool_calls` 的流式拼装，最终返回 OpenAI 风格的 assistant message dict。
 - `stream()` 还支持三类工具调用流式事件：开始、参数增量、结束；`Agent` 会把这三类回调继续向外透传。
-- 工具系统合并成 `src/core/chat.py` 里的单一抽象 `ToolSpec`：同一份定义同时包含给模型看的声明信息和本地 `handler` 实现；`Agent` 构造函数接收 `tools: list[ToolSpec]`，并会拒绝重复工具名。
-- `src/core/chat.py` 的 `execute_tool_and_append()` 会按工具名查找 `ToolSpec`、解析 JSON arguments、调用 `handler`、追加 tool message，并通过最小化的 `OnToolResult(tool_call_id, result_json_str)` 回调把工具执行结果向外透传；当前默认始终返回 `ContinueLoopDirective`。如果模型没给 `tool_call_id`，会按工具在该 assistant message 里的顺序兜底生成 `tool_call_{index}`。
+- 工具系统合并成 `src/core/agent_turn.py` 里的单一抽象 `ToolSpec`：同一份定义同时包含给模型看的声明信息和本地 `handler` 实现；`Agent` 构造函数接收 `tools: list[ToolSpec]`，并会拒绝重复工具名。
+- `src/core/agent_turn.py` 的 `execute_tool_and_append()` 会按工具名查找 `ToolSpec`、解析 JSON arguments、调用 `handler`、追加 tool message，并通过最小化的 `OnToolResult(tool_call_id, result_json_str)` 回调把工具执行结果向外透传；当前默认始终返回 `ContinueLoopDirective`。如果模型没给 `tool_call_id`，会按工具在该 assistant message 里的顺序兜底生成 `tool_call_{index}`。
 - `src/core/policies.py` 里有 DeepSeek 特殊规则：发送下一条 user message 前，要去掉上一轮 assistant message 的 `reasoning_content`。
-- `src/core/chat.py` 和 `src/core/agent.py` 的回调接口都用 Protocol，而不是 Callable，以提升可读性。
+- `src/core/agent_turn.py` 和 `src/core/agent.py` 的回调接口都用 Protocol，而不是 Callable，以提升可读性。
 - `src/tools/bash.py` 提供最基础的 `BASH_TOOL`：入参用 `BashToolInput` 的 pydantic model 校验，只接收 `command`，通过 `bash -lc` 执行并返回 `stdout`、`stderr`、`returncode`。
 
 ### Prompt 与记忆
@@ -54,13 +54,13 @@
 
 ### 服务层与会话编排
 - 后端当前使用 Starlette 做服务层：`backend/main.py` 暴露 `app` 并通过 `uvicorn.run()` 启动；`src/web_app.py` 只保留 `/healthz`、`/ws` 路由和 WebSocket 收发。
-- `src/chat_session.py` 负责每个 WebSocket 连接的会话编排：持有 `Agent`、维护待提交 user message 内容、把同步 `agent.run()` 通过 `asyncio.to_thread()` 桥接回异步事件循环。
+- `src/chat_runtime.py` 负责每个 WebSocket 连接的会话编排：持有 `Agent`、维护待提交 user message 内容、把同步 `agent.run()` 通过 `asyncio.to_thread()` 桥接回异步事件循环。
 - `src/core/agent.py` 提供 `has_pending_user_messages()`，供服务层在一次 run 完成后继续消费排队中的用户消息。
-- `src/chat_session.py` 里的 `ChatEventProjector` 会把 `Agent` 的低层回调投影成前端协议事件，并由后端决定 assistant 卡片边界：首次 reasoning/content delta 时开启消息，遇到 tool start 时结束当前 assistant 消息，每次 `agent.run()` 返回时也会结束当前 assistant 消息。由于前端采用平铺 `items[]` 模型，如果同一个 AI message 的流式顺序是先输出一段 content、再输出 tool call、然后继续输出 content，前端时间线会被拆成 `assistant -> tool -> assistant`。
+- `src/chat_runtime.py` 里的 `ChatEventProjector` 会把 `Agent` 的低层回调投影成前端协议事件，并由后端决定 assistant 卡片边界：首次 reasoning/content delta 时开启消息，遇到 tool start 时结束当前 assistant 消息，每次 `agent.run()` 返回时也会结束当前 assistant 消息。由于前端采用平铺 `items[]` 模型，如果同一个 AI message 的流式顺序是先输出一段 content、再输出 tool call、然后继续输出 content，前端时间线会被拆成 `assistant -> tool -> assistant`。
 - WebSocket 协议不再暴露 `assistantTurnId`；当前服务端事件以 `messageId`、`toolCallId`、`userMessageId` 为主键，包含 `generation.started/completed`、`user.message.committed`、`assistant.message.started/delta/completed`、`tool.started/arguments.delta/completed/result`。其中 `tool.arguments.delta` 的 payload 是 `argumentsDelta`，`tool.completed` 的 payload 仍是完整 `arguments`。
 - WebSocket 会话默认使用 `BASH_TOOL`，模型配置通过环境变量 `BIONIC_CLAW_MODEL_CONFIG` 选择，默认值是 `qwen35plus`；连接时如果缺少对应 API key，会直接给前端发 `error` 事件。
 - 后端运行时除了 `uvicorn` 还需要安装 WebSocket 协议实现；当前项目依赖里已显式加入 `websockets`，否则访问 `/ws` 时会出现 `Unsupported upgrade request`，并退化成普通 HTTP 404。
-- `backend/tests/test_chat_session.py` 用假 `Agent` 覆盖了两类关键时序：`assistant -> tool -> assistant` 的流式事件顺序，以及同一生成期内连续消费多条排队 user message。
+- `backend/tests/test_chat_runtime.py` 用假 `Agent` 覆盖了两类关键时序：`assistant -> tool -> assistant` 的流式事件顺序，以及同一生成期内连续消费多条排队 user message。
 
 ## 教学资料
 - 浏览器基础讲义位于 `docs/zh/teach/teach_browser_basics.md`，用于承接 DOM、布局、滚动、React 与浏览器关系等更底层的问题。
