@@ -42,6 +42,7 @@ line_display 之前吃过亏，就是 DS 3.2或者 Minimax 这种算是比较智
 ## replace
 (
     file_path: str = Field(description="绝对或相对路径")
+    mode: Literal["literal", "regex"]
     needle: str = Field(
         description="要搜索的字符串或正则表达式模式。"
                     "如果mode是\"literal\"，将精确匹配此字符串。"
@@ -51,7 +52,6 @@ line_display 之前吃过亏，就是 DS 3.2或者 Minimax 这种算是比较智
         description="用于替换的字符串。"
                     "如果模式是\"regex\"，该字符串可以包含对 needle 正则表达式中匹配组的反向引用，"
                     "使用语法 $!1、$!2 等指定第 1、2 等组。")
-    mode: Literal["literal", "regex"] = Field(description="指定如何解释needle参数。")
     allow_multiple_occurrences: bool = (
         Field(False, description=
         "如果为 True，正则表达式可能匹配文件中的多个出现项，所有出现项都将被替换。"
