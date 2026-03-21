@@ -82,12 +82,12 @@ Sometimes you simply want to append; this tool should support that directly.
 If you try to append via `replace`, you first need to read the end of the file.
 
 # Session Store
-Store sessions in JSONL under `~/.bionic-claw/memories/originals/`.
+Store sessions in json under `~/.bionic-claw/memories/originals/`.
 The file should have two major parts: `meta` metadata and a `messages` array.
 Use `coolname + timestamp` for the filename (`coolname` should come from a third-party library; do not hand-roll it).
 
 `meta` includes:
-- `display-name`: the user's first message. This is for frontend display; the frontend should show this instead of the JSONL filename.
+- `display-name`: the user's first message. This is for frontend display; the frontend should show this instead of the json filename.
 
 Within `messages`, each message should also have its own `meta` field, including:
 - `timestamp`
