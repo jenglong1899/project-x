@@ -2,7 +2,7 @@ import queue
 from typing import Any, Protocol
 from dataclasses import dataclass
 
-from src.core.chat import (
+from src.core.agent_turn import (
     stream,
     execute_tool_and_append,
     OnAiContentDelta,

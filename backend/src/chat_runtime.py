@@ -7,7 +7,7 @@ from typing import Any, Protocol
 from uuid import uuid4
 
 from src.core.agent import Agent, OnQueuedUserMsgCommitted
-from src.core.chat import (
+from src.core.agent_turn import (
     OnAiContentDelta,
     OnAiReasoningDelta,
     OnAiToolCallArgumentsDelta,
@@ -292,7 +292,7 @@ class EventEmitter(Protocol):
     def __call__(self, event: dict[str, Any]) -> None: ...
 
 
-class ChatSession:
+class ChatRuntime:
     def __init__(
         self,
         *,

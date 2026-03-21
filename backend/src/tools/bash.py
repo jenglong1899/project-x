@@ -3,7 +3,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
-from src.core.chat import ToolSpec
+from src.core.agent_turn import ToolSpec
 
 
 class BashToolInput(BaseModel):

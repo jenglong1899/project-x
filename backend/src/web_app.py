@@ -9,7 +9,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route, WebSocketRoute
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from src.chat_session import ChatSession
+from src.chat_runtime import ChatRuntime
 from src.web_protocol import PingCommand, SendUserMessageCommand, parse_client_command
 
 
@@ -27,7 +27,7 @@ async def send_error(websocket: WebSocket, *, code: str, message: str) -> None:
     )
 
 
-async def websocket_sender_loop(websocket: WebSocket, session: ChatSession) -> None:
+async def websocket_sender_loop(websocket: WebSocket, session: ChatRuntime) -> None:
     while True:
         event = await session.next_event()
         if event is None:
@@ -39,7 +39,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     await websocket.accept()
     loop = asyncio.get_running_loop()
     try:
-        session = ChatSession(loop=loop)
+        session = ChatRuntime(loop=loop)
     except Exception as exc:
         await send_error(
             websocket,

@@ -3,7 +3,7 @@ import unittest
 from unittest import mock
 
 from src.core.agent import Agent
-from src.core.chat import ContinueLoopDirective, ToolSpec, execute_tool_and_append
+from src.core.agent_turn import ContinueLoopDirective, ToolSpec, execute_tool_and_append
 from src.core.model_config import ModelConfig
 
 
