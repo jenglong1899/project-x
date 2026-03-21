@@ -2,7 +2,7 @@ import asyncio
 import unittest
 from collections.abc import Callable
 
-from src.chat_session import AgentCallbacks, ChatSession
+from src.chat_runtime import AgentCallbacks, ChatRuntime
 
 
 ScriptedRun = Callable[[AgentCallbacks, str, str], None]
@@ -34,7 +34,7 @@ class FakeAgent:
 class ChatSessionTests(unittest.IsolatedAsyncioTestCase):
     async def _collect_events_until_generation_completed(
         self,
-        session: ChatSession,
+        session: ChatRuntime,
     ) -> list[dict[str, object]]:
         events: list[dict[str, object]] = []
         while True:
@@ -71,7 +71,7 @@ class ChatSessionTests(unittest.IsolatedAsyncioTestCase):
             )
             callbacks.on_ai_content_delta(content_delta="后说")
 
-        session = ChatSession(
+        session = ChatRuntime(
             loop=asyncio.get_running_loop(),
             agent_factory=lambda *, callbacks: FakeAgent(
                 callbacks=callbacks,
@@ -153,7 +153,7 @@ class ChatSessionTests(unittest.IsolatedAsyncioTestCase):
 
             return scripted_run
 
-        session = ChatSession(
+        session = ChatRuntime(
             loop=asyncio.get_running_loop(),
             agent_factory=lambda *, callbacks: FakeAgent(
                 callbacks=callbacks,
