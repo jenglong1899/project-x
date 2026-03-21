@@ -91,12 +91,14 @@ mode:Literal['w','a']
 名字用coolname+时间戳（coolname要用第三方库，不要自己手搓）
 
 meta包括：
-- display-name：用户发的第一句话。这个是给前端展示用的，前端不展示这个jsonl的名字，而是展示这个。
+- display-name：用户发的第一句话。这个是给前端展示用的，前端不展示这个json的名字，而是展示这个。displayname最多10个字符，超了就截断
 
 messages中，每个message还要有个meta字段，包括
 - timestamp
 
 system/user level instruction也要存储进去
+
+要等到用户发了一条消息后再创建文件（user_message commited之后），不然到时候用户新建了一个对话，然后什么也没说，结果这还持久化进去了，然后用户就查看之前的 session 的时候，发现对方是空的，那其实完全没有必要有这玩意。
 
 # 记忆
 发现messages中是第一次调用reset context，那么第一次调用的时候先不执行，而是返回提示，类似于“请再检查一下你的记忆文档写的怎么样了”
