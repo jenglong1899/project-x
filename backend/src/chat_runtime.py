@@ -299,7 +299,6 @@ class ChatRuntime:
         loop: asyncio.AbstractEventLoop,
         agent_factory: AgentFactory | None = None,
     ) -> None:
-        self.session_id = uuid4().hex
         self._loop = loop
         self._outgoing_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
         self._closed = False
@@ -319,14 +318,6 @@ class ChatRuntime:
         )
         self._agent = (agent_factory or create_default_agent)(callbacks=callbacks)
         self._agent.new_session()
-
-    async def send_session_started(self) -> None:
-        await self._emit(
-            {
-                "type": "session.started",
-                "sessionId": self.session_id,
-            }
-        )
 
     async def next_event(self) -> dict[str, Any] | None:
         return await self._outgoing_queue.get()

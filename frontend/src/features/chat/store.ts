@@ -40,7 +40,6 @@ export type PendingUserMessage = {
 }
 
 type ChatState = {
-  sessionId: string | null
   connectionStatus: ConnectionStatus
   errorMessage: string | null
   items: ChatItem[]
@@ -64,7 +63,6 @@ type ChatActions = {
 export type ChatStore = ChatState & ChatActions
 
 const initialChatState: ChatState = {
-  sessionId: null,
   connectionStatus: 'idle',
   errorMessage: null,
   items: [],
@@ -193,11 +191,6 @@ function upsertUserItem(
 
 function reduceServerEvent(state: ChatState, event: ServerEvent): Partial<ChatState> {
   switch (event.type) {
-    case 'session.started':
-      return {
-        sessionId: event.sessionId,
-      }
-
     case 'generation.started':
       return {
         isGenerating: true,

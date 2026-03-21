@@ -173,7 +173,7 @@ import asyncio
 
 async def fake_receive_user_messages(session_queue: asyncio.Queue[str]) -> None:
     print("收到用户消息：你好")
-    await session_queue.put("session.started")
+    await session_queue.put("generation.started")
     await asyncio.sleep(1)
     print("收到用户消息：帮我执行任务")
     await session_queue.put("assistant.delta: 我开始处理了")
@@ -912,37 +912,6 @@ sender_task = asyncio.create_task(websocket_sender_loop(websocket, session))
   - 当前 `websocket_endpoint()` 主协程负责接收前端命令
   - `sender_task` 后台任务负责把后端事件推回前端
 
-## 你的问题：`await session.send_session_started()` 又是什么
-
-- 它不是“开线程”也不是“注册任务”
-  - 它只是正常调用一个异步函数，并等待它执行完
-
-- 看实现
-  - [backend/src/chat_session.py](/home/bruce/projects/bionic-claw/backend/src/chat_session.py) 里的 `send_session_started()` 本质上只是：
-
-```python
-await self._emit(
-    {
-        "type": "session.started",
-        "sessionId": self.session_id,
-    }
-)
-```
-
-- `_emit()` 又做了什么
-  - 往 `self._outgoing_queue` 里放一个事件
-  - 之后 `sender_task` 那边会从 `next_event()` 里把它取出来，再通过 WebSocket 发给前端
-
-- 所以整段配合起来是这样的
-  - 先启动后台发送任务：`sender_task = asyncio.create_task(...)`
-  - 再把第一条事件放进队列：`await session.send_session_started()`
-  - 后台发送任务立刻就能取到这条事件并发给前端
-
-- 为什么顺序是这个，而不是反过来
-  - 因为先把发送任务挂起来，再往队列里塞启动事件，时序更直观
-  - 即使反过来，这个项目里通常也不一定错，因为队列会先缓存事件
-  - 但现在这种写法更符合“消费者先就位，再投递第一条消息”的直觉
-
 ## 把这几行代码连起来看
 
 ```python
@@ -951,7 +920,6 @@ loop = asyncio.get_running_loop()
 session = ChatSession(loop=loop)
 
 sender_task = asyncio.create_task(websocket_sender_loop(websocket, session))
-await session.send_session_started()
 ```
 
 - 可以按这个顺序理解
@@ -963,14 +931,12 @@ await session.send_session_started()
     - 建一个会话对象，让它以后知道该往哪个 loop 回投事件
   - `sender_task = asyncio.create_task(...)`
     - 启动后台发送循环，专门负责把队列里的事件发给前端
-  - `await session.send_session_started()`
-    - 往队列里放第一条 `session.started`
 
 ## 这个文件里两类常见写法的区别
 
 - `await 某个协程()`
   - 含义：现在就调用，并且等它做完
-  - 例子：`await session.send_session_started()`
+  - 例子：`await websocket.accept()`
 
 - `asyncio.create_task(某个协程())`
   - 含义：把它挂成后台任务，让它并发跑

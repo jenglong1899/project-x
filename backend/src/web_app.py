@@ -50,7 +50,6 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         return
 
     sender_task = asyncio.create_task(websocket_sender_loop(websocket, session))
-    await session.send_session_started()
 
     try:
         while True:

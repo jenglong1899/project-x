@@ -2,11 +2,6 @@ import { z } from 'zod'
 
 const nonEmptyString = z.string().min(1)
 
-const sessionStartedEventSchema = z.object({
-  type: z.literal('session.started'),
-  sessionId: nonEmptyString,
-})
-
 const generationStartedEventSchema = z.object({
   type: z.literal('generation.started'),
 })
@@ -72,7 +67,6 @@ const errorEventSchema = z.object({
 })
 
 export const serverEventSchema = z.discriminatedUnion('type', [
-  sessionStartedEventSchema,
   generationStartedEventSchema,
   generationCompletedEventSchema,
   userMessageCommittedEventSchema,
