@@ -1,3 +1,5 @@
+import os
+import time
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -162,6 +164,23 @@ def stream(*, model_config: ModelConfig,
            on_ai_tool_call_started: OnAiToolCallStarted,
            on_ai_tool_call_arguments_delta: OnAiToolCallArgumentsDelta,
            on_ai_tool_call_finished: OnAiToolCallFinished) -> dict[str, Any]:
+    if model_config.model == "mock":
+        delay_ms_text = os.getenv("BIONIC_CLAW_MOCK_MODEL_DELAY_MS", "0").strip()
+        try:
+            delay_ms = int(delay_ms_text)
+        except ValueError:
+            delay_ms = 0
+
+        if delay_ms > 0:
+            time.sleep(delay_ms / 1000)
+
+        content = "（mock 回复）"
+        on_ai_content_delta(content_delta=content)
+        return {
+            "role": "assistant",
+            "content": content,
+        }
+
     completion_kwargs: dict[str, Any] = {
         "model": model_config.model,
         "tools": [tool.to_tool_param() for tool in tools],

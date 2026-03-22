@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 from uuid import uuid4
 
-from src.core.agent import Agent, OnQueuedUserMsgCommitted
+from src.core.agent import Agent, OnConversationPersisted, OnQueuedUserMsgCommitted
 from src.core.agent_turn import (
     OnAiContentDelta,
     OnAiReasoningDelta,
@@ -21,6 +21,7 @@ from src.core.model_config import (
     GEMINI_OPENROUTER,
     MINIMAX_MAINLAND,
     MINIMAX_OVERSEA,
+    MOCK,
     QWEN35PLUS,
     ModelConfig,
 )
@@ -40,11 +41,14 @@ MODEL_CONFIGS: dict[str, ModelConfig] = {
     "gemini_openrouter": GEMINI_OPENROUTER,
     "minimax_mainland": MINIMAX_MAINLAND,
     "minimax_oversea": MINIMAX_OVERSEA,
+    "mock": MOCK,
 }
 
 
 class AgentLike(Protocol):
     def new_conversation(self) -> None: ...
+
+    def resume_conversation(self, *, conversation_id: str) -> None: ...
 
     def enqueue_user_message(self, *, frontend_msg_id: str, user_message: str) -> None: ...
 
@@ -62,6 +66,7 @@ class AgentCallbacks:
     on_ai_tool_call_finished: OnAiToolCallFinished
     on_tool_result: OnToolResult
     on_queued_user_msg_committed: OnQueuedUserMsgCommitted
+    on_conversation_persisted: OnConversationPersisted
 
 
 class AgentFactory(Protocol):
@@ -76,6 +81,8 @@ def resolve_model_config() -> ModelConfig:
         raise RuntimeError(
             f"BIONIC_CLAW_MODEL_CONFIG={model_key} 不受支持，可选值: {supported}"
         )
+    if model_key == "mock":
+        return model_config
     if not model_config.api_key:
         raise RuntimeError(f"{model_key} 对应的 API key 未配置")
     return model_config
@@ -95,6 +102,7 @@ def create_default_agent(*, callbacks: AgentCallbacks) -> Agent:
         on_ai_tool_call_finished=callbacks.on_ai_tool_call_finished,
         on_tool_result=callbacks.on_tool_result,
         on_queued_user_msg_committed=callbacks.on_queued_user_msg_committed,
+        on_conversation_persisted=callbacks.on_conversation_persisted,
     )
 
 
@@ -298,7 +306,14 @@ class ChatRuntime:
         *,
         loop: asyncio.AbstractEventLoop,
         agent_factory: AgentFactory | None = None,
+        conversation_id: str | None = None,
     ) -> None:
+        """
+        桥接Agent（agent.py）和Websocket
+        :param loop:
+        :param agent_factory:
+        :param conversation_id: 如果不填，那就是new_conversation，如果填了，那就是resume_conversation
+        """
         self._loop = loop
         self._outgoing_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
         self._closed = False
@@ -315,9 +330,13 @@ class ChatRuntime:
             on_ai_tool_call_finished=self._projector.on_ai_tool_call_finished,
             on_tool_result=self._projector.on_tool_result,
             on_queued_user_msg_committed=self._on_queued_user_msg_committed,
+            on_conversation_persisted=self._on_conversation_persisted,
         )
         self._agent = (agent_factory or create_default_agent)(callbacks=callbacks)
-        self._agent.new_conversation()
+        if conversation_id:
+            self._agent.resume_conversation(conversation_id=conversation_id)
+        else:
+            self._agent.new_conversation()
 
     async def next_event(self) -> dict[str, Any] | None:
         return await self._outgoing_queue.get()
@@ -352,6 +371,16 @@ class ChatRuntime:
         if self._closed:
             return
         self._loop.call_soon_threadsafe(self._outgoing_queue.put_nowait, event)
+
+    def _on_conversation_persisted(self, *, conversation_id: str, display_name: str) -> None:
+        # 注意：这个回调来自 agent.run() 所在线程，所以必须走线程安全的 emitter。
+        self._emit_from_any_thread(
+            {
+                "type": "conversation.persisted",
+                "conversationId": conversation_id,
+                "displayName": display_name,
+            }
+        )
 
     async def _run_agent_until_idle(self) -> None:
         self._projector.on_generation_started()

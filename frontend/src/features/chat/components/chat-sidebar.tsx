@@ -2,15 +2,21 @@ import { Button } from '@/components/ui/button'
 
 type SessionEntry = {
   id: string
+  conversationId: string
   label: string
   active: boolean
-  mock?: boolean
+  subtitle?: string
 }
 
 type ChatSidebarProps = {
   mobileVisible: boolean
   onCloseMobile: () => void
   sessionEntries: SessionEntry[]
+  disableSwitching: boolean
+  refreshing: boolean
+  onNewConversation: () => void
+  onRefreshList: () => void
+  onSelectConversation: (conversationId: string) => void
 }
 
 function sidebarVisibilityClassName(mobileVisible: boolean): string {
@@ -21,6 +27,11 @@ export function ChatSidebar({
   mobileVisible,
   onCloseMobile,
   sessionEntries,
+  disableSwitching,
+  refreshing,
+  onNewConversation,
+  onRefreshList,
+  onSelectConversation,
 }: ChatSidebarProps) {
   return (
     <>
@@ -51,11 +62,11 @@ export function ChatSidebar({
         </div>
 
         <div className="mt-3 flex gap-2">
-          <Button disabled size="sm" type="button" variant="secondary">
+          <Button disabled={disableSwitching} size="sm" type="button" variant="secondary" onClick={onNewConversation}>
             新会话
           </Button>
-          <Button disabled size="sm" type="button" variant="secondary">
-            刷新列表
+          <Button disabled={refreshing} size="sm" type="button" variant="secondary" onClick={onRefreshList}>
+            {refreshing ? '刷新中…' : '刷新列表'}
           </Button>
         </div>
 
@@ -84,13 +95,13 @@ export function ChatSidebar({
               className={[
                 'w-full rounded-md px-2 py-2 text-left text-xs',
                 entry.active ? 'bg-zinc-900 text-zinc-100' : 'text-zinc-400 hover:bg-zinc-900/80',
-                entry.mock ? 'opacity-70' : '',
               ].join(' ')}
-              disabled
+              disabled={disableSwitching}
+              onClick={() => onSelectConversation(entry.conversationId)}
               type="button"
             >
               <div className="truncate">{entry.label}</div>
-              {entry.mock ? <div className="mt-1 text-[11px] text-zinc-500">mock</div> : null}
+              {entry.subtitle ? <div className="mt-1 text-[11px] text-zinc-500">{entry.subtitle}</div> : null}
             </button>
           ))}
         </div>

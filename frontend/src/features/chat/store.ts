@@ -42,6 +42,7 @@ export type PendingUserMessage = {
 type ChatState = {
   connectionStatus: ConnectionStatus
   errorMessage: string | null
+  activeConversationId: string | null
   items: ChatItem[]
   pendingUserMessages: PendingUserMessage[]
   isGenerating: boolean
@@ -54,6 +55,8 @@ type StageUserMessageInput = {
 
 type ChatActions = {
   setConnectionStatus: (status: ConnectionStatus) => void
+  setActiveConversationId: (conversationId: string | null) => void
+  loadConversation: (input: { conversationId: string; items: ChatItem[] }) => void
   stageUserMessage: (input: StageUserMessageInput) => void
   applyServerEvent: (event: ServerEvent) => void
   clearError: () => void
@@ -65,6 +68,7 @@ export type ChatStore = ChatState & ChatActions
 const initialChatState: ChatState = {
   connectionStatus: 'idle',
   errorMessage: null,
+  activeConversationId: null,
   items: [],
   pendingUserMessages: [],
   isGenerating: false,
@@ -201,6 +205,11 @@ function reduceServerEvent(state: ChatState, event: ServerEvent): Partial<ChatSt
         isGenerating: false,
       }
 
+    case 'conversation.persisted':
+      return {
+        activeConversationId: event.conversationId,
+      }
+
     case 'user.message.committed':
       return {
         items: upsertUserItem(state.items, event.userMessageId, event.content),
@@ -305,6 +314,20 @@ export const useChatStore = create<ChatStore>()((set) => ({
   setConnectionStatus: (status) => {
     set({
       connectionStatus: status,
+    })
+  },
+  setActiveConversationId: (conversationId) => {
+    set({
+      activeConversationId: conversationId,
+    })
+  },
+  loadConversation: ({ conversationId, items }) => {
+    set({
+      activeConversationId: conversationId,
+      items,
+      pendingUserMessages: [],
+      isGenerating: false,
+      errorMessage: null,
     })
   },
   stageUserMessage: ({ userMessageId, content }) => {

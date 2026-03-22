@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from contextlib import suppress
 
 from pydantic import ValidationError
@@ -10,11 +11,83 @@ from starlette.routing import Route, WebSocketRoute
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from src.chat_runtime import ChatRuntime
+from src.commons import ORIGINALS_DIR
+from src.conversation_store import ConversationStore
 from src.web_protocol import PingCommand, SendUserMessageCommand, parse_client_command
+
+
+logger = logging.getLogger(__name__)
 
 
 async def healthcheck(_: Request) -> JSONResponse:
     return JSONResponse({"ok": True})
+
+async def list_conversations(_: Request) -> JSONResponse:
+    originals_dir = ORIGINALS_DIR.expanduser()
+    if not originals_dir.exists():
+        return JSONResponse({"conversations": []})
+
+    conversations: list[dict[str, object]] = []
+    for path in sorted(originals_dir.glob("*.json")):
+        if not path.is_file():
+            continue
+        conversation_id = path.name
+        try:
+            store = ConversationStore.load_from_conversation_id(
+                conversation_id=conversation_id,
+                originals_dir=originals_dir,
+            )
+        except Exception:
+            logger.exception("加载 conversation 失败，已跳过: %s", conversation_id)
+            continue
+
+        conversations.append(
+            {
+                "conversationId": store.conversation_id,
+                "displayName": store.display_name,
+                "lastChatTime": store.last_chat_time,
+            }
+        )
+
+    conversations.sort(
+        key=lambda item: (
+            str(item.get("lastChatTime") or ""),
+            str(item.get("conversationId") or ""),
+        ),
+        reverse=True,
+    )
+    return JSONResponse({"conversations": conversations})
+
+
+async def get_conversation(request: Request) -> JSONResponse:
+    conversation_id = str(request.path_params.get("conversationId") or "")
+    try:
+        store = ConversationStore.load_from_conversation_id(conversation_id=conversation_id)
+    except FileNotFoundError as exc:
+        return JSONResponse(
+            {
+                "code": "conversation_not_found",
+                "message": str(exc),
+            },
+            status_code=404,
+        )
+    except ValueError as exc:
+        return JSONResponse(
+            {
+                "code": "invalid_conversation_id",
+                "message": str(exc),
+            },
+            status_code=400,
+        )
+
+    return JSONResponse(
+        {
+            "conversationId": store.conversation_id,
+            "displayName": store.display_name,
+            "lastChatTime": store.last_chat_time,
+            "messages": store.build_messages_from_history(),
+        }
+    )
 
 
 async def send_error(websocket: WebSocket, *, code: str, message: str) -> None:
@@ -38,12 +111,23 @@ async def websocket_sender_loop(websocket: WebSocket, session: ChatRuntime) -> N
 async def websocket_endpoint(websocket: WebSocket) -> None:
     await websocket.accept()
     loop = asyncio.get_running_loop()
+    conversation_id = websocket.query_params.get("conversationId") or None
     try:
-        session = ChatRuntime(loop=loop)
+        session = ChatRuntime(loop=loop, conversation_id=conversation_id)
     except Exception as exc:
+        if conversation_id:
+            if isinstance(exc, FileNotFoundError):
+                code = "conversation_not_found"
+            elif isinstance(exc, ValueError):
+                code = "invalid_conversation_id"
+            else:
+                code = "session_init_failed"
+        else:
+            code = "session_init_failed"
+
         await send_error(
             websocket,
-            code="session_init_failed",
+            code=code,
             message=str(exc),
         )
         await websocket.close()
@@ -95,6 +179,8 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
 def build_app() -> Starlette:
     routes = [
         Route("/healthz", endpoint=healthcheck),
+        Route("/conversations", endpoint=list_conversations),
+        Route("/conversations/{conversationId:str}", endpoint=get_conversation),
         WebSocketRoute("/ws", endpoint=websocket_endpoint),
     ]
     return Starlette(routes=routes)

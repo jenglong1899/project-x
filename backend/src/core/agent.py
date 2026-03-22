@@ -32,6 +32,9 @@ class OnUserMsgEnqueued(Protocol):
 class OnQueuedUserMsgCommitted(Protocol):
     def __call__(self, *, frontend_msg_id: str) -> None: ...
 
+class OnConversationPersisted(Protocol):
+    def __call__(self, *, conversation_id: str, display_name: str) -> None: ...
+
 
 class Agent:
 
@@ -51,6 +54,7 @@ class Agent:
                  on_tool_result: OnToolResult | None = None,
                  on_user_msg_enqueued: OnUserMsgEnqueued | None = None,
                  on_queued_user_msg_committed: OnQueuedUserMsgCommitted | None = None,
+                 on_conversation_persisted: OnConversationPersisted | None = None,
                  ) -> None:
         self.name = name
         self._model_config = model_config
@@ -72,6 +76,7 @@ class Agent:
 
         self._on_user_msg_enqueued = on_user_msg_enqueued or self._noop
         self._on_queued_user_msg_committed = on_queued_user_msg_committed or self._noop
+        self._on_conversation_persisted = on_conversation_persisted or self._noop
 
         self._user_msg_queue: queue.Queue[QueuedUserMessage] = queue.Queue()
 
@@ -90,7 +95,27 @@ class Agent:
         )
 
     def resume_conversation(self, *, conversation_id: str) -> None:
-        raise NotImplementedError
+        if not self._user_msg_queue.empty():
+            raise RuntimeError("resume_conversation 之前不能有排队中的 user message")
+
+        store = ConversationStore.load_from_conversation_id(conversation_id=conversation_id)
+        messages = store.build_messages_from_history()
+        if len(messages) < 2:
+            raise ValueError("缺少 system/user level instruction，无法恢复")
+
+        system_msg = messages[0]
+        user_instruction_msg = messages[1]
+        if system_msg.get("role") != "system" or not isinstance(system_msg.get("content"), str):
+            raise ValueError("conversation 第一条消息必须是 system instruction")
+        if user_instruction_msg.get("role") != "user" or not isinstance(user_instruction_msg.get("content"), str):
+            raise ValueError("conversation 第二条消息必须是 user instruction")
+
+        # 继续旧对话时，system/user instruction 以历史为准。
+        self._system_instruction = system_msg["content"]
+        self._user_instruction = user_instruction_msg["content"]
+
+        self._messages = messages
+        self._conversation_store = store
 
     def enqueue_user_message(self, *, frontend_msg_id: str, user_message: str) -> None:
         self._user_msg_queue.put(QueuedUserMessage(frontend_msg_id, user_message))
@@ -117,6 +142,11 @@ class Agent:
             # 然后用户 resume conversation ，结果发现这玩意是空的，这就很不合理。
             if not self._conversation_store.has_persisted_conversation():
                 self._conversation_store.start_with_first_user_message(user_content=item.content)
+                # 首次持久化后，把 conversationId 通知到外层（例如 WebSocket 层），用于前端展示/列表更新。
+                self._on_conversation_persisted(
+                    conversation_id=self._conversation_store.conversation_id,
+                    display_name=self._conversation_store.display_name,
+                )
             else:
                 self._conversation_store.append_message(user_message)
             self._on_queued_user_msg_committed(frontend_msg_id=item.frontend_msg_id)
