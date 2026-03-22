@@ -1,5 +1,8 @@
 # 项目记忆
 
+## 开发脚本
+- 根目录 `dev.sh`：一键启动前端/后端（`npm run dev` + `PYTHONPATH=. uv run python main.py`），Ctrl+C 会同时停止两个进程。
+
 ## 前端
 
 ### 技术栈与基础设施
