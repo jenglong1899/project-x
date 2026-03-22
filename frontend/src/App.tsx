@@ -54,7 +54,6 @@ function App() {
   const isGenerating = useChatStore((state) => state.isGenerating)
   const activeConversationId = useChatStore((state) => state.activeConversationId)
   const persistedConversation = useChatStore((state) => state.persistedConversation)
-  const clearError = useChatStore((state) => state.clearError)
   const loadConversation = useChatStore((state) => state.loadConversation)
   const resetChatStore = useChatStore((state) => state.reset)
 
@@ -272,7 +271,7 @@ function App() {
               <div className="min-w-0">
                 <div className="truncate text-sm font-medium text-zinc-100">{activeConversationTitle}</div>
                 <div className="mt-1 text-xs text-zinc-500">
-                  {isGenerating ? '生成中' : '已连接'}
+                  {isGenerating ? '生成中' : ''}
                 </div>
               </div>
             </div>
@@ -355,10 +354,8 @@ function App() {
             ) : null}
 
             <ChatComposer
-              canClearError={Boolean(errorMessage)}
               draft={draft}
               feedbackText={feedbackText}
-              onClearError={clearError}
               onDraftChange={setDraft}
               onSubmit={handleSubmit}
             />
