@@ -8,11 +8,14 @@ import coolname
 
 from src.commons import ORIGINALS_DIR
 
-DISPLAY_NAME_MAX_LENGTH = 10
+DISPLAY_NAME_MAX_LENGTH = 20
+DISPLAY_NAME_ELLIPSIS = "..."
 
 
 def truncate_display_name(text: str, *, max_length: int = DISPLAY_NAME_MAX_LENGTH) -> str:
-    return text[:max_length]
+    if len(text) <= max_length:
+        return text
+    return f"{text[:max_length]}{DISPLAY_NAME_ELLIPSIS}"
 
 
 def utc_now_iso() -> str:

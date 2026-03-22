@@ -168,7 +168,10 @@ class AgentCallbackTests(unittest.TestCase):
                     on_tool_result=lambda **kwargs: tool_results.append(kwargs),
                 )
                 agent.new_conversation()
-                agent.enqueue_user_message(frontend_msg_id="frontend-1", user_message="第一条用户消息已经超长")
+                agent.enqueue_user_message(
+                    frontend_msg_id="frontend-1",
+                    user_message="第一条用户消息已经超过二十个字符限制了并且后面还有内容",
+                )
 
                 ai_msg_with_tool_call = {
                     "role": "assistant",
@@ -211,7 +214,7 @@ class AgentCallbackTests(unittest.TestCase):
                 "content": "done",
             },
         )
-        self.assertEqual(stored_payload["meta"]["display-name"], "第一条用户消息已经超")
+        self.assertEqual(stored_payload["meta"]["display-name"], "第一条用户消息已经超过二十个字符限制了并...")
         self.assertEqual(
             [message["role"] for message in stored_payload["messages"]],
             ["system", "user", "user", "assistant", "tool", "assistant"],
