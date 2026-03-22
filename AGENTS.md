@@ -63,7 +63,7 @@
 - `src/conversation_store.py` 会把原始对话以 JSON 文件存到 `~/.bionic-claw/memories/originals/`；文件名格式是 `coolname + UTC时间戳 + .json`，根结构固定为 `meta + messages`，并用 `has_persisted_conversation()` 表示“这轮会话已经有落地 JSON”。
 - conversation_id 就是上述 JSON 文件名；`ConversationStore.load_from_conversation_id()` 用 conversation_id 直接加载并恢复存储消息；`ConversationStore.build_runtime_messages()` 会去掉每条消息的 `meta`，避免把存储字段传给模型供应商。
 - conversation JSON 只会在“首条 committed 的后续 user message 进入 `_messages`”时创建，不会在 `new_conversation()` 或 `enqueue_user_message()` 时创建空会话文件。
-- conversation JSON 的 `meta.display-name` 取首条 committed 的后续 user message，最多保留 10 个字符；`messages` 中每条消息都会额外带一个 `meta.timestamp`。
+- conversation JSON 的 `meta.display-name` 取首条 committed 的后续 user message：最多保留前 20 个字符；若超出则在末尾补 `...`。前端可自行更早做视觉截断；`messages` 中每条消息都会额外带一个 `meta.timestamp`。
 
 ### 服务层与会话编排
 - 后端当前使用 Starlette 做服务层：`backend/main.py` 暴露 `app` 并通过 `uvicorn.run()` 启动；`src/web_app.py` 只保留 `/healthz`、`/ws` 路由和 WebSocket 收发。
