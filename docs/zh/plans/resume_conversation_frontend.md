@@ -38,7 +38,7 @@ Browser                      Backend(HTTP)                 Backend(WebSocket)
   |
   |  connect /ws?conversationId=abc.json                            |
   |--------------------------------------------------------------->|
-  |              ChatRuntime: agent.resume_conversation()           |
+  |        WebSocketChatSession: agent.resume_conversation()        |
   |
   |  send_user_message(userMessageId=uuid, content="hi")            |
   |--------------------------------------------------------------->|
@@ -57,23 +57,23 @@ Browser                      Backend(HTTP)                 Backend(WebSocket)
   - `GET /conversations/{conversationId}`
 - WebSocket：
   - 从 query 读取 `conversationId`
-  - 传入 `ChatRuntime(loop=..., conversation_id=...)`（内部变量用 snake_case 即可）
+  - 传入 `WebSocketChatSession(loop=..., conversation_id=...)`（内部变量用 snake_case 即可）
   - resume 失败：给前端发 `error`（`code="conversation_resume_failed"`），然后 close（前端可重连/新建）
 
-2) `backend/src/chat_runtime.py`
-- `ChatRuntime.__init__` 支持可选 `conversation_id: str | None`
+2) `backend/src/websocket_chat_session.py`
+- `WebSocketChatSession.__init__` 支持可选 `conversation_id: str | None`
   - 有值：`agent.resume_conversation(conversation_id=...)`
   - 无值：`agent.new_conversation()`
 - 当后端在“首条 user message 持久化”获得 `conversationId` 时，发送一次：
   - `conversation.id` 事件（含 `conversationId`、`displayName`）
 
 3) `backend/src/core/agent.py`
-- 增加只读能力供 `ChatRuntime` 使用：
+- 增加只读能力供 `WebSocketChatSession` 使用：
   - `get_conversation_id() -> str | None`
   - `get_display_name() -> str | None`（从 store.meta 拿，或由首条 user 截断得到）
 
 4) `backend/tests/*`
-- `test_chat_runtime.py`：
+- `test_websocket_chat_session.py`：
   - 新增：当首条 user message 持久化后会发 `conversation.id`
 - 新增 API 测试（建议直接测 Starlette app）：
   - `GET /conversations` 返回排序稳定、字段齐全

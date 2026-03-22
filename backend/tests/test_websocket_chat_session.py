@@ -2,7 +2,7 @@ import asyncio
 import unittest
 from collections.abc import Callable
 
-from src.chat_runtime import AgentCallbacks, ChatRuntime
+from src.websocket_chat_session import AgentCallbacks, WebSocketChatSession
 
 
 ScriptedRun = Callable[[AgentCallbacks, str, str], None]
@@ -15,6 +15,9 @@ class FakeAgent:
         self._queued_messages: list[tuple[str, str]] = []
 
     def new_conversation(self) -> None:
+        return None
+
+    def resume_conversation(self, *, conversation_id: str) -> None:
         return None
 
     def enqueue_user_message(self, *, frontend_msg_id: str, user_message: str) -> None:
@@ -31,10 +34,10 @@ class FakeAgent:
         return {"role": "assistant", "content": "done"}
 
 
-class ChatRuntimeTests(unittest.IsolatedAsyncioTestCase):
+class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
     async def _collect_events_until_generation_completed(
         self,
-        session: ChatRuntime,
+        session: WebSocketChatSession,
     ) -> list[dict[str, object]]:
         events: list[dict[str, object]] = []
         while True:
@@ -44,7 +47,7 @@ class ChatRuntimeTests(unittest.IsolatedAsyncioTestCase):
             if event["type"] == "generation.completed":
                 return events
 
-    async def test_chat_runtime_streams_message_and_tool_events(self) -> None:
+    async def test_websocket_chat_session_streams_message_and_tool_events(self) -> None:
         def scripted_run(callbacks: AgentCallbacks, _user_message_id: str, _content: str) -> None:
             callbacks.on_ai_reasoning_delta(reasoning_delta="先想")
             callbacks.on_ai_content_delta(content_delta="先说")
@@ -71,7 +74,7 @@ class ChatRuntimeTests(unittest.IsolatedAsyncioTestCase):
             )
             callbacks.on_ai_content_delta(content_delta="后说")
 
-        session = ChatRuntime(
+        session = WebSocketChatSession(
             loop=asyncio.get_running_loop(),
             agent_factory=lambda *, callbacks: FakeAgent(
                 callbacks=callbacks,
@@ -140,7 +143,9 @@ class ChatRuntimeTests(unittest.IsolatedAsyncioTestCase):
 
         await session.close()
 
-    async def test_chat_runtime_drains_multiple_user_messages_in_one_generation(self) -> None:
+    async def test_websocket_chat_session_drains_multiple_user_messages_in_one_generation(
+        self,
+    ) -> None:
         def make_scripted_run(reply_text: str) -> ScriptedRun:
             def scripted_run(
                 callbacks: AgentCallbacks,
@@ -151,7 +156,7 @@ class ChatRuntimeTests(unittest.IsolatedAsyncioTestCase):
 
             return scripted_run
 
-        session = ChatRuntime(
+        session = WebSocketChatSession(
             loop=asyncio.get_running_loop(),
             agent_factory=lambda *, callbacks: FakeAgent(
                 callbacks=callbacks,

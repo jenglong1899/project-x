@@ -300,7 +300,7 @@ class EventEmitter(Protocol):
     def __call__(self, event: dict[str, Any]) -> None: ...
 
 
-class ChatRuntime:
+class WebSocketChatSession:
     def __init__(
         self,
         *,
@@ -309,10 +309,10 @@ class ChatRuntime:
         conversation_id: str | None = None,
     ) -> None:
         """
-        桥接Agent（agent.py）和Websocket
+        WebSocket 连接的会话编排器：桥接 Agent（agent.py）和 WebSocket。
         :param loop:
         :param agent_factory:
-        :param conversation_id: 如果不填，那就是new_conversation，如果填了，那就是resume_conversation
+        :param conversation_id: 不填则 new_conversation，填写则 resume_conversation
         """
         self._loop = loop
         self._outgoing_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
@@ -399,7 +399,7 @@ class ChatRuntime:
                     self._runner_task = None
                     return
         except Exception as exc:
-            logger.exception("ChatRuntime agent.run 失败")
+            logger.exception("WebSocketChatSession agent.run 失败")
             self._runner_task = None
             await self._emit(
                 {
