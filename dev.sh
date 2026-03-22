@@ -55,9 +55,46 @@ echo "启动后端：backend/（PYTHONPATH=. uv run python main.py）"
 ) &
 backend_pid="$!"
 
+wait_for_backend() {
+  local backend_port="${BIONIC_CLAW_PORT:-8000}"
+  local url="http://127.0.0.1:${backend_port}/healthz"
+
+  if command -v curl >/dev/null 2>&1; then
+    for _ in $(seq 1 120); do
+      if curl -fsS "${url}" >/dev/null 2>&1; then
+        return 0
+      fi
+      sleep 0.2
+    done
+    echo "后端启动超时：${url}" >&2
+    return 1
+  fi
+
+  if command -v wget >/dev/null 2>&1; then
+    for _ in $(seq 1 120); do
+      if wget -qO- "${url}" >/dev/null 2>&1; then
+        return 0
+      fi
+      sleep 0.2
+    done
+    echo "后端启动超时：${url}" >&2
+    return 1
+  fi
+
+  echo "未找到 curl/wget，跳过后端就绪等待（e2e 可能不稳定）" >&2
+  return 0
+}
+
 echo "启动前端：frontend/（npm run dev）"
 (
+  if [[ -n "${BIONIC_CLAW_E2E_PORT:-}" ]]; then
+    echo "检测到 e2e 端口配置，等待后端就绪..." >&2
+    wait_for_backend
+  fi
   cd "${ROOT_DIR}/frontend"
+  if [[ -n "${BIONIC_CLAW_E2E_PORT:-}" ]]; then
+    exec npm run dev -- --port "${BIONIC_CLAW_E2E_PORT}" --strictPort
+  fi
   exec npm run dev
 ) &
 frontend_pid="$!"

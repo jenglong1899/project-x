@@ -18,6 +18,9 @@ export default defineConfig({
       '/healthz': {
         target: backendTarget,
       },
+      '/conversations': {
+        target: backendTarget,
+      },
       '/ws': {
         target: backendTarget,
         ws: true,

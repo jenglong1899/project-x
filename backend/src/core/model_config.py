@@ -32,3 +32,6 @@ GEMINI = ModelConfig(model="openai/gemini-3-flash-preview",
 GEMINI_OPENROUTER = ModelConfig(model="openrouter/google/gemini-3-flash-preview",
                                 base_url="https://openrouter.ai/api/v1",
                                 api_key=os.getenv("OPENROUTER_API_KEY"))
+
+# 本地 mock 模型：用于测试/E2E，不依赖外部 API。
+MOCK = ModelConfig(model="mock", base_url="", api_key="")

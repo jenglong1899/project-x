@@ -7,6 +7,11 @@ import { ChatComposer } from '@/features/chat/components/chat-composer'
 import { ChatSidebar } from '@/features/chat/components/chat-sidebar'
 import { ToolCallCard } from '@/features/chat/components/tool-call-card'
 import { UserTurnBubble } from '@/features/chat/components/user-turn-bubble'
+import {
+  buildChatItemsFromConversationHistory,
+  fetchConversationDetail,
+  fetchConversationList,
+} from '@/features/chat/conversations'
 import { useChatStore } from '@/features/chat/store'
 
 import './App.css'
@@ -23,7 +28,10 @@ function App() {
   const items = useChatStore((state) => state.items)
   const pendingUserMessages = useChatStore((state) => state.pendingUserMessages)
   const isGenerating = useChatStore((state) => state.isGenerating)
+  const activeConversationId = useChatStore((state) => state.activeConversationId)
   const clearError = useChatStore((state) => state.clearError)
+  const loadConversation = useChatStore((state) => state.loadConversation)
+  const resetChatStore = useChatStore((state) => state.reset)
 
   const feedbackText =
     composerError || errorMessage || '仅支持流式 WebSocket，会实时展示思维链、正文和工具调用。'
@@ -67,6 +75,48 @@ function App() {
       chatClient.disconnect()
     }
   }, [])
+
+  const [sessionEntries, setSessionEntries] = useState<
+    {
+      id: string
+      conversationId: string
+      label: string
+      subtitle?: string
+      active: boolean
+    }[]
+  >([])
+  const [isRefreshingSessions, setIsRefreshingSessions] = useState(false)
+
+  const refreshSessionList = useCallback(async () => {
+    setIsRefreshingSessions(true)
+    try {
+      const list = await fetchConversationList()
+      setSessionEntries(
+        list.map((item) => ({
+          id: item.conversationId,
+          conversationId: item.conversationId,
+          label: item.displayName || item.conversationId,
+          subtitle: item.lastChatTime ? `最后聊天：${item.lastChatTime}` : undefined,
+          active: item.conversationId === activeConversationId,
+        })),
+      )
+    } catch (error) {
+      setComposerError(error instanceof Error ? error.message : '加载会话列表失败。')
+    } finally {
+      setIsRefreshingSessions(false)
+    }
+  }, [activeConversationId])
+
+  useEffect(() => {
+    void refreshSessionList()
+  }, [refreshSessionList])
+
+  useEffect(() => {
+    if (!activeConversationId) {
+      return
+    }
+    void refreshSessionList()
+  }, [activeConversationId, refreshSessionList])
 
   useEffect(() => {
     const element = scrollRef.current
@@ -146,14 +196,34 @@ function App() {
     }
   }
 
-  const sessionEntries = [
-    {
-      id: 'session-list-placeholder',
-      label: '会话列表功能待接入',
-      active: true,
-      mock: true,
+  const disableSwitching = pendingUserMessages.length > 0 || isGenerating
+
+  const handleNewConversation = useCallback(() => {
+    if (disableSwitching) {
+      return
+    }
+    setComposerError(null)
+    resetChatStore()
+    chatClient.disconnect()
+    chatClient.connect()
+    void refreshSessionList()
+  }, [disableSwitching, refreshSessionList, resetChatStore])
+
+  const handleSelectConversation = useCallback(
+    async (conversationId: string) => {
+      if (disableSwitching) {
+        return
+      }
+      setComposerError(null)
+      const detail = await fetchConversationDetail(conversationId)
+      const nextItems = buildChatItemsFromConversationHistory(detail.messages)
+      loadConversation({ conversationId: detail.conversationId, items: nextItems })
+      chatClient.disconnect()
+      chatClient.connect({ conversationId: detail.conversationId })
+      setMobileSidebarOpen(false)
     },
-  ]
+    [disableSwitching, loadConversation],
+  )
 
   return (
     <div className="flex h-full overflow-hidden bg-zinc-950 text-zinc-100">
@@ -161,6 +231,11 @@ function App() {
         mobileVisible={mobileSidebarOpen}
         onCloseMobile={() => setMobileSidebarOpen(false)}
         sessionEntries={sessionEntries}
+        disableSwitching={disableSwitching}
+        refreshing={isRefreshingSessions}
+        onNewConversation={handleNewConversation}
+        onRefreshList={() => void refreshSessionList()}
+        onSelectConversation={(conversationId) => void handleSelectConversation(conversationId)}
       />
 
       <main className="flex min-h-0 min-w-0 flex-1 flex-col lg:pl-0">

@@ -10,6 +10,12 @@ const generationCompletedEventSchema = z.object({
   type: z.literal('generation.completed'),
 })
 
+const conversationPersistedEventSchema = z.object({
+  type: z.literal('conversation.persisted'),
+  conversationId: nonEmptyString,
+  displayName: z.string(),
+})
+
 const userMessageCommittedEventSchema = z.object({
   type: z.literal('user.message.committed'),
   userMessageId: nonEmptyString,
@@ -69,6 +75,7 @@ const errorEventSchema = z.object({
 export const serverEventSchema = z.discriminatedUnion('type', [
   generationStartedEventSchema,
   generationCompletedEventSchema,
+  conversationPersistedEventSchema,
   userMessageCommittedEventSchema,
   assistantMessageStartedEventSchema,
   assistantMessageDeltaEventSchema,
