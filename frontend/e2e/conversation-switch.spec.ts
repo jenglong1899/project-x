@@ -3,11 +3,15 @@ import { expect, test } from '@playwright/test'
 test('会话列表与切换会话（断开重连）', async ({ page }) => {
   await page.goto('/')
 
-  await expect(page.getByText(/WebSocket：open/)).toBeVisible()
+  await expect(page.getByRole('button', { name: '新建对话' })).toBeVisible()
+  await expect(page.getByRole('button', { name: '刷新列表' })).toHaveCount(0)
+  await expect(page.getByText('工作目录')).toHaveCount(0)
+  await expect(page.getByText(/WebSocket open/)).toBeVisible()
 
-  const input = page.getByPlaceholder('输入消息，回车发送；Shift+Enter 换行。')
-  const sendButton = page.getByRole('button', { name: '发送' })
-  const newConversationButton = page.getByRole('button', { name: '新会话' })
+  const input = page.getByPlaceholder('给 Bionic Claw 发送消息')
+  const sendButton = page.locator('button[type="submit"]')
+  const newConversationButton = page.getByRole('button', { name: '新建对话' })
+  const mainRegion = page.getByRole('main')
 
   await input.fill('会话A')
   await sendButton.click()
@@ -21,6 +25,7 @@ test('会话列表与切换会话（断开重连）', async ({ page }) => {
   await expect(entryA).toBeVisible()
 
   await newConversationButton.click()
+  await expect(mainRegion.getByText('今天想聊点什么？')).toBeVisible()
 
   await input.fill('会话B')
   await sendButton.click()
@@ -32,7 +37,7 @@ test('会话列表与切换会话（断开重连）', async ({ page }) => {
 
   await entryA.click()
 
-  await expect(page.getByRole('main').getByText('会话A')).toBeVisible()
+  await expect(mainRegion.locator('header').getByText('会话A')).toBeVisible()
   await expect(page.getByText('（mock 回复）')).toBeVisible()
 
   await input.fill('继续A')

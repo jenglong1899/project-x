@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { PanelLeft } from 'lucide-react'
+
 import { Button } from '@/components/ui/button'
 import { chatClient } from '@/features/chat/client'
 import { AssistantTurnBubble } from '@/features/chat/components/assistant-turn-bubble'
@@ -18,6 +20,28 @@ import './App.css'
 
 const SCROLL_BOTTOM_THRESHOLD_PX = 60
 
+type SessionEntry = {
+  id: string
+  conversationId: string
+  displayName: string
+}
+
+function upsertSessionEntry(entries: SessionEntry[], entry: SessionEntry): SessionEntry[] {
+  const existingIndex = entries.findIndex((item) => item.conversationId === entry.conversationId)
+  if (existingIndex === -1) {
+    return [entry, ...entries]
+  }
+
+  const nextEntries = [...entries]
+  const currentEntry = nextEntries[existingIndex]
+  nextEntries.splice(existingIndex, 1)
+  nextEntries.unshift({
+    ...currentEntry,
+    ...entry,
+  })
+  return nextEntries
+}
+
 function App() {
   const [draft, setDraft] = useState('')
   const [composerError, setComposerError] = useState<string | null>(null)
@@ -29,12 +53,13 @@ function App() {
   const pendingUserMessages = useChatStore((state) => state.pendingUserMessages)
   const isGenerating = useChatStore((state) => state.isGenerating)
   const activeConversationId = useChatStore((state) => state.activeConversationId)
+  const persistedConversation = useChatStore((state) => state.persistedConversation)
   const clearError = useChatStore((state) => state.clearError)
   const loadConversation = useChatStore((state) => state.loadConversation)
   const resetChatStore = useChatStore((state) => state.reset)
 
   const feedbackText =
-    composerError || errorMessage || '仅支持流式 WebSocket，会实时展示思维链、正文和工具调用。'
+    composerError || errorMessage || '当 AI 用非常自信的语气回答的时候，也不代表其说的话是真的，请核查。'
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const scrollToBottomRafIdRef = useRef<number | null>(null)
@@ -76,47 +101,42 @@ function App() {
     }
   }, [])
 
-  const [sessionEntries, setSessionEntries] = useState<
-    {
-      id: string
-      conversationId: string
-      label: string
-      subtitle?: string
-      active: boolean
-    }[]
-  >([])
-  const [isRefreshingSessions, setIsRefreshingSessions] = useState(false)
+  const [sessionEntries, setSessionEntries] = useState<SessionEntry[]>([])
+  const activeConversationTitle =
+    sessionEntries.find((entry) => entry.conversationId === activeConversationId)?.displayName ?? '新对话'
 
-  const refreshSessionList = useCallback(async () => {
-    setIsRefreshingSessions(true)
+  const loadSessionList = useCallback(async () => {
     try {
       const list = await fetchConversationList()
       setSessionEntries(
         list.map((item) => ({
           id: item.conversationId,
           conversationId: item.conversationId,
-          label: item.displayName || item.conversationId,
-          subtitle: item.lastChatTime ? `最后聊天：${item.lastChatTime}` : undefined,
-          active: item.conversationId === activeConversationId,
+          displayName: item.displayName || item.conversationId,
         })),
       )
     } catch (error) {
       setComposerError(error instanceof Error ? error.message : '加载会话列表失败。')
-    } finally {
-      setIsRefreshingSessions(false)
     }
-  }, [activeConversationId])
+  }, [])
 
   useEffect(() => {
-    void refreshSessionList()
-  }, [refreshSessionList])
+    void loadSessionList()
+  }, [loadSessionList])
 
   useEffect(() => {
-    if (!activeConversationId) {
+    if (!persistedConversation) {
       return
     }
-    void refreshSessionList()
-  }, [activeConversationId, refreshSessionList])
+
+    setSessionEntries((currentEntries) =>
+      upsertSessionEntry(currentEntries, {
+        id: persistedConversation.conversationId,
+        conversationId: persistedConversation.conversationId,
+        displayName: persistedConversation.displayName || persistedConversation.conversationId,
+      }),
+    )
+  }, [persistedConversation])
 
   useEffect(() => {
     const element = scrollRef.current
@@ -206,8 +226,7 @@ function App() {
     resetChatStore()
     chatClient.disconnect()
     chatClient.connect()
-    void refreshSessionList()
-  }, [disableSwitching, refreshSessionList, resetChatStore])
+  }, [disableSwitching, resetChatStore])
 
   const handleSelectConversation = useCallback(
     async (conversationId: string) => {
@@ -228,41 +247,44 @@ function App() {
   return (
     <div className="flex h-full overflow-hidden bg-zinc-950 text-zinc-100">
       <ChatSidebar
+        activeConversationId={activeConversationId}
         mobileVisible={mobileSidebarOpen}
         onCloseMobile={() => setMobileSidebarOpen(false)}
         sessionEntries={sessionEntries}
         disableSwitching={disableSwitching}
-        refreshing={isRefreshingSessions}
         onNewConversation={handleNewConversation}
-        onRefreshList={() => void refreshSessionList()}
         onSelectConversation={(conversationId) => void handleSelectConversation(conversationId)}
       />
 
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col lg:pl-0">
-        <header className="border-b border-zinc-800 px-4 py-3 text-xs text-zinc-400">
-          <div className="flex items-center justify-between gap-3">
+      <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-zinc-950">
+        <header className="border-b border-zinc-800/80 px-4 py-3">
+          <div className="flex items-center justify-between gap-4">
             <div className="flex min-w-0 items-center gap-2">
               <Button
-                className="lg:hidden"
+                className="rounded-full lg:hidden"
                 onClick={() => setMobileSidebarOpen(true)}
-                size="sm"
+                size="icon-sm"
                 type="button"
-                variant="secondary"
+                variant="ghost"
               >
-                面板
+                <PanelLeft />
               </Button>
-              <div className="min-w-0 truncate">
-                WebSocket：{connectionStatus}
-                {isGenerating ? ' · 生成中' : ''}
-                {errorMessage ? ` · 错误：${errorMessage}` : ''}
+              <div className="min-w-0">
+                <div className="truncate text-sm font-medium text-zinc-100">{activeConversationTitle}</div>
+                <div className="mt-1 text-xs text-zinc-500">
+                  {isGenerating ? '生成中' : '已连接'}
+                </div>
               </div>
+            </div>
+            <div className="hidden text-xs text-zinc-500 sm:block">
+              WebSocket {connectionStatus}
             </div>
           </div>
         </header>
 
         <div className="relative min-h-0 flex-1">
-          <div ref={scrollRef} className="h-full overflow-auto p-4">
-            <div className="mx-auto flex w-full max-w-4xl flex-col gap-4">
+          <div ref={scrollRef} className="h-full overflow-auto px-4 py-6">
+            <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
               {items.length > 0 ? (
                 items.map((item) => {
                   if (item.kind === 'user') {
@@ -275,7 +297,18 @@ function App() {
 
                   return <ToolCallCard key={item.id} item={item} />
                 })
-              ) : null}
+              ) : (
+                <section className="flex min-h-full flex-1 items-center justify-center py-16">
+                  <div className="max-w-xl text-center">
+                    <div className="text-3xl font-medium tracking-tight text-zinc-100 sm:text-4xl">
+                      今天想聊点什么？
+                    </div>
+                    <div className="mt-4 text-sm leading-6 text-zinc-500">
+                      可以直接继续历史会话，也可以新建一个对话开始新的任务。
+                    </div>
+                  </div>
+                </section>
+              )}
             </div>
           </div>
 
@@ -297,13 +330,13 @@ function App() {
           ) : null}
         </div>
 
-        <footer className="border-t border-zinc-800 p-4">
-          <div className="mx-auto w-full max-w-4xl">
+        <footer className="px-4 pb-5 pt-3">
+          <div className="mx-auto w-full max-w-3xl">
             {pendingUserMessages.length > 0 ? (
               <div className="mb-3 space-y-2">
                 {pendingUserMessages.map((message) => (
                   <article key={message.id} className="flex justify-end">
-                    <div className="max-w-[85%] rounded-md bg-zinc-800/60 p-3">
+                    <div className="max-w-[85%] rounded-3xl bg-zinc-800/80 px-4 py-3">
                       <div className="flex items-center justify-between gap-3 text-xs font-semibold text-zinc-300">
                         <div>user（待发送）</div>
                         <div
@@ -327,8 +360,6 @@ function App() {
               feedbackText={feedbackText}
               onClearError={clearError}
               onDraftChange={setDraft}
-              pauseButtonDisabled
-              pauseButtonLabel="暂停（mock）"
               onSubmit={handleSubmit}
             />
           </div>
