@@ -39,10 +39,16 @@ export type PendingUserMessage = {
   text: string
 }
 
+export type PersistedConversation = {
+  conversationId: string
+  displayName: string
+}
+
 type ChatState = {
   connectionStatus: ConnectionStatus
   errorMessage: string | null
   activeConversationId: string | null
+  persistedConversation: PersistedConversation | null
   items: ChatItem[]
   pendingUserMessages: PendingUserMessage[]
   isGenerating: boolean
@@ -69,6 +75,7 @@ const initialChatState: ChatState = {
   connectionStatus: 'idle',
   errorMessage: null,
   activeConversationId: null,
+  persistedConversation: null,
   items: [],
   pendingUserMessages: [],
   isGenerating: false,
@@ -208,6 +215,10 @@ function reduceServerEvent(state: ChatState, event: ServerEvent): Partial<ChatSt
     case 'conversation.persisted':
       return {
         activeConversationId: event.conversationId,
+        persistedConversation: {
+          conversationId: event.conversationId,
+          displayName: event.displayName,
+        },
       }
 
     case 'user.message.committed':
@@ -324,6 +335,7 @@ export const useChatStore = create<ChatStore>()((set) => ({
   loadConversation: ({ conversationId, items }) => {
     set({
       activeConversationId: conversationId,
+      persistedConversation: null,
       items,
       pendingUserMessages: [],
       isGenerating: false,

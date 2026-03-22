@@ -13,9 +13,9 @@
 - `frontend/vite.config.ts` 已配置本地开发代理：`/healthz`、`/conversations`、`/ws` 默认转发到 `http://127.0.0.1:8000`，也可通过环境变量 `BIONIC_CLAW_BACKEND_ORIGIN` 覆盖。
 
 ### 页面结构
-- `frontend/src/App.tsx` 采用左侧信息侧栏、右侧单栏时间线、底部输入区的布局；侧栏的“新会话/刷新列表/最近会话（切换会话）”已接入：HTTP 拉列表与详情，并通过断开重连 WebSocket 实现切换。
+- `frontend/src/App.tsx` 采用左侧会话侧栏、右侧单栏时间线、底部输入区的布局；侧栏当前只保留“新建对话 + 最近会话”，会话列表只在页面初始化时通过 HTTP 拉取一次，点击某个会话即切换，并通过断开重连 WebSocket（`/ws?conversationId=...`）实现 resume。
 - `frontend/src/App.css` 只保留根节点占满视口，其余样式由 Tailwind 负责。
-- `frontend/src/features/chat/components/` 已拆出聊天 UI 子组件：`user-turn-bubble.tsx`、`assistant-turn-bubble.tsx`、`empty-chat-state.tsx`、`chat-composer.tsx`；`App.tsx` 主要负责连接 store/client 和组织页面结构。
+- `frontend/src/features/chat/components/` 已拆出聊天 UI 子组件：`user-turn-bubble.tsx`、`assistant-turn-bubble.tsx`、`chat-composer.tsx`、`chat-sidebar.tsx`、`tool-call-card.tsx`；当前并没有 `empty-chat-state.tsx`，空态文案直接在 `App.tsx` 中渲染。
 
 ### 聊天协议与数据模型
 - `frontend/src/features/chat/protocol.ts` 已定义聊天协议的 zod schema 和 TypeScript 类型；用户消息主键是前端生成的 `userMessageId`，assistant 消息主键是后端生成的 `messageId`，工具卡主键是 `toolCallId`。
