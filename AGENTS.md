@@ -68,14 +68,14 @@
 ### 服务层与会话编排
 - 后端当前使用 Starlette 做服务层：`backend/main.py` 暴露 `app` 并通过 `uvicorn.run()` 启动；`src/web_app.py` 只保留 `/healthz`、`/ws` 路由和 WebSocket 收发。
 - `src/web_app.py` 新增 HTTP API：`GET /conversations`（会话列表，按 `lastChatTime` 倒序）和 `GET /conversations/{conversationId}`（会话详情 messages）。
-- `src/chat_runtime.py` 负责每个 WebSocket 连接的会话编排：持有 `Agent`、维护待提交 user message 内容、把同步 `agent.run()` 通过 `asyncio.to_thread()` 桥接回异步事件循环。
+- `src/websocket_chat_session.py` 负责每个 WebSocket 连接的会话编排：持有 `Agent`、维护待提交 user message 内容、把同步 `agent.run()` 通过 `asyncio.to_thread()` 桥接回异步事件循环。
 - WebSocket 支持 query：`/ws?conversationId=...`，用于 resume 某个历史会话；新会话首次持久化后会发送 `conversation.persisted` 事件（包含 `conversationId`、`displayName`）。
 - `src/core/agent.py` 提供 `has_pending_user_messages()`，供服务层在一次 run 完成后继续消费排队中的用户消息。
-- `src/chat_runtime.py` 里的 `ChatEventProjector` 会把 `Agent` 的低层回调投影成前端协议事件，并由后端决定 assistant 卡片边界：首次 reasoning/content delta 时开启消息，遇到 tool start 时结束当前 assistant 消息，每次 `agent.run()` 返回时也会结束当前 assistant 消息。由于前端采用平铺 `items[]` 模型，如果同一个 AI message 的流式顺序是先输出一段 content、再输出 tool call、然后继续输出 content，前端时间线会被拆成 `assistant -> tool -> assistant`。
+- `src/websocket_chat_session.py` 里的 `ChatEventProjector` 会把 `Agent` 的低层回调投影成前端协议事件，并由后端决定 assistant 卡片边界：首次 reasoning/content delta 时开启消息，遇到 tool start 时结束当前 assistant 消息，每次 `agent.run()` 返回时也会结束当前 assistant 消息。由于前端采用平铺 `items[]` 模型，如果同一个 AI message 的流式顺序是先输出一段 content、再输出 tool call、然后继续输出 content，前端时间线会被拆成 `assistant -> tool -> assistant`。
 - WebSocket 协议不再暴露 `assistantTurnId`，也不再单独发送 `session.started`；当前服务端事件以 `messageId`、`toolCallId`、`userMessageId` 为主键，包含 `generation.started/completed`、`user.message.committed`、`assistant.message.started/delta/completed`、`tool.started/arguments.delta/completed/result`。其中 `tool.arguments.delta` 的 payload 是 `argumentsDelta`，`tool.completed` 的 payload 仍是完整 `arguments`。
 - WebSocket 会话默认使用 `BASH_TOOL`，模型配置通过环境变量 `BIONIC_CLAW_MODEL_CONFIG` 选择，默认值是 `qwen35plus`；连接时如果缺少对应 API key，会直接给前端发 `error` 事件。
 - 后端运行时除了 `uvicorn` 还需要安装 WebSocket 协议实现；当前项目依赖里已显式加入 `websockets`，否则访问 `/ws` 时会出现 `Unsupported upgrade request`，并退化成普通 HTTP 404。
-- `backend/tests/test_chat_runtime.py` 用假 `Agent` 覆盖了两类关键时序：`assistant -> tool -> assistant` 的流式事件顺序，以及同一生成期内连续消费多条排队 user message。
+- `backend/tests/test_websocket_chat_session.py` 用假 `Agent` 覆盖了两类关键时序：`assistant -> tool -> assistant` 的流式事件顺序，以及同一生成期内连续消费多条排队 user message。
 
 # 文档
 ## docs/zh/spec

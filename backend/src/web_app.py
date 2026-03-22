@@ -10,7 +10,7 @@ from starlette.responses import JSONResponse
 from starlette.routing import Route, WebSocketRoute
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from src.chat_runtime import ChatRuntime
+from src.websocket_chat_session import WebSocketChatSession
 from src.commons import ORIGINALS_DIR
 from src.conversation_store import ConversationStore
 from src.web_protocol import PingCommand, SendUserMessageCommand, parse_client_command
@@ -100,7 +100,7 @@ async def send_error(websocket: WebSocket, *, code: str, message: str) -> None:
     )
 
 
-async def websocket_sender_loop(websocket: WebSocket, session: ChatRuntime) -> None:
+async def websocket_sender_loop(websocket: WebSocket, session: WebSocketChatSession) -> None:
     while True:
         event = await session.next_event()
         if event is None:
@@ -113,7 +113,7 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
     loop = asyncio.get_running_loop()
     conversation_id = websocket.query_params.get("conversationId") or None
     try:
-        session = ChatRuntime(loop=loop, conversation_id=conversation_id)
+        session = WebSocketChatSession(loop=loop, conversation_id=conversation_id)
     except Exception as exc:
         if conversation_id:
             if isinstance(exc, FileNotFoundError):
