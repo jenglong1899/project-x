@@ -16,6 +16,7 @@
 - `frontend/src/App.tsx` 采用左侧会话侧栏、右侧单栏时间线、底部输入区的布局；侧栏当前只保留“新建对话 + 最近会话”，会话列表只在页面初始化时通过 HTTP 拉取一次，点击某个会话即切换，并通过断开重连 WebSocket（`/ws?conversationId=...`）实现 resume。
 - `frontend/src/App.css` 只保留根节点占满视口，其余样式由 Tailwind 负责。
 - `frontend/src/features/chat/components/` 已拆出聊天 UI 子组件：`user-turn-bubble.tsx`、`assistant-turn-bubble.tsx`、`chat-composer.tsx`、`chat-sidebar.tsx`、`tool-call-card.tsx`；当前并没有 `empty-chat-state.tsx`，空态文案直接在 `App.tsx` 中渲染。
+- `chat-composer.tsx` 底部只展示反馈文案，不提供“清空错误”按钮；错误提示会在下一次发送、切换会话或新建会话时自然被覆盖/清空。
 
 ### 聊天协议与数据模型
 - `frontend/src/features/chat/protocol.ts` 已定义聊天协议的 zod schema 和 TypeScript 类型；用户消息主键是前端生成的 `userMessageId`，assistant 消息主键是后端生成的 `messageId`，工具卡主键是 `toolCallId`。

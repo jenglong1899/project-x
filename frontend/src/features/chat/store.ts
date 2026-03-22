@@ -65,7 +65,6 @@ type ChatActions = {
   loadConversation: (input: { conversationId: string; items: ChatItem[] }) => void
   stageUserMessage: (input: StageUserMessageInput) => void
   applyServerEvent: (event: ServerEvent) => void
-  clearError: () => void
   reset: () => void
 }
 
@@ -349,11 +348,6 @@ export const useChatStore = create<ChatStore>()((set) => ({
   },
   applyServerEvent: (event) => {
     set((state) => reduceServerEvent(state, event))
-  },
-  clearError: () => {
-    set({
-      errorMessage: null,
-    })
   },
   reset: () => {
     set(initialChatState)

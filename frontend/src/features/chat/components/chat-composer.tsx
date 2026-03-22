@@ -6,19 +6,15 @@ import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 
 type ChatComposerProps = {
-  canClearError: boolean
   draft: string
   feedbackText: string
-  onClearError: () => void
   onDraftChange: (value: string) => void
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
 }
 
 export function ChatComposer({
-  canClearError,
   draft,
   feedbackText,
-  onClearError,
   onDraftChange,
   onSubmit,
 }: ChatComposerProps) {
@@ -59,11 +55,6 @@ export function ChatComposer({
             <span className="truncate">{feedbackText}</span>
           </div>
         </div>
-        {canClearError ? (
-          <Button className="h-auto px-0 text-zinc-400 hover:text-zinc-100" onClick={onClearError} type="button" variant="link">
-            清空错误
-          </Button>
-        ) : null}
       </div>
     </form>
   )
