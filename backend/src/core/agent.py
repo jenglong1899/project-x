@@ -1,3 +1,4 @@
+import json
 import queue
 from typing import Any, Protocol
 from dataclasses import dataclass
@@ -17,6 +18,7 @@ from src.core.agent_turn import (
 )
 from src.core.model_config import ModelConfig
 from src.core.policies import strip_reasoning_content_if_needed
+from src.tools.reset_context import RESET_CONTEXT_AUTO_REMINDER, RESET_CONTEXT_FIRST_CALL_HINT
 
 
 @dataclass(frozen=True)
@@ -33,6 +35,9 @@ class OnQueuedUserMsgCommitted(Protocol):
     def __call__(self, *, frontend_msg_id: str) -> None: ...
 
 class OnConversationPersisted(Protocol):
+    def __call__(self, *, conversation_id: str, display_name: str) -> None: ...
+
+class OnResetContext(Protocol):
     def __call__(self, *, conversation_id: str, display_name: str) -> None: ...
 
 
@@ -55,6 +60,7 @@ class Agent:
                  on_user_msg_enqueued: OnUserMsgEnqueued | None = None,
                  on_queued_user_msg_committed: OnQueuedUserMsgCommitted | None = None,
                  on_conversation_persisted: OnConversationPersisted | None = None,
+                 on_reset_context: OnResetContext | None = None,
                  ) -> None:
         self.name = name
         self._model_config = model_config
@@ -77,6 +83,7 @@ class Agent:
         self._on_user_msg_enqueued = on_user_msg_enqueued or self._noop
         self._on_queued_user_msg_committed = on_queued_user_msg_committed or self._noop
         self._on_conversation_persisted = on_conversation_persisted or self._noop
+        self._on_reset_context = on_reset_context or self._noop
 
         self._user_msg_queue: queue.Queue[QueuedUserMessage] = queue.Queue()
 
@@ -184,8 +191,73 @@ class Agent:
                       on_ai_tool_call_arguments_delta=on_ai_tool_call_arguments_delta,
                       on_ai_tool_call_finished=on_ai_tool_call_finished)
 
-    def _reset_context(self):
-        raise NotImplementedError
+    def _has_reset_context_call_before(self) -> bool:
+        """
+        判断当前 runtime messages 里是否出现过“历史 reset_context 调用”。
+
+        说明：
+        - 这里主要扫描 assistant message 的 tool_calls，因为 tool message 本身没有 tool name。
+        - 当前这一轮触发 reset_context 的 assistant message 一般会位于 messages 的最后一条，
+          所以扫描时会跳过最后一条，避免把“当前调用”算成历史调用。
+        """
+        for message in self._messages[:-1]:
+            if message.get("role") != "assistant":
+                continue
+            tool_calls = message.get("tool_calls", [])
+            if not isinstance(tool_calls, list):
+                continue
+            for tool_call in tool_calls:
+                function_payload = tool_call.get("function") if isinstance(tool_call, dict) else None
+                if not isinstance(function_payload, dict):
+                    continue
+                if function_payload.get("name") == "reset_context":
+                    return True
+        return False
+
+    def _reset_context(self, directive: ResetContextDirective) -> None:
+        tool_call_id = directive.tool_call_id
+        if not tool_call_id:
+            raise RuntimeError("reset_context 的 tool_call_id 为空，当前前端协议不支持该情况")
+
+        is_first_call = not self._has_reset_context_call_before()
+        if is_first_call:
+            result_json_str = json.dumps({"hint": RESET_CONTEXT_FIRST_CALL_HINT}, ensure_ascii=False)
+            tool_message: dict[str, Any] = {
+                "role": "tool",
+                "content": result_json_str,
+                "tool_call_id": tool_call_id,
+            }
+            self._append_runtime_message(tool_message)
+            self._on_tool_result(tool_call_id=tool_call_id, result_json_str=result_json_str)
+            return
+
+        from src.prompts.builder import (
+            build_system_level_instruction_zh,
+            build_user_level_instruction_zh,
+        )
+
+        if self._conversation_store is None:
+            raise RuntimeError("conversation_store 未初始化，无法 reset_context")
+        display_name = self._conversation_store.display_name or "新对话"
+
+        self._system_instruction = build_system_level_instruction_zh()
+        self._user_instruction = build_user_level_instruction_zh()
+        self.new_conversation()
+
+        auto_reminder = RESET_CONTEXT_AUTO_REMINDER
+
+        # 复用 start_with_first_user_message：用 auto_reminder 作为新会话的第一条 user message，
+        # 这样 conversation 文件会立刻创建且模型也能看到 reminder。
+        self._conversation_store.start_with_first_user_message(
+            user_content=auto_reminder,
+            display_name=display_name,
+        )
+        self._messages = self._conversation_store.build_messages_from_history()
+        self._on_reset_context(
+            conversation_id=self._conversation_store.conversation_id,
+            display_name=self._conversation_store.display_name,
+        )
+        # 接下来 run() 会继续 while 循环，直接以 auto_reminder 为最后一条 user message 进行下一轮模型调用。
 
     def run(self) -> dict[str, Any]:
         self._safe_drain_user_message_queue(self._user_msg_queue, self._messages)
@@ -213,7 +285,7 @@ class Agent:
                 self._append_runtime_message(tool_message)
 
             if isinstance(tool_execution.directive, ResetContextDirective):
-                self._reset_context()
+                self._reset_context(tool_execution.directive)
                 continue
 
             # steer message 注入点。在执行完toolcall后注入最符合直觉

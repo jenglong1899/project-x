@@ -220,6 +220,18 @@ function reduceServerEvent(state: ChatState, event: ServerEvent): Partial<ChatSt
         },
       }
 
+    case 'reset.context':
+      return {
+        activeConversationId: event.conversationId,
+        persistedConversation: {
+          conversationId: event.conversationId,
+          displayName: event.displayName,
+        },
+        items: [],
+        pendingUserMessages: [],
+        errorMessage: null,
+      }
+
     case 'user.message.committed':
       return {
         items: upsertUserItem(state.items, event.userMessageId, event.content),

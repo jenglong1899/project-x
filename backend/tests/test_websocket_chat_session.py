@@ -190,6 +190,36 @@ class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
 
         await session.close()
 
+    async def test_websocket_chat_session_emits_reset_context_and_auto_reminder_in_order(self) -> None:
+        def scripted_run(callbacks: AgentCallbacks, _user_message_id: str, _content: str) -> None:
+            callbacks.on_reset_context(
+                conversation_id="conv-2.json",
+                display_name="旧会话标题",
+            )
+            callbacks.on_ai_content_delta(content_delta="新会话开始输出")
+
+        session = WebSocketChatSession(
+            loop=asyncio.get_running_loop(),
+            agent_factory=lambda *, callbacks: FakeAgent(
+                callbacks=callbacks,
+                scripted_runs=[scripted_run],
+            ),
+        )
+        await session.submit_user_message(user_message_id="user-1", content="触发 reset")
+
+        events = await self._collect_events_until_generation_completed(session)
+
+        types = [event["type"] for event in events]
+        reset_index = types.index("reset.context")
+        auto_user_index = types.index("user.message.committed", reset_index + 1)
+        assistant_delta_index = types.index("assistant.message.delta", auto_user_index + 1)
+
+        self.assertLess(reset_index, auto_user_index)
+        self.assertLess(auto_user_index, assistant_delta_index)
+        self.assertTrue(str(events[auto_user_index]["content"]).startswith("<auto_reminder>"))
+
+        await session.close()
+
 
 if __name__ == "__main__":
     unittest.main()
