@@ -9,7 +9,7 @@
 
 from src.commons import SUMMARIES_DIR, MAIN_MEMORY_PATH, ORIGINALS_DIR
 
-DEFAULT_MAIN_MEMORY_ZH = "用户刚完成bionic-claw的安装，还没让我做什么事情"
+DEFAULT_MAIN_MEMORY_ZH = "用户刚完成project-x的安装，还没让我做什么事情"
 
 
 def build_system_level_instruction_zh() -> str:
@@ -17,7 +17,7 @@ def build_system_level_instruction_zh() -> str:
 <system_level_instruction>
 
 <background>
-你处于一个叫 bionic-claw 的 agent 环境（系统）中，用户通过网页来和你交互。
+你处于一个叫 project-x 的 agent 环境（系统）中，用户通过网页来和你交互。
 你的目标就是像人类一样思考、行动。
 当你看到用xml包裹住的user message时，需要知道这是系统发出的消息，而非用户发送的消息（系统具体会发送什么，你到时候就知道了）。
 </background>

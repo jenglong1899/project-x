@@ -218,9 +218,9 @@ asyncio.run(main())
   - 整个过程没有创建第二个 Python 执行线程，但两个任务会被交替推进
 
 - 这和我们项目的对应关系
-  - `fake_receive_user_messages()` 类似 [web_app.py](/home/bruce/projects/bionic-claw/backend/src/web_app.py) 里的 `websocket_endpoint()`
-  - `fake_sender()` 类似 [web_app.py](/home/bruce/projects/bionic-claw/backend/src/web_app.py) 里的 `websocket_sender_loop()`
-  - `session_queue` 类似 [chat_session.py](/home/bruce/projects/bionic-claw/backend/src/chat_session.py) 里的 `self._outgoing_queue`
+  - `fake_receive_user_messages()` 类似 [web_app.py](/home/bruce/projects/project-x/backend/src/web_app.py) 里的 `websocket_endpoint()`
+  - `fake_sender()` 类似 [web_app.py](/home/bruce/projects/project-x/backend/src/web_app.py) 里的 `websocket_sender_loop()`
+  - `session_queue` 类似 [chat_session.py](/home/bruce/projects/project-x/backend/src/chat_session.py) 里的 `self._outgoing_queue`
 
 ## 你的问题：为什么像项目的例子里，`fake_sender()` 用了 `create_task()`，但 `fake_receive_user_messages()` 没有？
 
@@ -290,7 +290,7 @@ await fake_receive_user_messages(session_queue)
     - 哪个协程由当前主流程直接 `await`
 
 - 这和我们项目是一样的
-  - [backend/src/web_app.py](/home/bruce/projects/bionic-claw/backend/src/web_app.py) 里当前主流程是 `websocket_endpoint()`
+  - [backend/src/web_app.py](/home/bruce/projects/project-x/backend/src/web_app.py) 里当前主流程是 `websocket_endpoint()`
   - 它自己还要继续执行 `receive_text()` 去收前端消息
   - 所以 `websocket_sender_loop(...)` 必须被挂成后台任务
   - 不然主流程就会被 sender 占住，没法继续收消息
@@ -389,10 +389,10 @@ await fake_receive_user_messages(session_queue)
   - 那它只是“看起来像异步”，本质上还是会堵住事件循环
 
 - 回到我们项目当前代码
-  - [backend/src/chat_session.py](/home/bruce/projects/bionic-claw/backend/src/chat_session.py) 里现在用的是 `await asyncio.to_thread(self._agent.run)`
-  - [backend/src/core/agent.py](/home/bruce/projects/bionic-claw/backend/src/core/agent.py) 里的 `run()` 目前是同步函数
-  - [backend/src/core/chat.py](/home/bruce/projects/bionic-claw/backend/src/core/chat.py) 里的 `stream()` 也是同步迭代模型流
-  - [backend/src/tools/bash.py](/home/bruce/projects/bionic-claw/backend/src/tools/bash.py) 里的工具执行是同步 `subprocess.run(...)`
+  - [backend/src/chat_session.py](/home/bruce/projects/project-x/backend/src/chat_session.py) 里现在用的是 `await asyncio.to_thread(self._agent.run)`
+  - [backend/src/core/agent.py](/home/bruce/projects/project-x/backend/src/core/agent.py) 里的 `run()` 目前是同步函数
+  - [backend/src/core/chat.py](/home/bruce/projects/project-x/backend/src/core/chat.py) 里的 `stream()` 也是同步迭代模型流
+  - [backend/src/tools/bash.py](/home/bruce/projects/project-x/backend/src/tools/bash.py) 里的工具执行是同步 `subprocess.run(...)`
   - 所以当前这条链路属于“同步阻塞流程”，`to_thread()` 是一个合理的桥接办法
 
 - 如果以后要做成真正更好的异步版本
@@ -456,7 +456,7 @@ loop = asyncio.get_running_loop()
   - 这时候通常就存在“正在运行的 loop”
 
 - 先看代码位置
-  - [backend/src/web_app.py](/home/bruce/projects/bionic-claw/backend/src/web_app.py) 里的 `websocket_endpoint()` 本身就是 `async def`
+  - [backend/src/web_app.py](/home/bruce/projects/project-x/backend/src/web_app.py) 里的 `websocket_endpoint()` 本身就是 `async def`
   - 这说明它不是普通函数，而是运行在 `asyncio` 的事件循环里
 
 - 先看一个最简单的例子
@@ -559,7 +559,7 @@ loop.call_soon(say_hello)
 
 ## 在我们项目里分别是哪种情况
 
-- [web_app.py](/home/bruce/projects/bionic-claw/backend/src/web_app.py) 里的：
+- [web_app.py](/home/bruce/projects/project-x/backend/src/web_app.py) 里的：
 
 ```python
 sender_task = asyncio.create_task(websocket_sender_loop(websocket, session))
@@ -569,7 +569,7 @@ sender_task = asyncio.create_task(websocket_sender_loop(websocket, session))
   - 因为 `websocket_sender_loop(...)` 是协程
   - 我们想让它后台运行，当前函数继续处理 `receive_text()`
 
-- [chat_session.py](/home/bruce/projects/bionic-claw/backend/src/chat_session.py) 里的：
+- [chat_session.py](/home/bruce/projects/project-x/backend/src/chat_session.py) 里的：
 
 ```python
 self._loop.call_soon_threadsafe(self._outgoing_queue.put_nowait, event)
@@ -587,7 +587,7 @@ self._loop.call_soon_threadsafe(self._outgoing_queue.put_nowait, event)
   - 这正是 `loop.call_soon_threadsafe(...)` 的职责，不是 `create_task()` 的职责
 
 - 先看我们项目里的真实场景
-  - [chat_session.py](/home/bruce/projects/bionic-claw/backend/src/chat_session.py) 里有：
+  - [chat_session.py](/home/bruce/projects/project-x/backend/src/chat_session.py) 里有：
 
 ```python
 await asyncio.to_thread(self._agent.run)
@@ -679,13 +679,13 @@ self._outgoing_queue.put_nowait(event)
 
 - 这里为什么要拿 `loop`
   - 不是为了当前函数自己用
-  - 是为了传给 [backend/src/chat_session.py](/home/bruce/projects/bionic-claw/backend/src/chat_session.py) 里的 `ChatSession(loop=loop)`
+  - 是为了传给 [backend/src/chat_session.py](/home/bruce/projects/project-x/backend/src/chat_session.py) 里的 `ChatSession(loop=loop)`
   - `ChatSession` 后面要把别的线程里产生的事件，安全地塞回这个 loop 管的异步队列里
 
 - 对应到项目代码
   - `ChatSession` 保存了这个 loop：`self._loop = loop`
   - 真正用到它的地方在 `self._loop.call_soon_threadsafe(...)`
-  - 位置见 [backend/src/chat_session.py](/home/bruce/projects/bionic-claw/backend/src/chat_session.py)
+  - 位置见 [backend/src/chat_session.py](/home/bruce/projects/project-x/backend/src/chat_session.py)
 
 ## 你的问题：给我一个最简单的 `loop` 使用例子
 
@@ -775,7 +775,7 @@ asyncio.run(main())
 
 - 这个例子和我们项目的对应关系
   - `main()` 对应 WebSocket 所在的 asyncio 主线程
-  - `worker(...)` 对应 [backend/src/chat_session.py](/home/bruce/projects/bionic-claw/backend/src/chat_session.py) 里 `asyncio.to_thread(self._agent.run)` 跑出去的那条工作线程
+  - `worker(...)` 对应 [backend/src/chat_session.py](/home/bruce/projects/project-x/backend/src/chat_session.py) 里 `asyncio.to_thread(self._agent.run)` 跑出去的那条工作线程
   - `queue` 对应 `ChatSession` 里的 `self._outgoing_queue`
   - `loop.call_soon_threadsafe(...)` 对应 `ChatSession._emit_from_any_thread(...)`
 
@@ -791,7 +791,7 @@ asyncio.run(main())
   - 关键不在于“它是谁”
   - 关键在于“是谁在调用它的哪个方法”
 
-- 在 [backend/src/chat_session.py](/home/bruce/projects/bionic-claw/backend/src/chat_session.py) 里，确实有一批 projector 回调被注册给了 `Agent`
+- 在 [backend/src/chat_session.py](/home/bruce/projects/project-x/backend/src/chat_session.py) 里，确实有一批 projector 回调被注册给了 `Agent`
 
 ```python
 self._projector = ChatEventProjector(emit=self._emit_from_any_thread)
@@ -814,8 +814,8 @@ callbacks = AgentCallbacks(
   - `ChatSession._run_agent_until_idle()` 里执行：
     - `await asyncio.to_thread(self._agent.run)`
   - 于是 `self._agent.run()` 跑到工作线程
-  - `Agent.run()` 里调用 [backend/src/core/agent.py](/home/bruce/projects/bionic-claw/backend/src/core/agent.py#L137) 的 `_safe_stream(...)`
-  - `_safe_stream(...)` 又调用 [backend/src/core/chat.py](/home/bruce/projects/bionic-claw/backend/src/core/chat.py#L123) 的 `stream(...)`
+  - `Agent.run()` 里调用 [backend/src/core/agent.py](/home/bruce/projects/project-x/backend/src/core/agent.py#L137) 的 `_safe_stream(...)`
+  - `_safe_stream(...)` 又调用 [backend/src/core/chat.py](/home/bruce/projects/project-x/backend/src/core/chat.py#L123) 的 `stream(...)`
   - `stream(...)` 在收到模型流式 chunk 时，会直接调用：
     - `on_ai_content_delta(...)`
     - `on_ai_reasoning_delta(...)`
@@ -826,15 +826,15 @@ callbacks = AgentCallbacks(
   - 所以这些 projector 方法确实是在工作线程里被调用的
 
 - 对应代码位置
-  - 工作线程入口： [backend/src/chat_session.py](/home/bruce/projects/bionic-claw/backend/src/chat_session.py#L376)
-  - `Agent.run()` 调 `stream(...)`： [backend/src/core/agent.py](/home/bruce/projects/bionic-claw/backend/src/core/agent.py#L134)
+  - 工作线程入口： [backend/src/chat_session.py](/home/bruce/projects/project-x/backend/src/chat_session.py#L376)
+  - `Agent.run()` 调 `stream(...)`： [backend/src/core/agent.py](/home/bruce/projects/project-x/backend/src/core/agent.py#L134)
   - `stream(...)` 里真正触发 projector 回调：
-    - 内容增量： [backend/src/core/chat.py](/home/bruce/projects/bionic-claw/backend/src/core/chat.py#L195)
-    - 思维链增量： [backend/src/core/chat.py](/home/bruce/projects/bionic-claw/backend/src/core/chat.py#L200)
-    - 工具开始 / 参数增量 / 工具完成： [backend/src/core/chat.py](/home/bruce/projects/bionic-claw/backend/src/core/chat.py#L207)
+    - 内容增量： [backend/src/core/chat.py](/home/bruce/projects/project-x/backend/src/core/chat.py#L195)
+    - 思维链增量： [backend/src/core/chat.py](/home/bruce/projects/project-x/backend/src/core/chat.py#L200)
+    - 工具开始 / 参数增量 / 工具完成： [backend/src/core/chat.py](/home/bruce/projects/project-x/backend/src/core/chat.py#L207)
   - 工具结果回调：
-    - `Agent.run()` 调 `execute_tool_and_append(...)`： [backend/src/core/agent.py](/home/bruce/projects/bionic-claw/backend/src/core/agent.py#L149)
-    - 里面调用 `on_tool_result(...)`： [backend/src/core/chat.py](/home/bruce/projects/bionic-claw/backend/src/core/chat.py#L301)
+    - `Agent.run()` 调 `execute_tool_and_append(...)`： [backend/src/core/agent.py](/home/bruce/projects/project-x/backend/src/core/agent.py#L149)
+    - 里面调用 `on_tool_result(...)`： [backend/src/core/chat.py](/home/bruce/projects/project-x/backend/src/core/chat.py#L301)
     - 这时对应的也是 `self._projector.on_tool_result`
 
 - 但是，也有 projector 方法不是在工作线程里调用的
@@ -842,7 +842,7 @@ callbacks = AgentCallbacks(
     - `self._projector.on_generation_started()`
     - `self._projector.on_agent_run_completed()`
     - `self._projector.on_generation_completed()`
-  - 它们是在 [backend/src/chat_session.py](/home/bruce/projects/bionic-claw/backend/src/chat_session.py#L372) 这个 async 协程里直接调用的
+  - 它们是在 [backend/src/chat_session.py](/home/bruce/projects/project-x/backend/src/chat_session.py#L372) 这个 async 协程里直接调用的
   - 也就是仍然在 asyncio 主线程里
 
 - 还有一个容易漏掉的点
@@ -851,8 +851,8 @@ callbacks = AgentCallbacks(
   - 它会先在工作线程里被 `Agent._safe_drain_user_message_queue(...)` 调到
   - 然后再由 `self._on_queued_user_msg_committed(...)` 间接调用 `self._projector.on_user_message_committed(...)`
   - 对应代码：
-    - 回调触发： [backend/src/core/agent.py](/home/bruce/projects/bionic-claw/backend/src/core/agent.py#L95)
-    - 间接转给 projector： [backend/src/chat_session.py](/home/bruce/projects/bionic-claw/backend/src/chat_session.py#L397)
+    - 回调触发： [backend/src/core/agent.py](/home/bruce/projects/project-x/backend/src/core/agent.py#L95)
+    - 间接转给 projector： [backend/src/chat_session.py](/home/bruce/projects/project-x/backend/src/chat_session.py#L397)
 
 - 所以最准确的结论是
   - `self._projector` 不是“整个对象都运行在另一个线程里”
@@ -885,7 +885,7 @@ callbacks = AgentCallbacks(
 ## 你的问题：`sender_task = asyncio.create_task(...)` 是第一次见
 
 - 这行在干什么
-  - [backend/src/web_app.py](/home/bruce/projects/bionic-claw/backend/src/web_app.py) 里这句：
+  - [backend/src/web_app.py](/home/bruce/projects/project-x/backend/src/web_app.py) 里这句：
 
 ```python
 sender_task = asyncio.create_task(websocket_sender_loop(websocket, session))

@@ -165,7 +165,7 @@ def stream(*, model_config: ModelConfig,
            on_ai_tool_call_arguments_delta: OnAiToolCallArgumentsDelta,
            on_ai_tool_call_finished: OnAiToolCallFinished) -> dict[str, Any]:
     if model_config.model == "mock":
-        delay_ms_text = os.getenv("BIONIC_CLAW_MOCK_MODEL_DELAY_MS", "0").strip()
+        delay_ms_text = os.getenv("PROJECT_X_MOCK_MODEL_DELAY_MS", "0").strip()
         try:
             delay_ms = int(delay_ms_text)
         except ValueError:

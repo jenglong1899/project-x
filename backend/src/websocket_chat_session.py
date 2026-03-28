@@ -74,12 +74,12 @@ class AgentFactory(Protocol):
 
 
 def resolve_model_config() -> ModelConfig:
-    model_key = os.getenv("BIONIC_CLAW_MODEL_CONFIG", "qwen35plus")
+    model_key = os.getenv("PROJECT_X_MODEL_CONFIG", "qwen35plus")
     model_config = MODEL_CONFIGS.get(model_key)
     if model_config is None:
         supported = ", ".join(sorted(MODEL_CONFIGS))
         raise RuntimeError(
-            f"BIONIC_CLAW_MODEL_CONFIG={model_key} 不受支持，可选值: {supported}"
+            f"PROJECT_X_MODEL_CONFIG={model_key} 不受支持，可选值: {supported}"
         )
     if model_key == "mock":
         return model_config
@@ -90,7 +90,7 @@ def resolve_model_config() -> ModelConfig:
 
 def create_default_agent(*, callbacks: AgentCallbacks) -> Agent:
     return Agent(
-        name="bionic-claw-web",
+        name="project-x-web",
         model_config=resolve_model_config(),
         system_instruction=build_system_level_instruction_zh(),
         user_instruction=build_user_level_instruction_zh(),
