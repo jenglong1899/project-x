@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 from uuid import uuid4
 
-from src.core.agent import Agent, OnConversationPersisted, OnQueuedUserMsgCommitted
+from src.core.agent import Agent, OnConversationPersisted, OnQueuedUserMsgCommitted, OnResetContext
 from src.core.agent_turn import (
     OnAiContentDelta,
     OnAiReasoningDelta,
@@ -30,6 +30,7 @@ from src.prompts.builder import (
     build_user_level_instruction_zh,
 )
 from src.tools.bash import BASH_TOOL
+from src.tools.reset_context import RESET_CONTEXT_AUTO_REMINDER, RESET_CONTEXT_TOOL
 
 
 logger = logging.getLogger(__name__)
@@ -67,6 +68,7 @@ class AgentCallbacks:
     on_tool_result: OnToolResult
     on_queued_user_msg_committed: OnQueuedUserMsgCommitted
     on_conversation_persisted: OnConversationPersisted
+    on_reset_context: OnResetContext
 
 
 class AgentFactory(Protocol):
@@ -94,7 +96,7 @@ def create_default_agent(*, callbacks: AgentCallbacks) -> Agent:
         model_config=resolve_model_config(),
         system_instruction=build_system_level_instruction_zh(),
         user_instruction=build_user_level_instruction_zh(),
-        tools=[BASH_TOOL],
+        tools=[BASH_TOOL, RESET_CONTEXT_TOOL],
         on_ai_content_delta=callbacks.on_ai_content_delta,
         on_ai_reasoning_delta=callbacks.on_ai_reasoning_delta,
         on_ai_tool_call_started=callbacks.on_ai_tool_call_started,
@@ -103,6 +105,7 @@ def create_default_agent(*, callbacks: AgentCallbacks) -> Agent:
         on_tool_result=callbacks.on_tool_result,
         on_queued_user_msg_committed=callbacks.on_queued_user_msg_committed,
         on_conversation_persisted=callbacks.on_conversation_persisted,
+        on_reset_context=callbacks.on_reset_context,
     )
 
 
@@ -331,6 +334,7 @@ class WebSocketChatSession:
             on_tool_result=self._projector.on_tool_result,
             on_queued_user_msg_committed=self._on_queued_user_msg_committed,
             on_conversation_persisted=self._on_conversation_persisted,
+            on_reset_context=self._on_reset_context,
         )
         self._agent = (agent_factory or create_default_agent)(callbacks=callbacks)
         if conversation_id:
@@ -379,6 +383,36 @@ class WebSocketChatSession:
                 "type": "conversation.persisted",
                 "conversationId": conversation_id,
                 "displayName": display_name,
+            }
+        )
+
+    def _on_reset_context(
+        self,
+        *,
+        conversation_id: str,
+        display_name: str,
+    ) -> None:
+        # 注意：这个回调来自 agent.run() 所在线程，所以必须走线程安全的 emitter。
+        #
+        # 这里选择由后端直接推送 auto_reminder 的 user.message.committed，而不是让前端收到 reset.context 后再去 HTTP 拉取会话详情：
+        # - 否则前端会出现“正在流式追加 items”与“loadConversation 覆盖 items”的竞态，容易丢流式内容；
+        # - 后端按顺序推事件，前端按顺序渲染，最简单也最稳定。
+        #
+        # 备注：为什么不在 Agent._reset_context() 里直接“复用 on_queued_user_msg_committed”来发这条 user.message.committed？
+        # - 因为 on_queued_user_msg_committed 的参数只有 frontend_msg_id，并不包含内容；
+        # 因此这里由 WebSocket 投影层显式发送一条 user.message.committed，并保证它紧随 reset.context、先于任何 delta。
+        self._emit_from_any_thread(
+            {
+                "type": "reset.context",
+                "conversationId": conversation_id,
+                "displayName": display_name,
+            }
+        )
+        self._emit_from_any_thread(
+            {
+                "type": "user.message.committed",
+                "userMessageId": f"auto-{uuid4().hex}",
+                "content": RESET_CONTEXT_AUTO_REMINDER,
             }
         )
 

@@ -35,8 +35,8 @@
 - Codex CLI 沙盒内禁止创建 socket（例如 uvicorn 绑定端口），运行 Playwright e2e 需要允许非沙盒执行。
 
 ## 产品约束
-- `docs/zh/spec/brief.md` 明确网页端当前只支持流式交互。
-- `docs/zh/spec/frontend.md` 要求前端 UI 保持简约，整体接近 ChatGPT 的单栏聊天页；思维链和工具调用默认展开；同一个工具调用的 tool call 与 tool result 必须放在同一张卡片里；前端技术栈固定为 `ts + zustand store + tailwind + shadcn + zod`。
+- `docs/zh/draft-plans/brief.md` 明确网页端当前只支持流式交互。
+- `docs/zh/draft-plans/frontend.md` 要求前端 UI 保持简约，整体接近 ChatGPT 的单栏聊天页；思维链和工具调用默认展开；同一个工具调用的 tool call 与 tool result 必须放在同一张卡片里；前端技术栈固定为 `ts + zustand store + tailwind + shadcn + zod`。
 
 ## 后端
 
@@ -65,6 +65,7 @@
 - conversation_id 就是上述 JSON 文件名；`ConversationStore.load_from_conversation_id()` 用 conversation_id 直接加载并恢复存储消息；`ConversationStore.build_runtime_messages()` 会去掉每条消息的 `meta`，避免把存储字段传给模型供应商。
 - conversation JSON 只会在“首条 committed 的后续 user message 进入 `_messages`”时创建，不会在 `new_conversation()` 或 `enqueue_user_message()` 时创建空会话文件。
 - conversation JSON 的 `meta.display-name` 取首条 committed 的后续 user message：最多保留前 20 个字符；若超出则在末尾补 `...`。前端可自行更早做视觉截断；`messages` 中每条消息都会额外带一个 `meta.timestamp`。
+- display-name是后端生成，而不是前端自己从message中截取，是因为将来可能会由后端调用llm总结对话来生成display-name。
 
 ### 服务层与会话编排
 - 后端当前使用 Starlette 做服务层：`backend/main.py` 暴露 `app` 并通过 `uvicorn.run()` 启动；`src/web_app.py` 只保留 `/healthz`、`/ws` 路由和 WebSocket 收发。
@@ -79,8 +80,11 @@
 - `backend/tests/test_websocket_chat_session.py` 用假 `Agent` 覆盖了两类关键时序：`assistant -> tool -> assistant` 的流式事件顺序，以及同一生成期内连续消费多条排队 user message。
 
 # 文档
-## docs/zh/spec
+## docs/zh/draft-plans
 这里面的文档描述的功能有些实现了，有些还没实现。
+
+## docs/zh/plans
+- `reset_context` 工具实现计划：`docs/zh/plans/reset_context.md`（计划新增 WebSocket 事件 `reset.context`，让前端自动切到新会话）
 
 ## docs/zh/teach/
 

@@ -278,7 +278,7 @@ def stream(*, model_config: ModelConfig,
 
 @dataclass
 class ResetContextDirective:
-    prompt_to_my_future_self: str
+    tool_call_id: str | None
 
 
 # 做这个只是为了对称，实际上目前run()只会判断是不是ResetContextDirective
@@ -323,8 +323,50 @@ def _stringify_tool_result(result: Any) -> str:
 def execute_tool_calls(*, ai_msg_dict: dict[str, Any],
                        tools_by_name: Mapping[str, ToolSpec],
                        on_tool_result: OnToolResult) -> ToolExecutionOutcome:
+    tool_calls = ai_msg_dict.get("tool_calls", [])
+    if tool_calls:
+        tool_names: list[str] = []
+        for tool_call in tool_calls:
+            function_payload = _get_field(tool_call, "function", {})
+            tool_name = _get_field(function_payload, "name") or ""
+            tool_names.append(tool_name)
+
+        if "reset_context" in tool_names:
+            is_valid_reset_context_call = len(tool_calls) == 1 and tool_names[0] == "reset_context"
+            if not is_valid_reset_context_call:
+                # 不抛异常（避免把错误上抛成系统错误），而是把错误以 tool result 形式回传给模型，
+                # 让模型能在下一条 assistant message 自行纠正。
+                error_json_str = json.dumps(
+                    {"error": "reset_context 不能和其他工具并发调用，且必须是唯一 tool call"},
+                    ensure_ascii=False,
+                )
+                tool_messages: list[dict[str, Any]] = []
+                for tool_call in tool_calls:
+                    tool_call_id = _get_field(tool_call, "id")
+                    if not tool_call_id:
+                        raise ValueError("tool_call_id 为空，当前前端协议不支持该情况")
+                    tool_messages.append(
+                        {
+                            "role": "tool",
+                            "content": error_json_str,
+                            "tool_call_id": tool_call_id,
+                        }
+                    )
+                    on_tool_result(tool_call_id=tool_call_id, result_json_str=error_json_str)
+
+                return ToolExecutionOutcome(
+                    tool_messages=tool_messages,
+                    directive=ContinueLoopDirective(),
+                )
+
+            tool_call_id = _get_field(tool_calls[0], "id")
+            return ToolExecutionOutcome(
+                tool_messages=[],
+                directive=ResetContextDirective(tool_call_id=tool_call_id),
+            )
+
     tool_messages: list[dict[str, Any]] = []
-    for index, tool_call in enumerate(ai_msg_dict.get("tool_calls", [])):
+    for index, tool_call in enumerate(tool_calls):
         function_payload = _get_field(tool_call, "function", {})
         tool_name = _get_field(function_payload, "name")
         if not tool_name:

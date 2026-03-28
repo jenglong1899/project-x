@@ -16,6 +16,12 @@ const conversationPersistedEventSchema = z.object({
   displayName: z.string(),
 })
 
+const resetContextEventSchema = z.object({
+  type: z.literal('reset.context'),
+  conversationId: nonEmptyString,
+  displayName: z.string(),
+})
+
 const userMessageCommittedEventSchema = z.object({
   type: z.literal('user.message.committed'),
   userMessageId: nonEmptyString,
@@ -76,6 +82,7 @@ export const serverEventSchema = z.discriminatedUnion('type', [
   generationStartedEventSchema,
   generationCompletedEventSchema,
   conversationPersistedEventSchema,
+  resetContextEventSchema,
   userMessageCommittedEventSchema,
   assistantMessageStartedEventSchema,
   assistantMessageDeltaEventSchema,

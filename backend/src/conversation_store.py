@@ -94,12 +94,13 @@ class ConversationStore:
     def has_persisted_conversation(self) -> bool:
         return self._file_path is not None
 
-    def start_with_first_user_message(self, *, user_content: str) -> None:
+    def start_with_first_user_message(self, *, user_content: str, display_name: str | None = None) -> None:
         if self.has_persisted_conversation():
             raise RuntimeError("conversation 已开始，不能重复创建")
 
         self._conversation_id = build_conversation_id()
-        self._display_name = truncate_display_name(user_content)
+        resolved_display_name = display_name if display_name is not None else user_content
+        self._display_name = truncate_display_name(resolved_display_name)
         self._messages = [
             self._with_meta_timestamp(
                 {
