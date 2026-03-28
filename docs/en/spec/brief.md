@@ -82,7 +82,7 @@ Sometimes you simply want to append; this tool should support that directly.
 If you try to append via `replace`, you first need to read the end of the file.
 
 # Session Store
-Store sessions in json under `~/.bionic-claw/memories/originals/`.
+Store sessions in json under `~/.project-x/memories/originals/`.
 The file should have two major parts: `meta` metadata and a `messages` array.
 Use `coolname + timestamp` for the filename (`coolname` should come from a third-party library; do not hand-roll it).
 

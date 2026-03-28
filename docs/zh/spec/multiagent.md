@@ -1,6 +1,6 @@
-bionic-claw系统允许创建多个agent（相当于企业中的多个人类员工），每个agent有各自的记忆文件 
-~/.bionic-claw/memories/<agent_name>/summaries
-~/.bionic-claw/memories/<agent_name>/originals
+project-x系统允许创建多个agent（相当于企业中的多个人类员工），每个agent有各自的记忆文件 
+~/.project-x/memories/<agent_name>/summaries
+~/.project-x/memories/<agent_name>/originals
 
 agent可以创建subagent，subagent没有任何记忆机制，它们是临时创建的，用来给agent减轻上下文压力，subagent只有只读权限
 

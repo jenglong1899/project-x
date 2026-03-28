@@ -10,7 +10,7 @@
 - `frontend` 已接入 Tailwind CSS v4：`vite.config.ts` 使用 `@tailwindcss/vite` 插件，`src/index.css` 已导入 `tailwindcss`、`tw-animate-css`、`shadcn/tailwind.css` 和 Geist 字体，并定义了 shadcn 主题变量。
 - `frontend` 已配置 `@/* -> src/*` 导入别名，`vite.config.ts`、`tsconfig.json`、`tsconfig.app.json` 都有对应映射。
 - `frontend/components.json` 已存在，shadcn 预设为 `base-nova`，别名使用 `@/components`、`@/lib` 等；初始化已生成 `src/lib/utils.ts` 和 `src/components/ui/button.tsx`。
-- `frontend/vite.config.ts` 已配置本地开发代理：`/healthz`、`/conversations`、`/ws` 默认转发到 `http://127.0.0.1:8000`，也可通过环境变量 `BIONIC_CLAW_BACKEND_ORIGIN` 覆盖。
+- `frontend/vite.config.ts` 已配置本地开发代理：`/healthz`、`/conversations`、`/ws` 默认转发到 `http://127.0.0.1:8000`，也可通过环境变量 `PROJECT_X_BACKEND_ORIGIN` 覆盖。
 
 ### 页面结构
 - `frontend/src/App.tsx` 采用左侧会话侧栏、右侧单栏时间线、底部输入区的布局；侧栏当前只保留“新建对话 + 最近会话”，会话列表只在页面初始化时通过 HTTP 拉取一次，点击某个会话即切换，并通过断开重连 WebSocket（`/ws?conversationId=...`）实现 resume。
@@ -44,7 +44,7 @@
 - Python 项目位于 `backend/`，使用 `uv` 管理依赖和运行命令。
 - `backend/pyproject.toml` 已配置 pytest 的 `pythonpath = ["."]`，这样从 `backend/` 运行测试时，`from src...` 导入可以直接工作。
 - `backend` 已通过 `[dependency-groups].dev` 声明 `pytest`，可以直接在 `backend/` 下运行 `uv run pytest -q`。
-- 仓库从 `catclaw` 重命名到 `bionic-claw` 后，PyCharm 终端可能暂时保留旧的 `VIRTUAL_ENV=/home/bruce/projects/catclaw/backend/.venv`；`uv` 会忽略它并使用当前项目的 `.venv`，关闭终端标签或重启 PyCharm 后通常恢复正常。
+- 项目目标目录名是 `project-x`；仓内文档里的绝对路径引用按 `/home/bruce/projects/project-x` 维护。如果实际本地路径不同，需要再同步修正文档中的绝对路径。
 
 ### 模型流式调用与工具系统
 - `src/core/model_config.py` 里的 `ModelConfig` 提供 `model`、`base_url`、`api_key`，供聊天模型调用使用。
@@ -59,9 +59,9 @@
 
 ### Prompt 与记忆
 - `src/prompts/builder.py` 里的记忆路径常量保留 `~` 形式，给 system instruction 复用；真正读写文件时再 `expanduser()`。
-- `build_user_level_instruction_zh()` 会确保 `~/.bionic-claw/memories/summary/main.md` 存在；首次缺失时自动创建，并写入默认记忆“用户刚完成bionic-claw的安装，还没让我做什么事情”。
+- `build_user_level_instruction_zh()` 会确保 `~/.project-x/memories/summaries/main.md` 存在；首次缺失时自动创建，并写入默认记忆“用户刚完成project-x的安装，还没让我做什么事情”。
 - 当前主记忆是 `build_user_level_instruction_zh()` 在 agent 构造时一次性读入 `user_instruction` 的快照；运行中的 agent 不会因为 `main.md` 被异步改写而自动看到最新内容，除非后续显式重建 instruction 或 reset context。
-- `src/conversation_store.py` 会把原始对话以 JSON 文件存到 `~/.bionic-claw/memories/originals/`；文件名格式是 `coolname + UTC时间戳 + .json`，根结构固定为 `meta + messages`，并用 `has_persisted_conversation()` 表示“这轮会话已经有落地 JSON”。
+- `src/conversation_store.py` 会把原始对话以 JSON 文件存到 `~/.project-x/memories/originals/`；文件名格式是 `coolname + UTC时间戳 + .json`，根结构固定为 `meta + messages`，并用 `has_persisted_conversation()` 表示“这轮会话已经有落地 JSON”。
 - conversation_id 就是上述 JSON 文件名；`ConversationStore.load_from_conversation_id()` 用 conversation_id 直接加载并恢复存储消息；`ConversationStore.build_runtime_messages()` 会去掉每条消息的 `meta`，避免把存储字段传给模型供应商。
 - conversation JSON 只会在“首条 committed 的后续 user message 进入 `_messages`”时创建，不会在 `new_conversation()` 或 `enqueue_user_message()` 时创建空会话文件。
 - conversation JSON 的 `meta.display-name` 取首条 committed 的后续 user message：最多保留前 20 个字符；若超出则在末尾补 `...`。前端可自行更早做视觉截断；`messages` 中每条消息都会额外带一个 `meta.timestamp`。
@@ -74,7 +74,7 @@
 - `src/core/agent.py` 提供 `has_pending_user_messages()`，供服务层在一次 run 完成后继续消费排队中的用户消息。
 - `src/websocket_chat_session.py` 里的 `ChatEventProjector` 会把 `Agent` 的低层回调投影成前端协议事件，并由后端决定 assistant 卡片边界：首次 reasoning/content delta 时开启消息，遇到 tool start 时结束当前 assistant 消息，每次 `agent.run()` 返回时也会结束当前 assistant 消息。由于前端采用平铺 `items[]` 模型，如果同一个 AI message 的流式顺序是先输出一段 content、再输出 tool call、然后继续输出 content，前端时间线会被拆成 `assistant -> tool -> assistant`。
 - WebSocket 协议不再暴露 `assistantTurnId`，也不再单独发送 `session.started`；当前服务端事件以 `messageId`、`toolCallId`、`userMessageId` 为主键，包含 `generation.started/completed`、`user.message.committed`、`assistant.message.started/delta/completed`、`tool.started/arguments.delta/completed/result`。其中 `tool.arguments.delta` 的 payload 是 `argumentsDelta`，`tool.completed` 的 payload 仍是完整 `arguments`。
-- WebSocket 会话默认使用 `BASH_TOOL`，模型配置通过环境变量 `BIONIC_CLAW_MODEL_CONFIG` 选择，默认值是 `qwen35plus`；连接时如果缺少对应 API key，会直接给前端发 `error` 事件。
+- WebSocket 会话默认使用 `BASH_TOOL`，模型配置通过环境变量 `PROJECT_X_MODEL_CONFIG` 选择，默认值是 `qwen35plus`；连接时如果缺少对应 API key，会直接给前端发 `error` 事件。
 - 后端运行时除了 `uvicorn` 还需要安装 WebSocket 协议实现；当前项目依赖里已显式加入 `websockets`，否则访问 `/ws` 时会出现 `Unsupported upgrade request`，并退化成普通 HTTP 404。
 - `backend/tests/test_websocket_chat_session.py` 用假 `Agent` 覆盖了两类关键时序：`assistant -> tool -> assistant` 的流式事件顺序，以及同一生成期内连续消费多条排队 user message。
 
