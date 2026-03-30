@@ -12,26 +12,6 @@
 
 ## 高确定性（直接可复现/可定位）
 
-### 1) WebSocket 命令解析对“非 object JSON”不够健壮
-
-- 位置：`backend/src/web_protocol.py` 的 `parse_client_command(payload: dict[str, Any])`
-- 现状：`websocket_endpoint()` 中 `payload = json.loads(payload_text)` 后直接调用 `parse_client_command(payload)`（见 `backend/src/web_app.py`）。
-  - 当客户端发送的 JSON 顶层不是 object（例如 `[]` / `"x"` / `123`），`parse_client_command` 会触发 `AttributeError: '<type>' object has no attribute 'get'`。
-  - `websocket_endpoint()` 只捕获 `(ValidationError, ValueError)`，因此这类异常会绕过错误回包逻辑，影响连接稳定性。
-- 建议：
-  - 让 `parse_client_command` 接受 `payload: Any` 并在内部做 `isinstance(payload, dict)` 校验，统一转成 `ValueError`（从而走现有 `invalid_command` 分支回包）。
-  - 或者在 `websocket_endpoint()` 中，在调用 `parse_client_command` 前做一次顶层类型检查。
-
-### 2) 工具调用强依赖 `tool_call_id` 非空，兼容性边界很硬
-
-- 位置：
-  - `backend/src/websocket_chat_session.py`：`ChatEventProjector._require_tool_call_id()` 在 `tool_call_id` 为空时直接 `raise RuntimeError(...)`
-  - `backend/src/core/agent_turn.py`：`execute_tool_calls()` 生成 tool message 时会写入 `tool_call_id`（可能为 `None`），前端协议 `frontend/src/features/chat/protocol.ts` 又要求 `toolCallId` 为非空字符串
-- 风险：一旦某个供应商/中间层返回的 `tool_call_id` 缺失或为空字符串，当前链路会直接报错并中断，而不是降级继续。
-- 建议（按侵入性从低到高）：
-  - 明确在“模型/供应商适配层”统一保证 `tool_call_id`（例如基于 `(conversation_id, index)` 生成稳定 fallback id），并让 tool message / 事件使用同一套规则。
-  - 或者把前端协议放宽（允许空/缺失），但这会影响 UI 关联 tool result 的逻辑，需要同步设计。
-
 ### 4) `bash` 工具缺少超时/输出上限/资源约束，容易卡死或拉爆输出
 
 - 位置：`backend/src/tools/bash.py` 的 `subprocess.run(["bash","-lc", ...], capture_output=True, ...)`
