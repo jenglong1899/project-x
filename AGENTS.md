@@ -100,6 +100,7 @@
 时间线模型（重要的简化）：
 - 前端采用平铺 `user/assistant/tool` items，不表达“assistant 内嵌 tool 段落”；事件顺序决定 UI 顺序
 - `zustand@5 + React 19` 注意：selector 不要返回临时新对象/新数组（避免 `Maximum update depth exceeded`）
+- ESLint 启用了 `react-hooks/set-state-in-effect`：避免在 `useEffect` 回调体内同步调用 React `setState`，优先把更新放到订阅/异步回调里或改用外部 store
 
 ### 测试注意事项
 - Playwright strict mode：`getByText()` 容易 strict violation，优先用更具体的 locator（例如 `getByRole('main')...`）
