@@ -29,7 +29,16 @@ from src.prompts.builder import (
     build_system_level_instruction_zh,
     build_user_level_instruction_zh,
 )
+from src.commons import ACTIVE_CONVERSATION_ID_PATH
+from src.reminders.runtime import (
+    bind_scheduler_wakeup,
+    get_store as get_reminder_store,
+    unbind_scheduler_wakeup,
+)
+from src.reminders.scheduler import ReminderScheduler
+from src.reminders.store import ReminderRecord
 from src.tools.bash import BASH_TOOL
+from src.tools.reminder import REMINDER_TOOLS
 from src.tools.reset_context import RESET_CONTEXT_AUTO_REMINDER, RESET_CONTEXT_TOOL
 
 
@@ -96,7 +105,7 @@ def create_default_agent(*, callbacks: AgentCallbacks) -> Agent:
         model_config=resolve_model_config(),
         system_instruction=build_system_level_instruction_zh(),
         user_instruction=build_user_level_instruction_zh(),
-        tools=[BASH_TOOL, RESET_CONTEXT_TOOL],
+        tools=[BASH_TOOL, RESET_CONTEXT_TOOL, *REMINDER_TOOLS],
         on_ai_content_delta=callbacks.on_ai_content_delta,
         on_ai_reasoning_delta=callbacks.on_ai_reasoning_delta,
         on_ai_tool_call_started=callbacks.on_ai_tool_call_started,
@@ -323,6 +332,7 @@ class WebSocketChatSession:
         self._pending_user_contents: dict[str, str] = {}
         self._pending_user_contents_lock = threading.Lock()
         self._runner_task: asyncio.Task[None] | None = None
+        self._reminder_scheduler_task: asyncio.Task[None] | None = None
         self._projector = ChatEventProjector(emit=self._emit_from_any_thread)
 
         callbacks = AgentCallbacks(
@@ -337,10 +347,33 @@ class WebSocketChatSession:
             on_reset_context=self._on_reset_context,
         )
         self._agent = (agent_factory or create_default_agent)(callbacks=callbacks)
-        if conversation_id:
-            self._agent.resume_conversation(conversation_id=conversation_id)
+
+        # 单对话约束（v1 必做）：
+        # - 系统通过 `ACTIVE_CONVERSATION_ID_PATH` 记录当前唯一 active 的 conversationId。
+        # - 新建 session 时，必须优先 resume active conversation；只有指针文件不存在时才允许 new_conversation。
+        # - 若客户端传入 conversationId 且与 active 不一致，则直接报错，避免分叉出第二个对话。
+        active_conversation_id = _read_active_conversation_id()
+        if active_conversation_id:
+            if conversation_id and conversation_id != active_conversation_id:
+                raise ValueError(
+                    "系统只允许一个对话："
+                    f"active_conversation_id={active_conversation_id}，"
+                    f"但客户端传入 conversationId={conversation_id}"
+                )
+            self._agent.resume_conversation(conversation_id=active_conversation_id)
         else:
-            self._agent.new_conversation()
+            if conversation_id:
+                # 兼容：如果指针文件不存在，但客户端明确指定了 conversationId，则以客户端为准进行 resume，
+                # 并补写 active 指针，方便后续连接校验。
+                self._agent.resume_conversation(conversation_id=conversation_id)
+                _write_active_conversation_id(conversation_id)
+            else:
+                self._agent.new_conversation()
+
+        # reminder scheduler（v1）：
+        # - 不直接调用 Agent.run()；只负责注入一条 user message，并确保 runner task 运行。
+        # - 这样可以复用现有的“单 runner 直到 idle”的语义，不需要额外的 run_lock。
+        self._reminder_scheduler_task = asyncio.create_task(self._run_reminder_scheduler())
 
     async def next_event(self) -> dict[str, Any] | None:
         return await self._outgoing_queue.get()
@@ -364,6 +397,13 @@ class WebSocketChatSession:
         if self._closed:
             return
         self._closed = True
+        if self._reminder_scheduler_task is not None:
+            self._reminder_scheduler_task.cancel()
+            try:
+                await self._reminder_scheduler_task
+            except asyncio.CancelledError:
+                pass
+            unbind_scheduler_wakeup()
         await self._outgoing_queue.put(None)
 
     async def _emit(self, event: dict[str, Any]) -> None:
@@ -378,6 +418,7 @@ class WebSocketChatSession:
 
     def _on_conversation_persisted(self, *, conversation_id: str, display_name: str) -> None:
         # 注意：这个回调来自 agent.run() 所在线程，所以必须走线程安全的 emitter。
+        _write_active_conversation_id(conversation_id)
         self._emit_from_any_thread(
             {
                 "type": "conversation.persisted",
@@ -401,6 +442,7 @@ class WebSocketChatSession:
         # 备注：为什么不在 Agent._reset_context() 里直接“复用 on_queued_user_msg_committed”来发这条 user.message.committed？
         # - 因为 on_queued_user_msg_committed 的参数只有 frontend_msg_id，并不包含内容；
         # 因此这里由 WebSocket 投影层显式发送一条 user.message.committed，并保证它紧随 reset.context、先于任何 delta。
+        _write_active_conversation_id(conversation_id)
         self._emit_from_any_thread(
             {
                 "type": "reset.context",
@@ -453,3 +495,51 @@ class WebSocketChatSession:
             user_message_id=frontend_msg_id,
             content=content,
         )
+
+    async def _run_reminder_scheduler(self) -> None:
+        store = get_reminder_store()
+        wakeup_event = asyncio.Event()
+        bind_scheduler_wakeup(loop=self._loop, wakeup_event=wakeup_event)
+        scheduler = ReminderScheduler(
+            store=store,
+            on_reminder_fired=self._on_reminder_fired,
+            wakeup_event=wakeup_event,
+        )
+        await scheduler.run_forever()
+
+    async def _on_reminder_fired(self, record: ReminderRecord) -> None:
+        # 形如：
+        # <reminder name="foo">
+        # ...
+        # </reminder>
+        content = f'<reminder name="{record.name}">\n{record.content}\n</reminder>'
+        if self._closed:
+            return
+        # 复用 submit_user_message：reminder 只是“系统内部发起的一条 user message”。
+        await self.submit_user_message(
+            user_message_id=f"reminder-{uuid4().hex}",
+            content=content,
+        )
+
+
+def _read_active_conversation_id() -> str | None:
+    try:
+        raw = ACTIVE_CONVERSATION_ID_PATH.read_text(encoding="utf-8").strip()
+    except FileNotFoundError:
+        return None
+    except Exception:
+        logger.exception("读取 active_conversation_id 失败: %s", ACTIVE_CONVERSATION_ID_PATH)
+        return None
+    return raw or None
+
+
+def _write_active_conversation_id(conversation_id: str) -> None:
+    if not conversation_id:
+        return
+    try:
+        ACTIVE_CONVERSATION_ID_PATH.parent.mkdir(parents=True, exist_ok=True)
+        temp_path = ACTIVE_CONVERSATION_ID_PATH.with_name(f".{ACTIVE_CONVERSATION_ID_PATH.name}.{uuid4().hex}.tmp")
+        temp_path.write_text(conversation_id.strip() + "\n", encoding="utf-8")
+        temp_path.replace(ACTIVE_CONVERSATION_ID_PATH)
+    except Exception:
+        logger.exception("写入 active_conversation_id 失败: %s", ACTIVE_CONVERSATION_ID_PATH)

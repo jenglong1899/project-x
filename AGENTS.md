@@ -110,3 +110,5 @@
 - `docs/zh/draft-plans/`：早期草案/想法，内容不保证与当前实现一致
 - `docs/zh/plans/`：实施时写下的更稳定计划文档（通常与当前实现更一致，但仍以代码为准）
 - `docs/zh/code_explanations/`：教学/讲义（例如 `teach_backend_asyncio_basics.md`、`teach_frontend_store_basics.md`）
+- `docs/zh/plans/reminder_v1.md`：Reminder v1 的详细设计（常驻调度 + 唤醒 Agent）
+- `TODO.md`：明确将来要做但 v1 暂不做的事项（例如 reminder misfire、多对话、影分身）

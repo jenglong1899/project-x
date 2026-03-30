@@ -18,6 +18,9 @@ from src.web_protocol import PingCommand, SendUserMessageCommand, parse_client_c
 
 logger = logging.getLogger(__name__)
 
+_single_ws_lock: asyncio.Lock | None = None
+_active_ws_connections = 0
+
 
 async def healthcheck(_: Request) -> JSONResponse:
     return JSONResponse({"ok": True})
@@ -111,6 +114,26 @@ async def websocket_sender_loop(websocket: WebSocket, session: WebSocketChatSess
 async def websocket_endpoint(websocket: WebSocket) -> None:
     await websocket.accept()
     loop = asyncio.get_running_loop()
+
+    # v1 单连接约束：
+    # - 系统只允许一个 active 对话（由 active_conversation_id 指针文件约束）。
+    # - 为避免“在对话尚未持久化前”出现第二条连接导致分叉，WS 层进一步禁止并发多连接。
+    global _active_ws_connections, _single_ws_lock
+    if _single_ws_lock is None:
+        # 不能在 import 时创建 asyncio.Lock，否则可能绑定到错误的事件循环。
+        _single_ws_lock = asyncio.Lock()
+
+    async with _single_ws_lock:
+        if _active_ws_connections >= 1:
+            await send_error(
+                websocket,
+                code="single_session_only",
+                message="系统当前只允许有一个对话窗口，请关闭之前的对话窗口后再重试。",
+            )
+            await websocket.close()
+            return
+        _active_ws_connections += 1
+
     conversation_id = websocket.query_params.get("conversationId") or None
     try:
         session = WebSocketChatSession(loop=loop, conversation_id=conversation_id)
@@ -174,6 +197,8 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
         sender_task.cancel()
         with suppress(asyncio.CancelledError):
             await sender_task
+        async with _single_ws_lock:
+            _active_ws_connections = max(0, _active_ws_connections - 1)
 
 
 def build_app() -> Starlette:

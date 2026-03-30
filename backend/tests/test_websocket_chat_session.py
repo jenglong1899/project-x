@@ -1,8 +1,15 @@
 import asyncio
+import tempfile
 import unittest
 from collections.abc import Callable
+from pathlib import Path
+from unittest import mock
+
+from datetime import datetime, timedelta, timezone
 
 from src.websocket_chat_session import AgentCallbacks, WebSocketChatSession
+from src.reminders.store import ReminderStore
+from src.reminders.schedule import IntervalSchedule
 
 
 ScriptedRun = Callable[[AgentCallbacks, str, str], None]
@@ -74,74 +81,81 @@ class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
             )
             callbacks.on_ai_content_delta(content_delta="后说")
 
-        session = WebSocketChatSession(
-            loop=asyncio.get_running_loop(),
-            agent_factory=lambda *, callbacks: FakeAgent(
-                callbacks=callbacks,
-                scripted_runs=[scripted_run],
-            ),
-        )
-        await session.submit_user_message(user_message_id="user-1", content="你好")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            active_path = Path(temp_dir) / "active_conversation_id.txt"
+            reminders_path = Path(temp_dir) / "reminders.json"
+            with (
+                mock.patch("src.websocket_chat_session.ACTIVE_CONVERSATION_ID_PATH", active_path),
+                mock.patch("src.reminders.runtime._STORE", ReminderStore(path=reminders_path)),
+            ):
+                session = WebSocketChatSession(
+                    loop=asyncio.get_running_loop(),
+                    agent_factory=lambda *, callbacks: FakeAgent(
+                        callbacks=callbacks,
+                        scripted_runs=[scripted_run],
+                    ),
+                )
+                await session.submit_user_message(user_message_id="user-1", content="你好")
 
-        events = await self._collect_events_until_generation_completed(session)
+                events = await self._collect_events_until_generation_completed(session)
 
-        self.assertEqual(
-            [event["type"] for event in events],
-            [
-                "generation.started",
-                "user.message.committed",
-                "assistant.message.started",
-                "assistant.message.delta",
-                "assistant.message.delta",
-                "assistant.message.completed",
-                "tool.started",
-                "tool.arguments.delta",
-                "tool.completed",
-                "tool.result",
-                "assistant.message.started",
-                "assistant.message.delta",
-                "assistant.message.completed",
-                "generation.completed",
-            ],
-        )
-        self.assertEqual(
-            events[1],
-            {
-                "type": "user.message.committed",
-                "userMessageId": "user-1",
-                "content": "你好",
-            },
-        )
-        first_message_id = events[2]["messageId"]
-        second_message_id = events[10]["messageId"]
-        self.assertNotEqual(first_message_id, second_message_id)
-        self.assertEqual(events[3]["messageId"], first_message_id)
-        self.assertEqual(events[4]["messageId"], first_message_id)
-        self.assertEqual(events[5]["messageId"], first_message_id)
-        self.assertEqual(events[11]["messageId"], second_message_id)
-        self.assertEqual(events[12]["messageId"], second_message_id)
-        self.assertEqual(events[6]["toolCallId"], "call_1")
-        self.assertEqual(
-            events[7],
-            {
-                "type": "tool.arguments.delta",
-                "toolCallId": "call_1",
-                "toolName": "bash",
-                "argumentsDelta": '{"command":"pwd"}',
-            },
-        )
-        self.assertEqual(
-            events[8],
-            {
-                "type": "tool.completed",
-                "toolCallId": "call_1",
-                "toolName": "bash",
-                "arguments": '{"command":"pwd"}',
-            },
-        )
-        self.assertEqual(events[9]["result"], '{"stdout":"/tmp"}')
+                self.assertEqual(
+                    [event["type"] for event in events],
+                    [
+                        "generation.started",
+                        "user.message.committed",
+                        "assistant.message.started",
+                        "assistant.message.delta",
+                        "assistant.message.delta",
+                        "assistant.message.completed",
+                        "tool.started",
+                        "tool.arguments.delta",
+                        "tool.completed",
+                        "tool.result",
+                        "assistant.message.started",
+                        "assistant.message.delta",
+                        "assistant.message.completed",
+                        "generation.completed",
+                    ],
+                )
+                self.assertEqual(
+                    events[1],
+                    {
+                        "type": "user.message.committed",
+                        "userMessageId": "user-1",
+                        "content": "你好",
+                    },
+                )
+                first_message_id = events[2]["messageId"]
+                second_message_id = events[10]["messageId"]
+                self.assertNotEqual(first_message_id, second_message_id)
+                self.assertEqual(events[3]["messageId"], first_message_id)
+                self.assertEqual(events[4]["messageId"], first_message_id)
+                self.assertEqual(events[5]["messageId"], first_message_id)
+                self.assertEqual(events[11]["messageId"], second_message_id)
+                self.assertEqual(events[12]["messageId"], second_message_id)
+                self.assertEqual(events[6]["toolCallId"], "call_1")
+                self.assertEqual(
+                    events[7],
+                    {
+                        "type": "tool.arguments.delta",
+                        "toolCallId": "call_1",
+                        "toolName": "bash",
+                        "argumentsDelta": '{"command":"pwd"}',
+                    },
+                )
+                self.assertEqual(
+                    events[8],
+                    {
+                        "type": "tool.completed",
+                        "toolCallId": "call_1",
+                        "toolName": "bash",
+                        "arguments": '{"command":"pwd"}',
+                    },
+                )
+                self.assertEqual(events[9]["result"], '{"stdout":"/tmp"}')
 
-        await session.close()
+                await session.close()
 
     async def test_websocket_chat_session_drains_multiple_user_messages_in_one_generation(
         self,
@@ -156,23 +170,32 @@ class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
 
             return scripted_run
 
-        session = WebSocketChatSession(
-            loop=asyncio.get_running_loop(),
-            agent_factory=lambda *, callbacks: FakeAgent(
-                callbacks=callbacks,
-                scripted_runs=[
-                    make_scripted_run("第一条回复"),
-                    make_scripted_run("第二条回复"),
-                ],
-            ),
-        )
-        await session.submit_user_message(user_message_id="user-1", content="第一条")
-        await session.submit_user_message(user_message_id="user-2", content="第二条")
+        events: list[dict[str, object]] = []
+        with tempfile.TemporaryDirectory() as temp_dir:
+            active_path = Path(temp_dir) / "active_conversation_id.txt"
+            reminders_path = Path(temp_dir) / "reminders.json"
+            with (
+                mock.patch("src.websocket_chat_session.ACTIVE_CONVERSATION_ID_PATH", active_path),
+                mock.patch("src.reminders.runtime._STORE", ReminderStore(path=reminders_path)),
+            ):
+                session = WebSocketChatSession(
+                    loop=asyncio.get_running_loop(),
+                    agent_factory=lambda *, callbacks: FakeAgent(
+                        callbacks=callbacks,
+                        scripted_runs=[
+                            make_scripted_run("第一条回复"),
+                            make_scripted_run("第二条回复"),
+                        ],
+                    ),
+                )
+                await session.submit_user_message(user_message_id="user-1", content="第一条")
+                await session.submit_user_message(user_message_id="user-2", content="第二条")
 
-        events = await self._collect_events_until_generation_completed(session)
+                events = await self._collect_events_until_generation_completed(session)
+                await session.close()
 
         self.assertEqual(
-            [event["type"] for event in events if event["type"].startswith("generation.")],
+            [event["type"] for event in events if str(event["type"]).startswith("generation.")],
             ["generation.started", "generation.completed"],
         )
         self.assertEqual(
@@ -188,8 +211,6 @@ class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
         ]
         self.assertEqual(len(assistant_started_events), 2)
 
-        await session.close()
-
     async def test_websocket_chat_session_emits_reset_context_and_auto_reminder_in_order(self) -> None:
         def scripted_run(callbacks: AgentCallbacks, _user_message_id: str, _content: str) -> None:
             callbacks.on_reset_context(
@@ -198,16 +219,25 @@ class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
             )
             callbacks.on_ai_content_delta(content_delta="新会话开始输出")
 
-        session = WebSocketChatSession(
-            loop=asyncio.get_running_loop(),
-            agent_factory=lambda *, callbacks: FakeAgent(
-                callbacks=callbacks,
-                scripted_runs=[scripted_run],
-            ),
-        )
-        await session.submit_user_message(user_message_id="user-1", content="触发 reset")
+        events: list[dict[str, object]] = []
+        with tempfile.TemporaryDirectory() as temp_dir:
+            active_path = Path(temp_dir) / "active_conversation_id.txt"
+            reminders_path = Path(temp_dir) / "reminders.json"
+            with (
+                mock.patch("src.websocket_chat_session.ACTIVE_CONVERSATION_ID_PATH", active_path),
+                mock.patch("src.reminders.runtime._STORE", ReminderStore(path=reminders_path)),
+            ):
+                session = WebSocketChatSession(
+                    loop=asyncio.get_running_loop(),
+                    agent_factory=lambda *, callbacks: FakeAgent(
+                        callbacks=callbacks,
+                        scripted_runs=[scripted_run],
+                    ),
+                )
+                await session.submit_user_message(user_message_id="user-1", content="触发 reset")
 
-        events = await self._collect_events_until_generation_completed(session)
+                events = await self._collect_events_until_generation_completed(session)
+                await session.close()
 
         types = [event["type"] for event in events]
         reset_index = types.index("reset.context")
@@ -218,7 +248,61 @@ class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
         self.assertLess(auto_user_index, assistant_delta_index)
         self.assertTrue(str(events[auto_user_index]["content"]).startswith("<auto_reminder>"))
 
-        await session.close()
+    async def test_websocket_chat_session_rejects_mismatched_conversation_id_when_active_exists(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            active_path = Path(temp_dir) / "active_conversation_id.txt"
+            active_path.write_text("active-1.json\n", encoding="utf-8")
+            reminders_path = Path(temp_dir) / "reminders.json"
+            with (
+                mock.patch("src.websocket_chat_session.ACTIVE_CONVERSATION_ID_PATH", active_path),
+                mock.patch("src.reminders.runtime._STORE", ReminderStore(path=reminders_path)),
+            ):
+                with self.assertRaisesRegex(ValueError, "只允许一个对话"):
+                    WebSocketChatSession(
+                        loop=asyncio.get_running_loop(),
+                        agent_factory=lambda *, callbacks: FakeAgent(
+                            callbacks=callbacks,
+                            scripted_runs=[],
+                        ),
+                        conversation_id="active-2.json",
+                    )
+
+    async def test_websocket_chat_session_emits_reminder_message_committed(self) -> None:
+        def scripted_run(callbacks: AgentCallbacks, _user_message_id: str, _content: str) -> None:
+            callbacks.on_ai_content_delta(content_delta="收到 reminder")
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            active_path = Path(temp_dir) / "active_conversation_id.txt"
+            reminders_path = Path(temp_dir) / "reminders.json"
+            store = ReminderStore(path=reminders_path)
+            store.create_interval(
+                name="r1",
+                content="do it",
+                schedule=IntervalSchedule(interval_seconds=10),
+            )
+            store.update_next_fire_at(
+                name="r1",
+                next_fire_at_utc=datetime.now(timezone.utc) - timedelta(seconds=1),
+            )
+
+            with (
+                mock.patch("src.websocket_chat_session.ACTIVE_CONVERSATION_ID_PATH", active_path),
+                mock.patch("src.reminders.runtime._STORE", store),
+            ):
+                session = WebSocketChatSession(
+                    loop=asyncio.get_running_loop(),
+                    agent_factory=lambda *, callbacks: FakeAgent(
+                        callbacks=callbacks,
+                        scripted_runs=[scripted_run],
+                    ),
+                )
+
+                events = await self._collect_events_until_generation_completed(session)
+                committed = [e for e in events if e["type"] == "user.message.committed"]
+                self.assertEqual(len(committed), 1)
+                self.assertTrue(str(committed[0]["content"]).startswith('<reminder name="r1">'))
+
+                await session.close()
 
 
 if __name__ == "__main__":
