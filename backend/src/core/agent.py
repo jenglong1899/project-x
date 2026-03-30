@@ -260,7 +260,15 @@ class Agent:
         # 接下来 run() 会继续 while 循环，直接以 auto_reminder 为最后一条 user message 进行下一轮模型调用。
 
     def run(self) -> dict[str, Any]:
+        if self._conversation_store is None:
+            raise RuntimeError("conversation_store 未初始化，请先调用 new_conversation() 或 resume_conversation()")
+
         self._safe_drain_user_message_queue(self._user_msg_queue, self._messages)
+        if not self._conversation_store.has_persisted_conversation():
+            # 显式校验：如果没有待处理的 user message，就不应该进入模型生成路径。
+            # 否则会进入 _append_runtime_message -> ConversationStore.append_message，最终抛出更隐晦的异常。
+            raise RuntimeError("conversation 尚未开始：没有待处理的 user message，请先 enqueue_user_message()")
+
         while True:
             ai_msg_dict = self._safe_stream(model_config=self._model_config,
                                             messages=self._messages,

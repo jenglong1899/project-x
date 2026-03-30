@@ -44,14 +44,6 @@
   - 对 `stdout/stderr` 做长度上限截断（保留 head/tail + 原始长度）。
   - （可选）增加 allowlist / 工作目录隔离 / 环境变量隔离（如果未来要对外部署）。
 
-### 5) `Agent.run()` 对“无 user message 就开始生成”的前置条件缺少显式校验
-
-- 位置：`backend/src/core/agent.py` 的 `run()`
-- 现状：`new_conversation()` 后如果外部误调用 `run()`（队列为空），会进入模型生成路径；随后 `_append_runtime_message()` 会调用 `ConversationStore.append_message()`，而会话文件尚未创建，会抛 `RuntimeError("conversation 尚未开始...")`。
-- 建议：
-  - 在 `run()` 开头增加显式校验：若本轮 drain 后仍未持久化会话且无排队消息，则直接 `raise RuntimeError("没有 user message，不能 run")` 或直接返回（取决于你希望的 API 语义）。
-  - 这能把错误从“深处的持久化异常”变成“清晰的调用约束错误”。
-
 ### 6) 前端：Lint 未通过（当前 `npm run lint` 会失败）
 
 - 位置与报错（来自 `npm run lint` 输出）：

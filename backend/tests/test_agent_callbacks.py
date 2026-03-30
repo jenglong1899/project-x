@@ -385,6 +385,32 @@ class AgentCallbackTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "尚未开始"):
                     agent._append_runtime_message({"role": "assistant", "content": "hi"})
 
+    def test_run_requires_first_user_message(self) -> None:
+        """
+        new_conversation() 后如果没有任何待处理的 user message，就不应进入模型生成路径。
+        """
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with mock.patch(
+                "src.core.agent.ConversationStore",
+                side_effect=lambda *, system_instruction, user_instruction: ConversationStore(
+                    system_instruction=system_instruction,
+                    user_instruction=user_instruction,
+                    originals_dir=Path(temp_dir),
+                ),
+            ):
+                agent = Agent(
+                    name="demo",
+                    model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
+                    system_instruction="system",
+                    user_instruction="hello",
+                    tools=[],
+                )
+                agent.new_conversation()
+
+                with mock.patch.object(Agent, "_safe_stream", side_effect=AssertionError("不应调用 _safe_stream")):
+                    with self.assertRaisesRegex(RuntimeError, "尚未开始"):
+                        agent.run()
+
     def test_agent_rejects_duplicate_tool_name(self) -> None:
         with self.assertRaisesRegex(ValueError, "重复"):
             Agent(
