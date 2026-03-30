@@ -53,7 +53,6 @@ function App() {
   const pendingUserMessages = useChatStore((state) => state.pendingUserMessages)
   const isGenerating = useChatStore((state) => state.isGenerating)
   const activeConversationId = useChatStore((state) => state.activeConversationId)
-  const persistedConversation = useChatStore((state) => state.persistedConversation)
   const loadConversation = useChatStore((state) => state.loadConversation)
   const resetChatStore = useChatStore((state) => state.reset)
 
@@ -93,14 +92,8 @@ function App() {
     })
   }, [syncAtBottomState])
 
-  useEffect(() => {
-    chatClient.connect()
-    return () => {
-      chatClient.disconnect()
-    }
-  }, [])
-
   const [sessionEntries, setSessionEntries] = useState<SessionEntry[]>([])
+  const hasLoadedSessionListRef = useRef(false)
   const activeConversationTitle =
     sessionEntries.find((entry) => entry.conversationId === activeConversationId)?.displayName ?? '新对话'
 
@@ -120,22 +113,45 @@ function App() {
   }, [])
 
   useEffect(() => {
-    void loadSessionList()
+    type ChatStoreSnapshot = ReturnType<typeof useChatStore.getState>
+
+    const applySessionUpdates = (nextState: ChatStoreSnapshot, prevState?: ChatStoreSnapshot) => {
+      const nextPersisted = nextState.persistedConversation
+      const prevPersisted = prevState?.persistedConversation ?? null
+      if (!nextPersisted || nextPersisted === prevPersisted) {
+        return
+      }
+
+      setSessionEntries((currentEntries) =>
+        upsertSessionEntry(currentEntries, {
+          id: nextPersisted.conversationId,
+          conversationId: nextPersisted.conversationId,
+          displayName: nextPersisted.displayName || nextPersisted.conversationId,
+        }),
+      )
+    }
+
+    const unsubscribe = useChatStore.subscribe((nextState, prevState) => {
+      applySessionUpdates(nextState, prevState)
+    })
+
+    Promise.resolve().then(() => {
+      if (!hasLoadedSessionListRef.current) {
+        hasLoadedSessionListRef.current = true
+        void loadSessionList()
+      }
+      applySessionUpdates(useChatStore.getState())
+    })
+
+    return unsubscribe
   }, [loadSessionList])
 
   useEffect(() => {
-    if (!persistedConversation) {
-      return
+    chatClient.connect()
+    return () => {
+      chatClient.disconnect()
     }
-
-    setSessionEntries((currentEntries) =>
-      upsertSessionEntry(currentEntries, {
-        id: persistedConversation.conversationId,
-        conversationId: persistedConversation.conversationId,
-        displayName: persistedConversation.displayName || persistedConversation.conversationId,
-      }),
-    )
-  }, [persistedConversation])
+  }, [])
 
   useEffect(() => {
     const element = scrollRef.current

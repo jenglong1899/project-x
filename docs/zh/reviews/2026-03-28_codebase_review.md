@@ -24,17 +24,6 @@
   - 对 `stdout/stderr` 做长度上限截断（保留 head/tail + 原始长度）。
   - （可选）增加 allowlist / 工作目录隔离 / 环境变量隔离（如果未来要对外部署）。
 
-### 6) 前端：Lint 未通过（当前 `npm run lint` 会失败）
-
-- 位置与报错（来自 `npm run lint` 输出）：
-  - `frontend/src/App.tsx`：`react-hooks/set-state-in-effect`
-    - `useEffect(() => { void loadSessionList() }, [loadSessionList])`
-    - `useEffect(() => { setSessionEntries(...) }, [persistedConversation])`
-  - `frontend/src/features/chat/conversations.ts`：`@typescript-eslint/no-explicit-any`（3 处 `as any`）
-- 建议：
-  - 若这些规则是你想强制执行的：改写逻辑/类型消除报错（例如为 tool call 结构定义更明确的类型守卫，而不是 `as any`）。
-  - 若这些规则不适合当前写法：在 `eslint.config.js` 里对特定文件/目录降级或关闭对应规则，并解释原因（避免“默认脚本永远红”）。
-
 ## 中确定性（需要产品/规模假设才能定优先级）
 
 ### 7) 会话列表的可扩展性：`/conversations` 需要全量读 JSON

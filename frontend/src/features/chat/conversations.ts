@@ -93,11 +93,18 @@ function parseToolCalls(rawToolCalls: unknown): ToolCallInfo[] {
       continue
     }
 
-    const toolCallId = typeof (toolCall as any).id === 'string' ? (toolCall as any).id : ''
-    const functionPayload = (toolCall as any).function
-    const toolName = functionPayload && typeof functionPayload.name === 'string' ? functionPayload.name : ''
+    const toolCallRecord = toolCall as Record<string, unknown>
+    const toolCallId = typeof toolCallRecord.id === 'string' ? toolCallRecord.id : ''
+
+    const functionPayload = toolCallRecord['function']
+    const functionRecord =
+      functionPayload && typeof functionPayload === 'object'
+        ? (functionPayload as Record<string, unknown>)
+        : null
+
+    const toolName = functionRecord && typeof functionRecord.name === 'string' ? functionRecord.name : ''
     const args =
-      functionPayload && typeof functionPayload.arguments === 'string' ? functionPayload.arguments : ''
+      functionRecord && typeof functionRecord.arguments === 'string' ? functionRecord.arguments : ''
 
     parsed.push({
       toolCallId: toolCallId || crypto.randomUUID(),
@@ -197,4 +204,3 @@ export function buildChatItemsFromConversationHistory(messages: ConversationDeta
 
   return items
 }
-
