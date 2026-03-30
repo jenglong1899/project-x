@@ -28,7 +28,7 @@
 ## 开发与运行（常用）
 - 一键启动：根目录 `dev.sh`（前端 `npm run dev` + 后端 `PYTHONPATH=. uv run python main.py`）
 - 后端入口：`backend/main.py`（`PROJECT_X_HOST`/`PROJECT_X_PORT`）
-- 后端测试：在 `backend/` 下运行 `uv run pytest -q`
+- 后端测试：在 `backend/` 下运行 `PYTHONPATH=. uv run --with pytest python -m pytest -q`（沙盒内若遇到 uv cache 写入失败，改为允许非沙盒执行）
 - 前端开发代理：`frontend/vite.config.ts` 代理 `/healthz`、`/conversations`、`/ws` 到 `PROJECT_X_BACKEND_ORIGIN`（默认 `http://127.0.0.1:8000`）
 
 ## 后端（围绕 Agent 的三层）
@@ -44,6 +44,7 @@
 关键不变量/约束：
 - 调用者必须先 `new_conversation()` / `resume_conversation()`，再 `enqueue_user_message()` / `run()`
 - conversation 文件创建时机：**首条 committed 的 user message 被 drain 进 `_messages` 时才落地**（避免“空会话文件”）
+- `run()` 会显式拒绝“新会话尚未开始（未持久化首条 user message）就进入生成”的误用
 - provider 兼容：deepseek 需要在发送下一条 user message 前去掉 `reasoning_content`（`backend/src/core/policies.py`）
 - `reset_context`：工具执行阶段可能返回 `ResetContextDirective`，触发 `Agent._reset_context()` 新建会话并回调 `on_reset_context`
 
