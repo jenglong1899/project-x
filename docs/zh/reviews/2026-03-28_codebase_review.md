@@ -32,19 +32,6 @@
   - 明确在“模型/供应商适配层”统一保证 `tool_call_id`（例如基于 `(conversation_id, index)` 生成稳定 fallback id），并让 tool message / 事件使用同一套规则。
   - 或者把前端协议放宽（允许空/缺失），但这会影响 UI 关联 tool result 的逻辑，需要同步设计。
 
-### 3) 工具参数解析/工具执行异常会把整轮 run 打断（缺少“回传给模型自行纠错”的兜底）
-
-- 位置：`backend/src/core/agent_turn.py` 的 `execute_tool_calls()`
-- 现状：
-  - `_parse_tool_arguments()` 里 `json.loads(arguments)` 失败会直接抛异常。
-  - `tool_spec.handler(...)` 抛异常也会直接上抛。
-  - 最终表现：`Agent.run()` / `WebSocketChatSession._run_agent_until_idle()` 进入异常分支，前端收到 `error: agent_run_failed`（见 `backend/src/websocket_chat_session.py`）。
-- 建议：
-  - 在 `execute_tool_calls()` 内部捕获：
-    - `json.JSONDecodeError` / `ValueError`（参数解析）
-    - `Exception`（handler 执行）
-  - 将异常包装成结构化 tool result（例如 `{"error": "...", "tool": "...", "stage": "parse|run"}`），再继续循环，让模型有机会在下一条 assistant message 中自我修正（类似当前对 `reset_context` 并发的处理方式）。
-
 ### 4) `bash` 工具缺少超时/输出上限/资源约束，容易卡死或拉爆输出
 
 - 位置：`backend/src/tools/bash.py` 的 `subprocess.run(["bash","-lc", ...], capture_output=True, ...)`

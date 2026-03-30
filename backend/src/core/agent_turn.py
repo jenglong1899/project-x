@@ -369,26 +369,71 @@ def execute_tool_calls(*, ai_msg_dict: dict[str, Any],
     for index, tool_call in enumerate(tool_calls):
         function_payload = _get_field(tool_call, "function", {})
         tool_name = _get_field(function_payload, "name")
+        tool_call_id = _get_field(tool_call, "id")
         if not tool_name:
-            raise ValueError("tool call 缺少 function.name")
+            # 不抛异常（避免把错误上抛成系统错误），而是把错误以 tool result 形式回传给模型，
+            # 让模型能在下一条 assistant message 自行纠正。
+            result_json_str = json.dumps(
+                {
+                    "error": "tool call 缺少 function.name",
+                    "tool": None,
+                    "stage": "run",
+                    "index": index,
+                },
+                ensure_ascii=False,
+            )
+            tool_messages.append({"role": "tool", "content": result_json_str, "tool_call_id": tool_call_id})
+            on_tool_result(tool_call_id=tool_call_id, result_json_str=result_json_str)
+            continue
 
         tool_spec = tools_by_name.get(tool_name)
         if tool_spec is None:
-            raise ValueError(f"未注册的工具: {tool_name}")
+            result_json_str = json.dumps(
+                {
+                    "error": f"未注册的工具: {tool_name}",
+                    "tool": tool_name,
+                    "stage": "run",
+                    "index": index,
+                },
+                ensure_ascii=False,
+            )
+            tool_messages.append({"role": "tool", "content": result_json_str, "tool_call_id": tool_call_id})
+            on_tool_result(tool_call_id=tool_call_id, result_json_str=result_json_str)
+            continue
 
         arguments = _get_field(function_payload, "arguments", "") or ""
-        parsed_arguments = _parse_tool_arguments(tool_name=tool_name, arguments=arguments)
-        tool_result = tool_spec.handler(arguments=parsed_arguments)
+        try:
+            parsed_arguments = _parse_tool_arguments(tool_name=tool_name, arguments=arguments)
+        except (json.JSONDecodeError, ValueError) as exc:
+            result_json_str = json.dumps(
+                {
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "tool": tool_name,
+                    "stage": "parse",
+                    "index": index,
+                },
+                ensure_ascii=False,
+            )
+            tool_messages.append({"role": "tool", "content": result_json_str, "tool_call_id": tool_call_id})
+            on_tool_result(tool_call_id=tool_call_id, result_json_str=result_json_str)
+            continue
 
-        result_json_str = _stringify_tool_result(tool_result)
-        tool_call_id = _get_field(tool_call, "id")
-        tool_msg: dict[str, Any] = {"role": "tool", "content": result_json_str, "tool_call_id": tool_call_id}
-        tool_messages.append(tool_msg)
+        try:
+            tool_result = tool_spec.handler(arguments=parsed_arguments)
+            result_json_str = _stringify_tool_result(tool_result)
+        except Exception as exc:
+            result_json_str = json.dumps(
+                {
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "tool": tool_name,
+                    "stage": "run",
+                    "index": index,
+                },
+                ensure_ascii=False,
+            )
 
-        on_tool_result(
-            tool_call_id=tool_call_id,
-            result_json_str=result_json_str,
-        )
+        tool_messages.append({"role": "tool", "content": result_json_str, "tool_call_id": tool_call_id})
+        on_tool_result(tool_call_id=tool_call_id, result_json_str=result_json_str)
 
     return ToolExecutionOutcome(
         tool_messages=tool_messages,
