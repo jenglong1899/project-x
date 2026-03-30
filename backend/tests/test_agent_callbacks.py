@@ -219,6 +219,76 @@ class AgentCallbackTests(unittest.TestCase):
         self.assertEqual(tool_results[0]["result_json_str"], "keep this")
         self.assertEqual(outcome.tool_messages[0]["content"], "keep this")
 
+    def test_execute_tool_calls_returns_tool_error_when_arguments_invalid_json(self) -> None:
+        tool_results: list[dict[str, object]] = []
+        ai_msg_dict = {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {
+                        "name": "echo",
+                        "arguments": "{\"value\": }",
+                    },
+                }
+            ],
+        }
+
+        outcome = execute_tool_calls(
+            ai_msg_dict=ai_msg_dict,
+            tools_by_name={"echo": self._echo_tool()},
+            on_tool_result=lambda **kwargs: tool_results.append(kwargs),
+        )
+
+        self.assertIsInstance(outcome.directive, ContinueLoopDirective)
+        self.assertEqual(len(outcome.tool_messages), 1)
+        parsed = json.loads(outcome.tool_messages[0]["content"])
+        self.assertEqual(parsed["tool"], "echo")
+        self.assertEqual(parsed["stage"], "parse")
+        self.assertIn("JSONDecodeError", parsed["error"])
+        self.assertEqual(len(tool_results), 1)
+
+    def test_execute_tool_calls_returns_tool_error_when_handler_raises(self) -> None:
+        tool_results: list[dict[str, object]] = []
+        ai_msg_dict = {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_1",
+                    "type": "function",
+                    "function": {
+                        "name": "boom",
+                        "arguments": "{}",
+                    },
+                }
+            ],
+        }
+
+        outcome = execute_tool_calls(
+            ai_msg_dict=ai_msg_dict,
+            tools_by_name={
+                "boom": ToolSpec(
+                    name="boom",
+                    description="总是抛异常",
+                    parameters_json_schema={"type": "object", "properties": {}},
+                    handler=lambda *, arguments: (_ for _ in ()).throw(RuntimeError("boom")),
+                )
+            },
+            on_tool_result=lambda **kwargs: tool_results.append(kwargs),
+        )
+
+        self.assertIsInstance(outcome.directive, ContinueLoopDirective)
+        self.assertEqual(len(outcome.tool_messages), 1)
+        parsed = json.loads(outcome.tool_messages[0]["content"])
+        self.assertEqual(parsed["tool"], "boom")
+        self.assertEqual(parsed["stage"], "run")
+        self.assertIn("RuntimeError", parsed["error"])
+        self.assertIn("boom", parsed["error"])
+        self.assertEqual(len(tool_results), 1)
+
     def test_run_passes_on_tool_result_through_agent(self) -> None:
         tool_results: list[dict[str, object]] = []
         with tempfile.TemporaryDirectory() as temp_dir:
