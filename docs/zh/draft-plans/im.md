@@ -3,11 +3,12 @@
 所以实现方式是：
 
 tool: send_msg_to_im_platform(platform_name:str,msg:str)
+（当然这只是个最初步的函数签名，肯定还有其他字段）
 
-用户在群里艾特 AI 后，系统发送一个 steer msg:
+用户在群里艾特 AI ，或者给agent个人账户发消息后，系统发送一个 steer msg:
 ```text
 <im from="some_group_or_some_people">
-(...自从上一次艾特以来的所有消息...)
+(...自从上一次艾特以来的所有消息...) / 用户发送了新消息
 @bot 请去做xxx
 </im>
 ```
@@ -20,5 +21,3 @@ ai在完成工作后调用send_msg_to_im_platform来发消息给用户。
 
 agent没事做的时候，就查看一下群聊 get_group_chat_msg_since_last_read(im_platform:str,group_id:str)
 能否获得群聊中每个消息的准确发送时间（精准到毫秒？），记录一下最后一次读的消息，其发送时间是多少。
-或者agent设置一个定时任务来提醒自己，每隔xx时间就查看一次群
-或者系统自带一个定时任务，每隔20分钟就看一次群聊
