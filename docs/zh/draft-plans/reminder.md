@@ -30,8 +30,7 @@ delete_reminder(reminder_name:str)
 reminder_content
 </reminder>
 ```
-实现建议：复用现有的 enqueue（通过 WebSocketChatSession 注入一条 user message），并复用 WebSocketChatSession 对 agent.run() 重入的保护逻辑。
-注意：需要明确 reminder 触发是否会驱动 agent.run() 继续生成/执行工具（用于实现主动性），以及断线/重启时 reminder 是否暂停（先按“会话存活时触发”实现，最简单）。
+实现建议：复用 Agent runner 的submit接口
 
 
 另一种方案，不提供工具，而是用文字描述这些规范，然后ai编辑一个文件就可以操作定时任务(~/.project-x/reminder.yml)
