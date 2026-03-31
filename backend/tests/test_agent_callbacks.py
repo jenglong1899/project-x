@@ -4,8 +4,8 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from src.core.agent import Agent
 from src.conversation_store import ConversationStore
+from src.core.agent import Agent
 from src.core.agent_turn import ContinueLoopDirective, ResetContextDirective, ToolSpec, execute_tool_calls
 from src.core.model_config import ModelConfig
 from src.tools.reset_context import (
@@ -15,7 +15,20 @@ from src.tools.reset_context import (
 )
 
 
-class AgentCallbackTests(unittest.TestCase):
+async def _echo_handler(*, arguments: dict[str, object]) -> dict[str, object]:
+    return {"echoed": arguments["value"]}
+
+
+async def _raw_text_handler(*, arguments: dict[str, object]) -> str:
+    return str(arguments["value"])
+
+
+async def _boom_handler(*, arguments: dict[str, object]) -> object:
+    _ = arguments
+    raise RuntimeError("boom")
+
+
+class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
 
     @staticmethod
     def _echo_tool() -> ToolSpec:
@@ -29,10 +42,10 @@ class AgentCallbackTests(unittest.TestCase):
                 },
                 "required": ["value"],
             },
-            handler=lambda *, arguments: {"echoed": arguments["value"]},
+            handler=_echo_handler,
         )
 
-    def test_enqueue_user_message_uses_frontend_msg_id(self) -> None:
+    async def test_enqueue_user_message_uses_frontend_msg_id(self) -> None:
         enqueued_ids: list[str] = []
         committed_ids: list[str] = []
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -60,7 +73,7 @@ class AgentCallbackTests(unittest.TestCase):
                 agent.enqueue_user_message(frontend_msg_id="frontend-1", user_message="world")
                 self.assertEqual(list(Path(temp_dir).glob("*.json")), [])
 
-                drained = agent._safe_drain_user_message_queue(agent._user_msg_queue, agent._messages)
+                drained = agent._safe_drain_user_message_queue()
                 stored_files = list(Path(temp_dir).glob("*.json"))
 
                 self.assertEqual(len(stored_files), 1)
@@ -70,7 +83,7 @@ class AgentCallbackTests(unittest.TestCase):
         self.assertEqual(drained, 1)
         self.assertEqual(agent._messages[-1], {"role": "user", "content": "world"})
 
-    def test_execute_tool_calls_emits_tool_result(self) -> None:
+    async def test_execute_tool_calls_emits_tool_result(self) -> None:
         tool_results: list[dict[str, object]] = []
         ai_msg_dict = {
             "role": "assistant",
@@ -87,7 +100,7 @@ class AgentCallbackTests(unittest.TestCase):
             ],
         }
 
-        outcome = execute_tool_calls(
+        outcome = await execute_tool_calls(
             ai_msg_dict=ai_msg_dict,
             tools_by_name={"echo": self._echo_tool()},
             on_tool_result=lambda **kwargs: tool_results.append(kwargs),
@@ -113,7 +126,7 @@ class AgentCallbackTests(unittest.TestCase):
             ],
         )
 
-    def test_execute_tool_calls_returns_reset_context_directive(self) -> None:
+    async def test_execute_tool_calls_returns_reset_context_directive(self) -> None:
         tool_results: list[dict[str, object]] = []
         ai_msg_dict = {
             "role": "assistant",
@@ -130,7 +143,7 @@ class AgentCallbackTests(unittest.TestCase):
             ],
         }
 
-        outcome = execute_tool_calls(
+        outcome = await execute_tool_calls(
             ai_msg_dict=ai_msg_dict,
             tools_by_name={},
             on_tool_result=lambda **kwargs: tool_results.append(kwargs),
@@ -140,7 +153,7 @@ class AgentCallbackTests(unittest.TestCase):
         self.assertEqual(outcome.tool_messages, [])
         self.assertEqual(tool_results, [])
 
-    def test_execute_tool_calls_returns_tool_error_when_reset_context_is_concurrent(self) -> None:
+    async def test_execute_tool_calls_returns_tool_error_when_reset_context_is_concurrent(self) -> None:
         tool_results: list[dict[str, object]] = []
         ai_msg_dict = {
             "role": "assistant",
@@ -165,7 +178,7 @@ class AgentCallbackTests(unittest.TestCase):
             ],
         }
 
-        outcome = execute_tool_calls(
+        outcome = await execute_tool_calls(
             ai_msg_dict=ai_msg_dict,
             tools_by_name={},
             on_tool_result=lambda **kwargs: tool_results.append(kwargs),
@@ -179,7 +192,7 @@ class AgentCallbackTests(unittest.TestCase):
             parsed = json.loads(str(tool_result["result_json_str"]))
             self.assertIn("reset_context 不能和其他工具并发调用", parsed["error"])
 
-    def test_execute_tool_calls_always_returns_continue_loop_directive(self) -> None:
+    async def test_execute_tool_calls_always_returns_continue_loop_directive(self) -> None:
         tool_results: list[dict[str, object]] = []
         ai_msg_dict = {
             "role": "assistant",
@@ -196,7 +209,7 @@ class AgentCallbackTests(unittest.TestCase):
             ],
         }
 
-        outcome = execute_tool_calls(
+        outcome = await execute_tool_calls(
             ai_msg_dict=ai_msg_dict,
             tools_by_name={
                 "raw_text": ToolSpec(
@@ -209,7 +222,7 @@ class AgentCallbackTests(unittest.TestCase):
                         },
                         "required": ["value"],
                     },
-                    handler=lambda *, arguments: arguments["value"],
+                    handler=_raw_text_handler,
                 ),
             },
             on_tool_result=lambda **kwargs: tool_results.append(kwargs),
@@ -219,7 +232,7 @@ class AgentCallbackTests(unittest.TestCase):
         self.assertEqual(tool_results[0]["result_json_str"], "keep this")
         self.assertEqual(outcome.tool_messages[0]["content"], "keep this")
 
-    def test_execute_tool_calls_returns_tool_error_when_arguments_invalid_json(self) -> None:
+    async def test_execute_tool_calls_returns_tool_error_when_arguments_invalid_json(self) -> None:
         tool_results: list[dict[str, object]] = []
         ai_msg_dict = {
             "role": "assistant",
@@ -236,7 +249,7 @@ class AgentCallbackTests(unittest.TestCase):
             ],
         }
 
-        outcome = execute_tool_calls(
+        outcome = await execute_tool_calls(
             ai_msg_dict=ai_msg_dict,
             tools_by_name={"echo": self._echo_tool()},
             on_tool_result=lambda **kwargs: tool_results.append(kwargs),
@@ -250,7 +263,7 @@ class AgentCallbackTests(unittest.TestCase):
         self.assertIn("JSONDecodeError", parsed["error"])
         self.assertEqual(len(tool_results), 1)
 
-    def test_execute_tool_calls_returns_tool_error_when_handler_raises(self) -> None:
+    async def test_execute_tool_calls_returns_tool_error_when_handler_raises(self) -> None:
         tool_results: list[dict[str, object]] = []
         ai_msg_dict = {
             "role": "assistant",
@@ -267,14 +280,14 @@ class AgentCallbackTests(unittest.TestCase):
             ],
         }
 
-        outcome = execute_tool_calls(
+        outcome = await execute_tool_calls(
             ai_msg_dict=ai_msg_dict,
             tools_by_name={
                 "boom": ToolSpec(
                     name="boom",
                     description="总是抛异常",
                     parameters_json_schema={"type": "object", "properties": {}},
-                    handler=lambda *, arguments: (_ for _ in ()).throw(RuntimeError("boom")),
+                    handler=_boom_handler,
                 )
             },
             on_tool_result=lambda **kwargs: tool_results.append(kwargs),
@@ -289,7 +302,7 @@ class AgentCallbackTests(unittest.TestCase):
         self.assertIn("boom", parsed["error"])
         self.assertEqual(len(tool_results), 1)
 
-    def test_run_passes_on_tool_result_through_agent(self) -> None:
+    async def test_run_passes_on_tool_result_through_agent(self) -> None:
         tool_results: list[dict[str, object]] = []
         with tempfile.TemporaryDirectory() as temp_dir:
             with mock.patch(
@@ -336,9 +349,9 @@ class AgentCallbackTests(unittest.TestCase):
                 with mock.patch.object(
                     Agent,
                     "_safe_stream",
-                    side_effect=[ai_msg_with_tool_call, final_ai_msg],
+                    new=mock.AsyncMock(side_effect=[ai_msg_with_tool_call, final_ai_msg]),
                 ):
-                    result = agent.run()
+                    result = await agent.run()
 
                 stored_files = list(Path(temp_dir).glob("*.json"))
                 self.assertEqual(len(stored_files), 1)
@@ -363,7 +376,7 @@ class AgentCallbackTests(unittest.TestCase):
         self.assertEqual(stored_payload["messages"][4]["content"], "{\"echoed\": 7}")
         self.assertTrue(all("timestamp" in message["meta"] for message in stored_payload["messages"]))
 
-    def test_append_runtime_message_requires_persisted_conversation(self) -> None:
+    async def test_append_runtime_message_requires_persisted_conversation(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             with mock.patch(
                 "src.core.agent.ConversationStore",
@@ -385,10 +398,7 @@ class AgentCallbackTests(unittest.TestCase):
                 with self.assertRaisesRegex(RuntimeError, "尚未开始"):
                     agent._append_runtime_message({"role": "assistant", "content": "hi"})
 
-    def test_run_requires_first_user_message(self) -> None:
-        """
-        new_conversation() 后如果没有任何待处理的 user message，就不应进入模型生成路径。
-        """
+    async def test_run_requires_first_user_message(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             with mock.patch(
                 "src.core.agent.ConversationStore",
@@ -407,11 +417,11 @@ class AgentCallbackTests(unittest.TestCase):
                 )
                 agent.new_conversation()
 
-                with mock.patch.object(Agent, "_safe_stream", side_effect=AssertionError("不应调用 _safe_stream")):
+                with mock.patch.object(Agent, "_safe_stream", new=mock.AsyncMock(side_effect=AssertionError("不应调用 _safe_stream"))):
                     with self.assertRaisesRegex(RuntimeError, "尚未开始"):
-                        agent.run()
+                        await agent.run()
 
-    def test_agent_rejects_duplicate_tool_name(self) -> None:
+    async def test_agent_rejects_duplicate_tool_name(self) -> None:
         with self.assertRaisesRegex(ValueError, "重复"):
             Agent(
                 name="demo",
@@ -421,12 +431,7 @@ class AgentCallbackTests(unittest.TestCase):
                 tools=[self._echo_tool(), self._echo_tool()],
             )
 
-    def test_agent_reset_context_first_call_only_returns_hint(self) -> None:
-        """
-        第一次调用 reset_context：
-        - 不切会话
-        - 只追加一条 tool message（hint）
-        """
+    async def test_agent_reset_context_first_call_only_returns_hint(self) -> None:
         tool_results: list[dict[str, object]] = []
         reset_events: list[dict[str, str]] = []
         stored_payload: dict[str, object]
@@ -470,9 +475,9 @@ class AgentCallbackTests(unittest.TestCase):
                 with mock.patch.object(
                     Agent,
                     "_safe_stream",
-                    side_effect=[ai_msg_with_reset_context, final_ai_msg],
+                    new=mock.AsyncMock(side_effect=[ai_msg_with_reset_context, final_ai_msg]),
                 ):
-                    result = agent.run()
+                    result = await agent.run()
 
                 stored_files = list(Path(temp_dir).glob("*.json"))
                 self.assertEqual(len(stored_files), 1)
@@ -494,13 +499,7 @@ class AgentCallbackTests(unittest.TestCase):
         parsed = json.loads(stored_tool_messages[0]["content"])
         self.assertEqual(parsed["hint"], RESET_CONTEXT_FIRST_CALL_HINT)
 
-    def test_agent_reset_context_second_call_switches_conversation(self) -> None:
-        """
-        第二次调用 reset_context：
-        - 切到新会话
-        - 新会话第一条 user message 为 auto_reminder
-        - 触发 on_reset_context 回调
-        """
+    async def test_agent_reset_context_second_call_switches_conversation(self) -> None:
         reset_events: list[dict[str, str]] = []
         old_conversation_id = ""
         old_display_name = ""
@@ -554,16 +553,17 @@ class AgentCallbackTests(unittest.TestCase):
                 with mock.patch.object(
                     Agent,
                     "_safe_stream",
-                    side_effect=[
-                        ai_msg_with_reset_context_1,
-                        final_ai_msg_1,
-                        ai_msg_with_reset_context_2,
-                        final_ai_msg_2,
-                    ],
+                    new=mock.AsyncMock(
+                        side_effect=[
+                            ai_msg_with_reset_context_1,
+                            final_ai_msg_1,
+                            ai_msg_with_reset_context_2,
+                            final_ai_msg_2,
+                        ]
+                    ),
                 ):
-                    # 第一次调用只提示，不切会话
                     agent.enqueue_user_message(frontend_msg_id="u1", user_message="hello")
-                    agent.run()
+                    await agent.run()
 
                     stored_files_after_first = list(Path(temp_dir).glob("*.json"))
                     self.assertEqual(len(stored_files_after_first), 1)
@@ -571,7 +571,6 @@ class AgentCallbackTests(unittest.TestCase):
                     old_payload = json.loads(stored_files_after_first[0].read_text(encoding="utf-8"))
                     old_display_name = old_payload["meta"]["display-name"]
 
-                    # 第二次调用会切会话（需 mock builder，避免测试写 ~/.project-x）
                     with mock.patch(
                         "src.prompts.builder.build_system_level_instruction_zh",
                         return_value="system-2",
@@ -580,7 +579,7 @@ class AgentCallbackTests(unittest.TestCase):
                         return_value="user-2",
                     ):
                         agent.enqueue_user_message(frontend_msg_id="u2", user_message="trigger second")
-                        agent.run()
+                        await agent.run()
 
                 stored_files = list(Path(temp_dir).glob("*.json"))
                 self.assertEqual(len(stored_files), 2)
@@ -595,3 +594,4 @@ class AgentCallbackTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+

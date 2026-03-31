@@ -26,7 +26,7 @@ class FakeAgent:
     def has_pending_user_messages(self) -> bool:
         return bool(self._queued_messages)
 
-    def run(self) -> dict[str, str]:
+    async def run(self) -> dict[str, str]:
         user_message_id, user_message = self._queued_messages.pop(0)
         self._callbacks.on_queued_user_msg_committed(frontend_msg_id=user_message_id)
         scripted_run = self._scripted_runs.pop(0)

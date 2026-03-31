@@ -1,7 +1,6 @@
 import asyncio
 import logging
 import os
-import threading
 from dataclasses import dataclass
 from typing import Any, Protocol
 from uuid import uuid4
@@ -55,7 +54,7 @@ class AgentLike(Protocol):
 
     def has_pending_user_messages(self) -> bool: ...
 
-    def run(self) -> dict[str, Any]: ...
+    async def run(self) -> dict[str, Any]: ...
 
 
 @dataclass(frozen=True)
@@ -321,9 +320,8 @@ class WebSocketChatSession:
         self._outgoing_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
         self._closed = False
         self._pending_user_contents: dict[str, str] = {}
-        self._pending_user_contents_lock = threading.Lock()
         self._runner_task: asyncio.Task[None] | None = None
-        self._projector = ChatEventProjector(emit=self._emit_from_any_thread)
+        self._projector = ChatEventProjector(emit=self._emit_sync)
 
         callbacks = AgentCallbacks(
             on_ai_content_delta=self._projector.on_ai_content_delta,
@@ -349,8 +347,7 @@ class WebSocketChatSession:
         if self._closed:
             raise RuntimeError("session 已关闭")
 
-        with self._pending_user_contents_lock:
-            self._pending_user_contents[user_message_id] = content
+        self._pending_user_contents[user_message_id] = content
 
         self._agent.enqueue_user_message(
             frontend_msg_id=user_message_id,
@@ -366,19 +363,15 @@ class WebSocketChatSession:
         self._closed = True
         await self._outgoing_queue.put(None)
 
-    async def _emit(self, event: dict[str, Any]) -> None:
+    def _emit_sync(self, event: dict[str, Any]) -> None:
+        # 如果是用async的话，那就是await _emit，会导致让出控制权，
+        # 而有些清空我们会塞大量的delta回去，这就导致前端收delta可能会延迟
         if self._closed:
             return
-        await self._outgoing_queue.put(event)
-
-    def _emit_from_any_thread(self, event: dict[str, Any]) -> None:
-        if self._closed:
-            return
-        self._loop.call_soon_threadsafe(self._outgoing_queue.put_nowait, event)
+        self._outgoing_queue.put_nowait(event)
 
     def _on_conversation_persisted(self, *, conversation_id: str, display_name: str) -> None:
-        # 注意：这个回调来自 agent.run() 所在线程，所以必须走线程安全的 emitter。
-        self._emit_from_any_thread(
+        self._emit_sync(
             {
                 "type": "conversation.persisted",
                 "conversationId": conversation_id,
@@ -392,8 +385,6 @@ class WebSocketChatSession:
         conversation_id: str,
         display_name: str,
     ) -> None:
-        # 注意：这个回调来自 agent.run() 所在线程，所以必须走线程安全的 emitter。
-        #
         # 这里选择由后端直接推送 auto_reminder 的 user.message.committed，而不是让前端收到 reset.context 后再去 HTTP 拉取会话详情：
         # - 否则前端会出现“正在流式追加 items”与“loadConversation 覆盖 items”的竞态，容易丢流式内容；
         # - 后端按顺序推事件，前端按顺序渲染，最简单也最稳定。
@@ -401,14 +392,14 @@ class WebSocketChatSession:
         # 备注：为什么不在 Agent._reset_context() 里直接“复用 on_queued_user_msg_committed”来发这条 user.message.committed？
         # - 因为 on_queued_user_msg_committed 的参数只有 frontend_msg_id，并不包含内容；
         # 因此这里由 WebSocket 投影层显式发送一条 user.message.committed，并保证它紧随 reset.context、先于任何 delta。
-        self._emit_from_any_thread(
+        self._emit_sync(
             {
                 "type": "reset.context",
                 "conversationId": conversation_id,
                 "displayName": display_name,
             }
         )
-        self._emit_from_any_thread(
+        self._emit_sync(
             {
                 "type": "user.message.committed",
                 "userMessageId": f"auto-{uuid4().hex}",
@@ -420,11 +411,8 @@ class WebSocketChatSession:
         self._projector.on_generation_started()
         try:
             while True:
-                # 耗时间的任务要await异步跑，把cpu让给其他任务
-                # 那为啥使用to_thread而不是create_task？
-                # 因为agent的run()一开始就是设计成sync的
-                # TODO：把run整个调用链改成异步的，run主要是等网络，不吃cpu，用不着并行
-                await asyncio.to_thread(self._agent.run)
+                # Agent.run() 是异步的（主要等待网络/子进程），直接 await 即可，不需要线程桥接。
+                await self._agent.run()
                 self._projector.on_agent_run_completed()
                 if self._closed:
                     self._runner_task = None
@@ -435,7 +423,7 @@ class WebSocketChatSession:
         except Exception as exc:
             logger.exception("WebSocketChatSession agent.run 失败")
             self._runner_task = None
-            await self._emit(
+            self._emit_sync(
                 {
                     "type": "error",
                     "code": "agent_run_failed",
@@ -446,8 +434,7 @@ class WebSocketChatSession:
             self._projector.on_generation_completed()
 
     def _on_queued_user_msg_committed(self, *, frontend_msg_id: str) -> None:
-        with self._pending_user_contents_lock:
-            content = self._pending_user_contents.pop(frontend_msg_id, "")
+        content = self._pending_user_contents.pop(frontend_msg_id, "")
 
         self._projector.on_user_message_committed(
             user_message_id=frontend_msg_id,

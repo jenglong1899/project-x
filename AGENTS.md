@@ -3,13 +3,13 @@
 目标：用“摘要 + 索引”的方式快速理解代码库，并能迅速定位“该改哪个文件”。
 
 ## 核心心智模型（先看这个）
-- **核心抽象是 `Agent`**：`backend/src/core/agent.py` 对外暴露一个最小接口（排队 user message → 同步 `run()` 生成 → 工具调用 → 持久化）；其他模块基本都在为它服务。
-- **`WebSocketChatSession` 是适配层**：`backend/src/websocket_chat_session.py` 把同步 `Agent.run()` 桥接到异步 WebSocket，并把回调投影成前端事件（assistant delta / tool card / committed 等）。
+- **核心抽象是 `Agent`**：`backend/src/core/agent.py` 对外暴露一个最小接口（排队 user message → `async run()` 生成 → 工具调用 → 持久化）；其他模块基本都在为它服务。
+- **`WebSocketChatSession` 是适配层**：`backend/src/websocket_chat_session.py` 直接 `await Agent.run()`，并把回调投影成前端事件（assistant delta / tool card / committed 等）。
 - **`ConversationStore` 是持久化层**：`backend/src/conversation_store.py` 把对话落地到 `~/.project-x/memories/originals/*.json`，并提供 list/detail 所需字段（`displayName`/`lastChatTime`）。
 - **system/user instruction 由 prompts 构建**：`backend/src/prompts/builder.py` 会读取/确保 `~/.project-x/memories/summaries/main.md`，`reset_context` 会触发“新会话 + 重新加载指令”的编排。
 
 数据流（大致）：
-`frontend` → `/ws` → `WebSocketChatSession.submit_user_message()` → `Agent.enqueue_user_message()` → `Agent.run()` → `agent_turn.stream()` →（可选）`execute_tool_calls()` → `ConversationStore.append_message()` → 事件经 `ChatEventProjector` 回前端  
+`frontend` → `/ws` → `WebSocketChatSession.submit_user_message()` → `Agent.enqueue_user_message()` → `await Agent.run()` → `await agent_turn.stream()` →（可选）`await execute_tool_calls()` → `ConversationStore.append_message()` → 事件经 `ChatEventProjector` 回前端  
 历史会话：`/conversations` / `/conversations/{conversationId}` 读取 `ConversationStore`。
 
 ## 快速定位表（改功能先看这里）
@@ -39,7 +39,7 @@
 - `resume_conversation(conversation_id=...)`：恢复历史对话（会用历史里的 system/user instruction 覆盖当前）
 - `enqueue_user_message(frontend_msg_id=..., user_message=...)`：排队一条 user message（`frontend_msg_id` 由前端生成，用于 committed 回传）
 - `has_pending_user_messages()`：是否还有排队消息
-- `run()`：同步生成循环：drain 队列 → 调模型（流式回调）→（可选）执行工具 → 持久化 → 再 drain → 直到没有 tool_calls
+- `run()`：异步生成循环：drain 队列 → 调模型（流式回调）→（可选）执行工具 → 持久化 → 再 drain → 直到没有 tool_calls
 
 关键不变量/约束：
 - 调用者必须先 `new_conversation()` / `resume_conversation()`，再 `enqueue_user_message()` / `run()`
@@ -57,7 +57,7 @@
 - 重置上下文：`on_reset_context(conversation_id, display_name)`
 
 ### 2) 回合引擎与工具系统（`backend/src/core/agent_turn.py`）
-- `stream()`：通过 `litellm.completion(..., stream=True)` 拉流，拼装最终 assistant message（OpenAI 风格 dict）
+- `stream()`：通过 `litellm.acompletion(..., stream=True)` 拉流（async），拼装最终 assistant message（OpenAI 风格 dict）
 - 工具流式：会把 `tool_calls` delta 按 `index` 合并，分别触发 started/arguments.delta/finished 回调
 - `execute_tool_calls()`：解析 JSON arguments → 分发到 `ToolSpec.handler` → 产出 `tool_messages`；并对 `reset_context` 做特判（不能与其他工具并发，且不会真正执行 handler）
 
@@ -76,7 +76,7 @@
 ## 服务层：把 Agent 暴露给前端
 
 ### WebSocket 会话编排（`backend/src/websocket_chat_session.py`）
-- 每个 WS 连接一个 `WebSocketChatSession`；用 `asyncio.to_thread(self._agent.run)` 把同步 `run()` 桥接到事件循环
+- 每个 WS 连接一个 `WebSocketChatSession`；直接 `await self._agent.run()`，不再做线程桥接
 - `ChatEventProjector` 决定 assistant 卡片边界：遇到 tool start 会 close 当前 assistant，因此前端时间线呈 `assistant → tool → assistant`
 - WS 支持 `/ws?conversationId=...` 以 resume 历史会话
 - `reset_context`：先投影 `reset.context`，然后**由WebSocketChatSession直接推送**一条 `user.message.committed`（auto reminder），触发前端渲染出 auto reminder 文本
@@ -110,3 +110,9 @@
 - `docs/zh/draft-plans/`：早期草案/想法，内容不保证与当前实现一致
 - `docs/zh/plans/`：实施时写下的更稳定计划文档（通常与当前实现更一致，但仍以代码为准）
 - `docs/zh/code_explanations/`：教学/讲义（例如 `teach_backend_asyncio_basics.md`、`teach_frontend_store_basics.md`）
+
+## 计划索引
+- 2026-03-31：把 Agent 改为 async（移除 WebSocket 层 to_thread）：`docs/zh/plans/2026-03-31-agent-async.md`
+
+## 供应链安全备忘
+- LiteLLM 供应链投毒事件（2026-03-24）：受影响版本为 `litellm==1.82.7` 与 `litellm==1.82.8`（其中 `1.82.8` 包含会在 Python 启动时自动执行的恶意 `.pth`）。本项目当前 `backend/uv.lock` 锁定为 `litellm==1.82.0`，并在 `backend/pyproject.toml` 显式排除了 `1.82.7/1.82.8`。

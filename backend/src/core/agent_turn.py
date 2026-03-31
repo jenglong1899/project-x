@@ -1,10 +1,10 @@
+import asyncio
 import os
-import time
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any, Protocol, TypeAlias
-from litellm import completion
+from litellm import acompletion
 
 from src.core.model_config import ModelConfig
 
@@ -50,7 +50,7 @@ class OnAiToolCallFinished(Protocol):
 
 
 class ToolHandler(Protocol):
-    def __call__(self, *, arguments: dict[str, Any]) -> Any: ...
+    async def __call__(self, *, arguments: dict[str, Any]) -> Any: ...
 
 
 @dataclass(frozen=True)
@@ -156,14 +156,14 @@ def _maybe_emit_tool_call_started(*,
     )
 
 
-def stream(*, model_config: ModelConfig,
-           messages: list[dict[str, Any]],
-           tools: list[ToolSpec],
-           on_ai_content_delta: OnAiContentDelta,
-           on_ai_reasoning_delta: OnAiReasoningDelta,
-           on_ai_tool_call_started: OnAiToolCallStarted,
-           on_ai_tool_call_arguments_delta: OnAiToolCallArgumentsDelta,
-           on_ai_tool_call_finished: OnAiToolCallFinished) -> dict[str, Any]:
+async def stream(*, model_config: ModelConfig,
+                 messages: list[dict[str, Any]],
+                 tools: list[ToolSpec],
+                 on_ai_content_delta: OnAiContentDelta,
+                 on_ai_reasoning_delta: OnAiReasoningDelta,
+                 on_ai_tool_call_started: OnAiToolCallStarted,
+                 on_ai_tool_call_arguments_delta: OnAiToolCallArgumentsDelta,
+                 on_ai_tool_call_finished: OnAiToolCallFinished) -> dict[str, Any]:
     if model_config.model == "mock":
         delay_ms_text = os.getenv("PROJECT_X_MOCK_MODEL_DELAY_MS", "0").strip()
         try:
@@ -172,7 +172,7 @@ def stream(*, model_config: ModelConfig,
             delay_ms = 0
 
         if delay_ms > 0:
-            time.sleep(delay_ms / 1000)
+            await asyncio.sleep(delay_ms / 1000)
 
         content = "（mock 回复）"
         on_ai_content_delta(content_delta=content)
@@ -196,8 +196,8 @@ def stream(*, model_config: ModelConfig,
     started_tool_call_indexes: set[int] = set()
     assistant_role = "assistant"
 
-    response_stream = completion(**completion_kwargs)
-    for chunk in response_stream:
+    response_stream = await acompletion(**completion_kwargs)
+    async for chunk in response_stream:
         choices = _get_field(chunk, "choices", [])
         if not choices:
             continue
@@ -275,7 +275,6 @@ def stream(*, model_config: ModelConfig,
 
     return assistant_message
 
-
 @dataclass
 class ResetContextDirective:
     tool_call_id: str | None
@@ -320,9 +319,9 @@ def _stringify_tool_result(result: Any) -> str:
     return json.dumps(result, ensure_ascii=False)
 
 
-def execute_tool_calls(*, ai_msg_dict: dict[str, Any],
-                       tools_by_name: Mapping[str, ToolSpec],
-                       on_tool_result: OnToolResult) -> ToolExecutionOutcome:
+async def execute_tool_calls(*, ai_msg_dict: dict[str, Any],
+                             tools_by_name: Mapping[str, ToolSpec],
+                             on_tool_result: OnToolResult) -> ToolExecutionOutcome:
     tool_calls = ai_msg_dict.get("tool_calls", [])
     if tool_calls:
         tool_names: list[str] = []
@@ -419,7 +418,7 @@ def execute_tool_calls(*, ai_msg_dict: dict[str, Any],
             continue
 
         try:
-            tool_result = tool_spec.handler(arguments=parsed_arguments)
+            tool_result = await tool_spec.handler(arguments=parsed_arguments)
             result_json_str = _stringify_tool_result(tool_result)
         except Exception as exc:
             result_json_str = json.dumps(
