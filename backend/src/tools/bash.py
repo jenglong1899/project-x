@@ -1,4 +1,4 @@
-import subprocess
+import asyncio
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -16,18 +16,20 @@ class BashToolOutput(BaseModel):
     returncode: int
 
 
-def run_bash(*, arguments: dict[str, Any]) -> dict[str, Any]:
+async def run_bash(*, arguments: dict[str, Any]) -> dict[str, Any]:
     tool_input = BashToolInput.model_validate(arguments)
-    completed_process = subprocess.run(
-        ["bash", "-lc", tool_input.command],
-        capture_output=True,
-        text=True,
-        check=False,
+    process = await asyncio.create_subprocess_exec(
+        "bash",
+        "-lc",
+        tool_input.command,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
     )
+    stdout_bytes, stderr_bytes = await process.communicate()
     return BashToolOutput(
-        stdout=completed_process.stdout,
-        stderr=completed_process.stderr,
-        returncode=completed_process.returncode,
+        stdout=(stdout_bytes or b"").decode(),
+        stderr=(stderr_bytes or b"").decode(),
+        returncode=process.returncode or 0,
     ).model_dump()
 
 

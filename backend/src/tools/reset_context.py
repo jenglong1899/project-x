@@ -30,6 +30,10 @@ def _run_reset_context(*, arguments: dict[str, Any]) -> dict[str, Any]:
     return {"hint": None}
 
 
+async def run_reset_context(*, arguments: dict[str, Any]) -> dict[str, Any]:
+    return _run_reset_context(arguments=arguments)
+
+
 RESET_CONTEXT_TOOL = ToolSpec(
     name="reset_context",
     description=(
@@ -41,5 +45,5 @@ RESET_CONTEXT_TOOL = ToolSpec(
         "properties": {},
         "additionalProperties": False,
     },
-    handler=_run_reset_context,
+    handler=run_reset_context,
 )

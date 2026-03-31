@@ -6,7 +6,7 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "coolname>=4.1.0",
-    "litellm>=1.82.0",
+    "litellm>=1.82.0,!=1.82.7,!=1.82.8",
     "pydantic>=2.12.5",
     "starlette>=0.52.1",
     "uvicorn>=0.41.0",

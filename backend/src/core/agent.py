@@ -1,5 +1,5 @@
 import json
-import queue
+from collections import deque
 from typing import Any, Protocol
 from dataclasses import dataclass
 
@@ -85,7 +85,7 @@ class Agent:
         self._on_conversation_persisted = on_conversation_persisted or self._noop
         self._on_reset_context = on_reset_context or self._noop
 
-        self._user_msg_queue: queue.Queue[QueuedUserMessage] = queue.Queue()
+        self._user_msg_queue: deque[QueuedUserMessage] = deque()
 
         # 调用Agent的必须选择 new_conversation 或者 resume_conversation，
         # self._conversation_store 会在这两个函数中被初始化。
@@ -102,7 +102,7 @@ class Agent:
         )
 
     def resume_conversation(self, *, conversation_id: str) -> None:
-        if not self._user_msg_queue.empty():
+        if self._user_msg_queue:
             raise RuntimeError("resume_conversation 之前不能有排队中的 user message")
 
         store = ConversationStore.load_from_conversation_id(conversation_id=conversation_id)
@@ -125,22 +125,17 @@ class Agent:
         self._conversation_store = store
 
     def enqueue_user_message(self, *, frontend_msg_id: str, user_message: str) -> None:
-        self._user_msg_queue.put(QueuedUserMessage(frontend_msg_id, user_message))
+        self._user_msg_queue.append(QueuedUserMessage(frontend_msg_id, user_message))
         self._on_user_msg_enqueued(frontend_msg_id=frontend_msg_id)
 
     def has_pending_user_messages(self) -> bool:
-        return not self._user_msg_queue.empty()
+        return bool(self._user_msg_queue)
 
-    def _safe_drain_user_message_queue(self, user_msg_queue: queue.Queue[QueuedUserMessage],
-                                       messages: list[dict[str, Any]]) -> int:
+    def _safe_drain_user_message_queue(self) -> int:
         drained = 0
-        while True:
-            try:
-                item = user_msg_queue.get_nowait()
-            except queue.Empty:
-                return drained
-
-            strip_reasoning_content_if_needed(model=self._model_config.model, messages=messages)
+        while self._user_msg_queue:
+            item = self._user_msg_queue.popleft()
+            strip_reasoning_content_if_needed(model=self._model_config.model, messages=self._messages)
             drained += 1
             user_message = {"role": "user", "content": item.content}
             self._messages.append(user_message)
@@ -157,6 +152,7 @@ class Agent:
             else:
                 self._conversation_store.append_message(user_message)
             self._on_queued_user_msg_committed(frontend_msg_id=item.frontend_msg_id)
+        return drained
 
     def _append_runtime_message(self, message: dict[str, Any]) -> None:
         # 这个函数被用的地方都是在 run 函数的后方，
@@ -165,14 +161,14 @@ class Agent:
         self._conversation_store.append_message(message)
 
     @staticmethod
-    def _safe_stream(*, model_config: ModelConfig,
-                     messages: list[dict[str, Any]],
-                     tools: list[ToolSpec],
-                     on_ai_content_delta: OnAiContentDelta,
-                     on_ai_reasoning_delta: OnAiReasoningDelta,
-                     on_ai_tool_call_started: OnAiToolCallStarted,
-                     on_ai_tool_call_arguments_delta: OnAiToolCallArgumentsDelta,
-                     on_ai_tool_call_finished: OnAiToolCallFinished) -> dict[str, Any]:
+    async def _safe_stream(*, model_config: ModelConfig,
+                           messages: list[dict[str, Any]],
+                           tools: list[ToolSpec],
+                           on_ai_content_delta: OnAiContentDelta,
+                           on_ai_reasoning_delta: OnAiReasoningDelta,
+                           on_ai_tool_call_started: OnAiToolCallStarted,
+                           on_ai_tool_call_arguments_delta: OnAiToolCallArgumentsDelta,
+                           on_ai_tool_call_finished: OnAiToolCallFinished) -> dict[str, Any]:
         """
         :return: ai message dict
         """
@@ -183,13 +179,13 @@ class Agent:
             return messages[-1]
 
         # 最后一条消息是user message
-        return stream(model_config=model_config, messages=messages,
-                      tools=tools,
-                      on_ai_content_delta=on_ai_content_delta,
-                      on_ai_reasoning_delta=on_ai_reasoning_delta,
-                      on_ai_tool_call_started=on_ai_tool_call_started,
-                      on_ai_tool_call_arguments_delta=on_ai_tool_call_arguments_delta,
-                      on_ai_tool_call_finished=on_ai_tool_call_finished)
+        return await stream(model_config=model_config, messages=messages,
+                            tools=tools,
+                            on_ai_content_delta=on_ai_content_delta,
+                            on_ai_reasoning_delta=on_ai_reasoning_delta,
+                            on_ai_tool_call_started=on_ai_tool_call_started,
+                            on_ai_tool_call_arguments_delta=on_ai_tool_call_arguments_delta,
+                            on_ai_tool_call_finished=on_ai_tool_call_finished)
 
     def _has_reset_context_call_before(self) -> bool:
         """
@@ -259,32 +255,32 @@ class Agent:
         )
         # 接下来 run() 会继续 while 循环，直接以 auto_reminder 为最后一条 user message 进行下一轮模型调用。
 
-    def run(self) -> dict[str, Any]:
+    async def run(self) -> dict[str, Any]:
         if self._conversation_store is None:
             raise RuntimeError("conversation_store 未初始化，请先调用 new_conversation() 或 resume_conversation()")
 
-        self._safe_drain_user_message_queue(self._user_msg_queue, self._messages)
+        self._safe_drain_user_message_queue()
         if not self._conversation_store.has_persisted_conversation():
             # 显式校验：如果没有待处理的 user message，就不应该进入模型生成路径。
             # 否则会进入 _append_runtime_message -> ConversationStore.append_message，最终抛出更隐晦的异常。
             raise RuntimeError("conversation 尚未开始：没有待处理的 user message，请先 enqueue_user_message()")
 
         while True:
-            ai_msg_dict = self._safe_stream(model_config=self._model_config,
-                                            messages=self._messages,
-                                            tools=self._tools,
-                                            on_ai_content_delta=self._on_ai_content_delta,
-                                            on_ai_reasoning_delta=self._on_ai_reasoning_delta,
-                                            on_ai_tool_call_started=self._on_ai_tool_call_started,
-                                            on_ai_tool_call_arguments_delta=self._on_ai_tool_call_arguments_delta,
-                                            on_ai_tool_call_finished=self._on_ai_tool_call_finished,
-                                            )
+            ai_msg_dict = await self._safe_stream(model_config=self._model_config,
+                                                  messages=self._messages,
+                                                  tools=self._tools,
+                                                  on_ai_content_delta=self._on_ai_content_delta,
+                                                  on_ai_reasoning_delta=self._on_ai_reasoning_delta,
+                                                  on_ai_tool_call_started=self._on_ai_tool_call_started,
+                                                  on_ai_tool_call_arguments_delta=self._on_ai_tool_call_arguments_delta,
+                                                  on_ai_tool_call_finished=self._on_ai_tool_call_finished,
+                                                  )
             if not self._messages or ai_msg_dict is not self._messages[-1]:
                 self._append_runtime_message(ai_msg_dict)
             if not ai_msg_dict.get("tool_calls"):
                 return ai_msg_dict
 
-            tool_execution = execute_tool_calls(
+            tool_execution = await execute_tool_calls(
                 ai_msg_dict=ai_msg_dict,
                 tools_by_name=self._tools_by_name,
                 on_tool_result=self._on_tool_result,
@@ -299,5 +295,5 @@ class Agent:
             # steer message 注入点。在执行完toolcall后注入最符合直觉
             # 另外注意，我们是在_reset_context之后才注入，
             # 因为上下文越精简，ai表现越好，reset context的优先级应高于steer conversation
-            self._safe_drain_user_message_queue(self._user_msg_queue, self._messages)
+            self._safe_drain_user_message_queue()
             continue
