@@ -72,9 +72,9 @@ AgentRunner（新）
 `AgentRunner` 构造参数：
 - `agent`: 满足最小协议的对象
 - `is_closed: Callable[[], bool]`：由调用方提供（例如 session 的 `_closed`）
-- `on_generation_started: Callable[[], None] | None`
-- `on_generation_completed: Callable[[], None] | None`
-- `on_agent_run_completed: Callable[[], None] | None`：每次 `await agent.run()` 返回后调用（保持当前 `projector.on_agent_run_completed()` 语义）
+- `on_agent_became_busy: Callable[[], None] | None`
+- `on_agent_became_idle: Callable[[], None] | None`
+- `on_agent_turn_completed: Callable[[], None] | None`：每次 `await agent.run()` 返回后调用（保持当前 `projector.on_agent_turn_completed()` 语义）
 - `on_error: Callable[[Exception], None] | None`：runner 捕获异常后回调
 
 核心方法：
@@ -89,17 +89,17 @@ def ensure_running():
     task = asyncio.create_task(_run_until_idle())
 
 async def _run_until_idle():
-  on_generation_started()
+  on_agent_became_busy()
   try:
     while True:
       await agent.run()
-      on_agent_run_completed()
+      on_agent_turn_completed()
       if is_closed(): return
       if not agent.has_pending_user_messages(): return
   except Exception as exc:
     on_error(exc)
   finally:
-    on_generation_completed()
+    on_agent_became_idle()
     task = None
 ```
 
@@ -152,4 +152,3 @@ async def _run_until_idle():
 - 自顶向下：从职责与语义出发，再落到 API、伪代码、文件级改动与验收标准。
 - 不省略：明确了 generation 边界、close 语义、错误处理与不重入要求。
 - 不过细：没有落到每个函数具体实现细节，但足够让不同实现者写出基本一致的结构与行为。
-
