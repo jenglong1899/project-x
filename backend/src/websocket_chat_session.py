@@ -1,11 +1,13 @@
 import asyncio
 import logging
 import os
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 from uuid import uuid4
 
 from src.core.agent import Agent, OnConversationPersisted, OnQueuedUserMsgCommitted, OnResetContext
+from src.core.agent_controller import AgentController
 from src.core.agent_turn import (
     OnAiContentDelta,
     OnAiReasoningDelta,
@@ -70,10 +72,6 @@ class AgentCallbacks:
     on_reset_context: OnResetContext
 
 
-class AgentFactory(Protocol):
-    def __call__(self, *, callbacks: AgentCallbacks) -> AgentLike: ...
-
-
 def resolve_model_config() -> ModelConfig:
     model_key = os.getenv("PROJECT_X_MODEL_CONFIG", "qwen35plus")
     model_config = MODEL_CONFIGS.get(model_key)
@@ -106,6 +104,42 @@ def create_default_agent(*, callbacks: AgentCallbacks) -> Agent:
         on_conversation_persisted=callbacks.on_conversation_persisted,
         on_reset_context=callbacks.on_reset_context,
     )
+
+
+class AgentControllerFactory(Protocol):
+    def __call__(
+        self,
+        *,
+        callbacks: AgentCallbacks,
+        conversation_id: str | None,
+        is_closed: Callable[[], bool],
+        on_agent_became_busy: Callable[[], None],
+        on_agent_turn_completed: Callable[[], None],
+        on_agent_became_idle: Callable[[], None],
+        on_error: Callable[[Exception], None],
+    ) -> AgentController: ...
+
+
+def create_agent_controller(
+    *,
+    callbacks: AgentCallbacks,
+    conversation_id: str | None,
+    is_closed: Callable[[], bool],
+    on_agent_became_busy: Callable[[], None],
+    on_agent_turn_completed: Callable[[], None],
+    on_agent_became_idle: Callable[[], None],
+    on_error: Callable[[Exception], None],
+) -> AgentController:
+    controller = AgentController(
+        agent=create_default_agent(callbacks=callbacks),
+        is_closed=is_closed,
+        on_agent_became_busy=on_agent_became_busy,
+        on_agent_turn_completed=on_agent_turn_completed,
+        on_agent_became_idle=on_agent_became_idle,
+        on_error=on_error,
+    )
+    controller.start(conversation_id=conversation_id)
+    return controller
 
 
 @dataclass
@@ -306,7 +340,7 @@ class WebSocketChatSession:
     def __init__(
         self,
         *,
-        agent_factory: AgentFactory | None = None,
+        agent_controller_factory: AgentControllerFactory | None = None,
         conversation_id: str | None = None,
     ) -> None:
         """
@@ -317,7 +351,6 @@ class WebSocketChatSession:
         self._outgoing_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
         self._closed = False
         self._pending_user_contents: dict[str, str] = {}
-        self._runner_task: asyncio.Task[None] | None = None
         self._projector = ChatEventProjector(emit=self._emit_sync)
 
         callbacks = AgentCallbacks(
@@ -331,11 +364,26 @@ class WebSocketChatSession:
             on_conversation_persisted=self._on_conversation_persisted,
             on_reset_context=self._on_reset_context,
         )
-        self._agent = (agent_factory or create_default_agent)(callbacks=callbacks)
-        if conversation_id:
-            self._agent.resume_conversation(conversation_id=conversation_id)
+        if agent_controller_factory is None:
+            self._agent_controller = create_agent_controller(
+                callbacks=callbacks,
+                conversation_id=conversation_id,
+                is_closed=lambda: self._closed,
+                on_agent_became_busy=self._projector.on_agent_became_busy,
+                on_agent_turn_completed=self._projector.on_agent_turn_completed,
+                on_agent_became_idle=self._projector.on_agent_became_idle,
+                on_error=self._on_agent_controller_error,
+            )
         else:
-            self._agent.new_conversation()
+            self._agent_controller = agent_controller_factory(
+                callbacks=callbacks,
+                conversation_id=conversation_id,
+                is_closed=lambda: self._closed,
+                on_agent_became_busy=self._projector.on_agent_became_busy,
+                on_agent_turn_completed=self._projector.on_agent_turn_completed,
+                on_agent_became_idle=self._projector.on_agent_became_idle,
+                on_error=self._on_agent_controller_error,
+            )
 
     async def next_event(self) -> dict[str, Any] | None:
         return await self._outgoing_queue.get()
@@ -346,13 +394,10 @@ class WebSocketChatSession:
 
         self._pending_user_contents[user_message_id] = content
 
-        self._agent.enqueue_user_message(
+        self._agent_controller.submit_user_message(
             frontend_msg_id=user_message_id,
             user_message=content,
         )
-
-        if self._runner_task is None or self._runner_task.done():
-            self._runner_task = asyncio.create_task(self._run_agent_until_idle())
 
     async def close(self) -> None:
         if self._closed:
@@ -404,30 +449,15 @@ class WebSocketChatSession:
             }
         )
 
-    async def _run_agent_until_idle(self) -> None:
-        self._projector.on_agent_became_busy()
-        try:
-            while True:
-                await self._agent.run()
-                self._projector.on_agent_turn_completed()
-                if self._closed:
-                    self._runner_task = None
-                    return
-                if not self._agent.has_pending_user_messages():
-                    self._runner_task = None
-                    return
-        except Exception as exc:
-            logger.exception("WebSocketChatSession agent.run 失败")
-            self._runner_task = None
-            self._emit_sync(
-                {
-                    "type": "error",
-                    "code": "agent_run_failed",
-                    "message": str(exc),
-                }
-            )
-        finally:
-            self._projector.on_agent_became_idle()
+    def _on_agent_controller_error(self, exc: Exception) -> None:
+        logger.exception("WebSocketChatSession agent.run 失败")
+        self._emit_sync(
+            {
+                "type": "error",
+                "code": "agent_run_failed",
+                "message": str(exc),
+            }
+        )
 
     def _on_queued_user_msg_committed(self, *, frontend_msg_id: str) -> None:
         content = self._pending_user_contents.pop(frontend_msg_id, "")
