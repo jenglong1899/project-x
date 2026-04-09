@@ -9,15 +9,16 @@ tool: send_msg_to_im_platform(platform_name:str,msg:str)
 ```text
 <im from="some_group_or_some_people">
 (...自从上一次艾特以来的所有消息...) / 用户发送了新消息
-@bot 请去做xxx
 </im>
 ```
 
-边界情况：“自从上一次艾特以来的所有消息”可能会超过上下文长度。消息最大长度为10%，然后AI要做摘要，然后继续接收剩下的
+边界情况：“自从上一次艾特以来的所有消息”可能会超过上下文长度。消息最大长度为模型上下文窗口的10%，超过的部分放到一个文件里（当然要告诉 AI 对应的文件路径）。
 
 ai在完成工作后调用send_msg_to_im_platform来发消息给用户。
 
-如果用户想看工作过程，那么应该在 Web 端查看，而不是在im里面看
+如果用户想看agent的全部工作过程，那么应该在 Web 端查看，而不是在im里面看
 
-agent没事做的时候，就查看一下群聊 get_group_chat_msg_since_last_read(im_platform:str,group_id:str)
-能否获得群聊中每个消息的准确发送时间（精准到毫秒？），记录一下最后一次读的消息，其发送时间是多少。
+除了用户主动艾特 Agent 或者主动私聊 Agent, 也应该提供接口，让 Agent 能够主动查看消息。
+agent没事做的时候，就查看一下群聊， get_group_chat_msg_since_last_read(im_platform:str,group_id:str)
+这个接口要怎么实现？
+能否获得群聊中每个消息的准确发送时间（精准到毫秒？），记录一下最后一次读的消息，其发送时间是多少，这是一种实现方式。
