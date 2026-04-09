@@ -57,7 +57,7 @@ Browser                      Backend(HTTP)                 Backend(WebSocket)
   - `GET /conversations/{conversationId}`
 - WebSocket：
   - 从 query 读取 `conversationId`
-  - 传入 `WebSocketChatSession(loop=..., conversation_id=...)`（内部变量用 snake_case 即可）
+  - 传入 `WebSocketChatSession(conversation_id=...)`（内部变量用 snake_case 即可）
   - resume 失败：给前端发 `error`（`code="conversation_resume_failed"`），然后 close（前端可重连/新建）
 
 2) `backend/src/websocket_chat_session.py`

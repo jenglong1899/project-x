@@ -4,7 +4,7 @@
 
 ## 核心心智模型（先看这个）
 - **核心抽象是 `Agent`**：`backend/src/core/agent.py` 对外暴露一个最小接口（排队 user message → `async run()` 生成 → 工具调用 → 持久化）；其他模块基本都在为它服务。
-- **`WebSocketChatSession` 是适配层**：`backend/src/websocket_chat_session.py` 直接 `await Agent.run()`，并把回调投影成前端事件（assistant delta / tool card / committed 等）。
+- **`WebSocketChatSession` 是适配层**：`backend/src/websocket_chat_session.py` 直接 `await Agent.run()`，并把回调投影成前端事件（assistant delta / tool card / committed 等）；当前实现不再需要显式传入 event loop。
 - **`ConversationStore` 是持久化层**：`backend/src/conversation_store.py` 把对话落地到 `~/.project-x/memories/originals/*.json`，并提供 list/detail 所需字段（`displayName`/`lastChatTime`）。
 - **system/user instruction 由 prompts 构建**：`backend/src/prompts/builder.py` 会读取/确保 `~/.project-x/memories/summaries/main.md`，`reset_context` 会触发“新会话 + 重新加载指令”的编排。
 

@@ -306,17 +306,14 @@ class WebSocketChatSession:
     def __init__(
         self,
         *,
-        loop: asyncio.AbstractEventLoop,
         agent_factory: AgentFactory | None = None,
         conversation_id: str | None = None,
     ) -> None:
         """
         WebSocket 连接的会话编排器：桥接 Agent（agent.py）和 WebSocket。
-        :param loop:
         :param agent_factory:
         :param conversation_id: 不填则 new_conversation，填写则 resume_conversation
         """
-        self._loop = loop
         self._outgoing_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
         self._closed = False
         self._pending_user_contents: dict[str, str] = {}
@@ -411,7 +408,6 @@ class WebSocketChatSession:
         self._projector.on_generation_started()
         try:
             while True:
-                # Agent.run() 是异步的（主要等待网络/子进程），直接 await 即可，不需要线程桥接。
                 await self._agent.run()
                 self._projector.on_agent_run_completed()
                 if self._closed:
