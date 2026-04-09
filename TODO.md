@@ -2,7 +2,7 @@
     def on_agent_became_idle(self) -> None:
         self._close_assistant_message()
         self._tool_states.clear()
-        self._emit({"type": "generation.completed"})
+        self._emit({"type": "agent.became.idle"})
 改名字没改全啊，这协议要改，然后前端对应也要改。
 
 # 2

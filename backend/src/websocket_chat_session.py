@@ -156,12 +156,12 @@ class ChatEventProjector:
         self._tool_states: dict[str, ToolProjectionState] = {}
 
     def on_agent_became_busy(self) -> None:
-        self._emit({"type": "generation.started"})
+        self._emit({"type": "agent.became.busy"})
 
     def on_agent_became_idle(self) -> None:
         self._close_assistant_message()
         self._tool_states.clear()
-        self._emit({"type": "generation.completed"})
+        self._emit({"type": "agent.became.idle"})
 
     def on_agent_turn_completed(self) -> None:
         self._close_assistant_message()

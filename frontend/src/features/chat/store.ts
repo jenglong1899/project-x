@@ -201,12 +201,12 @@ function upsertUserItem(
 
 function reduceServerEvent(state: ChatState, event: ServerEvent): Partial<ChatState> {
   switch (event.type) {
-    case 'generation.started':
+    case 'agent.became.busy':
       return {
         isGenerating: true,
       }
 
-    case 'generation.completed':
+    case 'agent.became.idle':
       return {
         isGenerating: false,
       }

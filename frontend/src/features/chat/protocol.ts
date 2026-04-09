@@ -2,12 +2,12 @@ import { z } from 'zod'
 
 const nonEmptyString = z.string().min(1)
 
-const generationStartedEventSchema = z.object({
-  type: z.literal('generation.started'),
+const agentBecameBusyEventSchema = z.object({
+  type: z.literal('agent.became.busy'),
 })
 
-const generationCompletedEventSchema = z.object({
-  type: z.literal('generation.completed'),
+const agentBecameIdleEventSchema = z.object({
+  type: z.literal('agent.became.idle'),
 })
 
 const conversationPersistedEventSchema = z.object({
@@ -79,8 +79,8 @@ const errorEventSchema = z.object({
 })
 
 export const serverEventSchema = z.discriminatedUnion('type', [
-  generationStartedEventSchema,
-  generationCompletedEventSchema,
+  agentBecameBusyEventSchema,
+  agentBecameIdleEventSchema,
   conversationPersistedEventSchema,
   resetContextEventSchema,
   userMessageCommittedEventSchema,

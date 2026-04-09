@@ -173,7 +173,7 @@ import asyncio
 
 async def fake_receive_user_messages(session_queue: asyncio.Queue[str]) -> None:
     print("收到用户消息：你好")
-    await session_queue.put("generation.started")
+    await session_queue.put("agent.became.busy")
     await asyncio.sleep(1)
     print("收到用户消息：帮我执行任务")
     await session_queue.put("assistant.delta: 我开始处理了")
