@@ -75,7 +75,6 @@ class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
             callbacks.on_ai_content_delta(content_delta="后说")
 
         session = WebSocketChatSession(
-            loop=asyncio.get_running_loop(),
             agent_factory=lambda *, callbacks: FakeAgent(
                 callbacks=callbacks,
                 scripted_runs=[scripted_run],
@@ -157,7 +156,6 @@ class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
             return scripted_run
 
         session = WebSocketChatSession(
-            loop=asyncio.get_running_loop(),
             agent_factory=lambda *, callbacks: FakeAgent(
                 callbacks=callbacks,
                 scripted_runs=[
@@ -199,7 +197,6 @@ class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
             callbacks.on_ai_content_delta(content_delta="新会话开始输出")
 
         session = WebSocketChatSession(
-            loop=asyncio.get_running_loop(),
             agent_factory=lambda *, callbacks: FakeAgent(
                 callbacks=callbacks,
                 scripted_runs=[scripted_run],

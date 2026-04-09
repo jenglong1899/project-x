@@ -839,9 +839,9 @@ callbacks = AgentCallbacks(
 
 - 但是，也有 projector 方法不是在工作线程里调用的
   - 比如：
-    - `self._projector.on_generation_started()`
-    - `self._projector.on_agent_run_completed()`
-    - `self._projector.on_generation_completed()`
+    - `self._projector.on_agent_became_busy()`
+    - `self._projector.on_agent_turn_completed()`
+    - `self._projector.on_agent_became_idle()`
   - 它们是在 [backend/src/chat_session.py](/home/bruce/projects/project-x/backend/src/chat_session.py#L372) 这个 async 协程里直接调用的
   - 也就是仍然在 asyncio 主线程里
 

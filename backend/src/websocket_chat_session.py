@@ -121,15 +121,15 @@ class ChatEventProjector:
         self._active_assistant_message_id: str | None = None
         self._tool_states: dict[str, ToolProjectionState] = {}
 
-    def on_generation_started(self) -> None:
+    def on_agent_became_busy(self) -> None:
         self._emit({"type": "generation.started"})
 
-    def on_generation_completed(self) -> None:
+    def on_agent_became_idle(self) -> None:
         self._close_assistant_message()
         self._tool_states.clear()
         self._emit({"type": "generation.completed"})
 
-    def on_agent_run_completed(self) -> None:
+    def on_agent_turn_completed(self) -> None:
         self._close_assistant_message()
 
     def on_user_message_committed(self, *, user_message_id: str, content: str) -> None:
@@ -405,11 +405,11 @@ class WebSocketChatSession:
         )
 
     async def _run_agent_until_idle(self) -> None:
-        self._projector.on_generation_started()
+        self._projector.on_agent_became_busy()
         try:
             while True:
                 await self._agent.run()
-                self._projector.on_agent_run_completed()
+                self._projector.on_agent_turn_completed()
                 if self._closed:
                     self._runner_task = None
                     return
@@ -427,7 +427,7 @@ class WebSocketChatSession:
                 }
             )
         finally:
-            self._projector.on_generation_completed()
+            self._projector.on_agent_became_idle()
 
     def _on_queued_user_msg_committed(self, *, frontend_msg_id: str) -> None:
         content = self._pending_user_contents.pop(frontend_msg_id, "")
