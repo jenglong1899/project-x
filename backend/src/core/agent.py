@@ -3,6 +3,7 @@ from collections import deque
 from typing import Any, Protocol
 from dataclasses import dataclass
 
+from src.commons import noop
 from src.conversation_store import ConversationStore
 from src.core.agent_turn import (
     stream,
@@ -43,11 +44,6 @@ class OnResetContext(Protocol):
 
 class Agent:
 
-    # 见调用处，有了这个函数就不用每次都写 if callback is not None
-    @staticmethod
-    def _noop(*args: Any, **kwargs: Any) -> None:
-        return None
-
     def __init__(self, *, name: str, model_config: ModelConfig,
                  system_instruction: str, user_instruction: str,
                  tools: list[ToolSpec],
@@ -71,19 +67,19 @@ class Agent:
         self._tools_by_name = {tool.name: tool for tool in tools}
         if len(self._tools_by_name) != len(self._tools):
             raise ValueError("tools 里存在重复的 name")
-        self._on_ai_content_delta = on_ai_content_delta or self._noop
-        self._on_ai_reasoning_delta = on_ai_reasoning_delta or self._noop
+        self._on_ai_content_delta = on_ai_content_delta or noop
+        self._on_ai_reasoning_delta = on_ai_reasoning_delta or noop
 
         # started 不一定表示是函数的名字出来了，有些供应商是先给 ID 什么的
-        self._on_ai_tool_call_started = on_ai_tool_call_started or self._noop
-        self._on_ai_tool_call_arguments_delta = on_ai_tool_call_arguments_delta or self._noop
-        self._on_ai_tool_call_finished = on_ai_tool_call_finished or self._noop
-        self._on_tool_result = on_tool_result or self._noop
+        self._on_ai_tool_call_started = on_ai_tool_call_started or noop
+        self._on_ai_tool_call_arguments_delta = on_ai_tool_call_arguments_delta or noop
+        self._on_ai_tool_call_finished = on_ai_tool_call_finished or noop
+        self._on_tool_result = on_tool_result or noop
 
-        self._on_user_msg_enqueued = on_user_msg_enqueued or self._noop
-        self._on_queued_user_msg_committed = on_queued_user_msg_committed or self._noop
-        self._on_conversation_persisted = on_conversation_persisted or self._noop
-        self._on_reset_context = on_reset_context or self._noop
+        self._on_user_msg_enqueued = on_user_msg_enqueued or noop
+        self._on_queued_user_msg_committed = on_queued_user_msg_committed or noop
+        self._on_conversation_persisted = on_conversation_persisted or noop
+        self._on_reset_context = on_reset_context or noop
 
         self._user_msg_queue: deque[QueuedUserMessage] = deque()
 
