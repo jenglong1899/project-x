@@ -110,10 +110,9 @@ async def websocket_sender_loop(websocket: WebSocket, session: WebSocketChatSess
 
 async def websocket_endpoint(websocket: WebSocket) -> None:
     await websocket.accept()
-    loop = asyncio.get_running_loop()
     conversation_id = websocket.query_params.get("conversationId") or None
     try:
-        session = WebSocketChatSession(loop=loop, conversation_id=conversation_id)
+        session = WebSocketChatSession(conversation_id=conversation_id)
     except Exception as exc:
         if conversation_id:
             if isinstance(exc, FileNotFoundError):
