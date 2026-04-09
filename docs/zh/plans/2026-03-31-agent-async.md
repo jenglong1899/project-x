@@ -139,7 +139,7 @@ WebSocketChatSession.submit_user_message()
   - 用 `await self._agent.run()` 替代 `await asyncio.to_thread(...)`。
 
 验收标准：
-- `generation.started/completed` 边界不变。
+- `agent.became.busy/agent.became.idle` 边界不变。
 - tool 开始时会 close 当前 assistant message 的行为不变。
 - `reset.context` + auto reminder 的事件顺序保持（reset 在前，auto user committed 在后，且早于任何新的 assistant delta）。
 

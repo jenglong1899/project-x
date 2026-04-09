@@ -73,7 +73,7 @@ class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
             event = await asyncio.wait_for(session.next_event(), timeout=1)
             self.assertIsNotNone(event)
             events.append(event)
-            if event["type"] == "generation.completed":
+            if event["type"] == "agent.became.idle":
                 return events
 
     async def test_websocket_chat_session_streams_message_and_tool_events(self) -> None:
@@ -115,7 +115,7 @@ class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [event["type"] for event in events],
             [
-                "generation.started",
+                "agent.became.busy",
                 "user.message.committed",
                 "assistant.message.started",
                 "assistant.message.delta",
@@ -128,7 +128,7 @@ class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
                 "assistant.message.started",
                 "assistant.message.delta",
                 "assistant.message.completed",
-                "generation.completed",
+                "agent.became.idle",
             ],
         )
         self.assertEqual(
@@ -197,8 +197,8 @@ class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
         events = await self._collect_events_until_generation_completed(session)
 
         self.assertEqual(
-            [event["type"] for event in events if event["type"].startswith("generation.")],
-            ["generation.started", "generation.completed"],
+            [event["type"] for event in events if event["type"].startswith("agent.became.")],
+            ["agent.became.busy", "agent.became.idle"],
         )
         self.assertEqual(
             [

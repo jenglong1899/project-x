@@ -99,7 +99,7 @@
   - `displayName: string`（新会话侧栏展示名；建议继承旧会话 display-name）
 
 时序约束（关键）：
-- `reset.context` 必须在新会话的任何事件（例如 `user.message.committed` / `generation.started` / `assistant.message.*` / `tool.*` / `conversation.persisted`）之前发送给前端。
+- `reset.context` 必须在新会话的任何事件（例如 `user.message.committed` / `agent.became.busy` / `assistant.message.*` / `tool.*` / `conversation.persisted`）之前发送给前端。
 - 为保证“切换到新的 conversation 文件”语义成立，后端需要在发送 `reset.context` 前就确保新 `conversationId` 对应的 conversation JSON 已可被加载（最简单是：reset 时立即落一个空会话文件，后续再正常追加 messages）。
 
 前端处理：

@@ -80,6 +80,7 @@
 ### WebSocket 会话编排（`backend/src/websocket_chat_session.py`）
 - 每个 WS 连接一个 `WebSocketChatSession`；直接 `await self._agent.run()`，不再做线程桥接
 - `ChatEventProjector` 决定 assistant 卡片边界：遇到 tool start 会 close 当前 assistant，因此前端时间线呈 `assistant → tool → assistant`
+- 生成状态事件：`agent.became.busy` / `agent.became.idle`（前端用它们驱动 `isGenerating`）
 - WS 支持 `/ws?conversationId=...` 以 resume 历史会话
 - `reset_context`：先投影 `reset.context`，然后**由WebSocketChatSession直接推送**一条 `user.message.committed`（auto reminder），触发前端渲染出 auto reminder 文本
 

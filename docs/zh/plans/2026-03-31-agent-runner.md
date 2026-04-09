@@ -49,9 +49,9 @@ AgentRunner（新）
 ### 关键语义（必须保持不变）
 
 1) “一次 generation”定义不变：
-- 当 session 从 idle 进入 generating 时发 `generation.started`。
+- 当 session 从 idle 进入 generating 时发 `agent.became.busy`。
 - 同一次 generating 期间，多个 user message 可能被 drain 并得到多次 assistant 输出，但只发一对 started/completed。
-- 当跑到 idle 或发生错误时发 `generation.completed`（并 close 未完成的 assistant message/tool 状态）。
+- 当跑到 idle 或发生错误时发 `agent.became.idle`（并 close 未完成的 assistant message/tool 状态）。
 
 2) runner 不重入：
 - 在 runner 运行中再次提交消息，只会被 enqueue，不会启动第二个 runner task。
@@ -125,7 +125,7 @@ async def _run_until_idle():
 - 错误处理：将当前 `_run_agent_until_idle` 里的 try/except 行为迁移到 runner 的 `on_error` 回调中，保持对外事件一致：
   - 日志：`logger.exception(...)`
   - 对外发 `{type: "error", code: "agent_run_failed", message: str(exc)}`
-- `generation.started/completed`、`on_agent_run_completed` 继续通过 projector 钩子实现，确保事件边界不变。
+- `agent.became.busy/agent.became.idle`、`on_agent_run_completed` 继续通过 projector 钩子实现，确保事件边界不变。
 
 验收标准：
 - `backend/tests/test_websocket_chat_session.py` 全部通过且无需改动测试期望（事件序列不变）。
