@@ -2,6 +2,7 @@ import asyncio
 import unittest
 from collections.abc import Callable
 
+from src.core.agent_controller import AgentController
 from src.websocket_chat_session import AgentCallbacks, WebSocketChatSession
 
 
@@ -32,6 +33,34 @@ class FakeAgent:
         scripted_run = self._scripted_runs.pop(0)
         scripted_run(self._callbacks, user_message_id, user_message)
         return {"role": "assistant", "content": "done"}
+
+
+def make_agent_controller_factory(*, scripted_runs: list[ScriptedRun]):
+    def factory(
+        *,
+        callbacks: AgentCallbacks,
+        conversation_id: str | None,
+        is_closed: Callable[[], bool],
+        on_agent_became_busy: Callable[[], None],
+        on_agent_turn_completed: Callable[[], None],
+        on_agent_became_idle: Callable[[], None],
+        on_error: Callable[[Exception], None],
+    ) -> AgentController:
+        controller = AgentController(
+            agent=FakeAgent(
+                callbacks=callbacks,
+                scripted_runs=list(scripted_runs),
+            ),
+            is_closed=is_closed,
+            on_agent_became_busy=on_agent_became_busy,
+            on_agent_turn_completed=on_agent_turn_completed,
+            on_agent_became_idle=on_agent_became_idle,
+            on_error=on_error,
+        )
+        controller.start(conversation_id=conversation_id)
+        return controller
+
+    return factory
 
 
 class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
@@ -75,8 +104,7 @@ class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
             callbacks.on_ai_content_delta(content_delta="后说")
 
         session = WebSocketChatSession(
-            agent_factory=lambda *, callbacks: FakeAgent(
-                callbacks=callbacks,
+            agent_controller_factory=make_agent_controller_factory(
                 scripted_runs=[scripted_run],
             ),
         )
@@ -156,8 +184,7 @@ class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
             return scripted_run
 
         session = WebSocketChatSession(
-            agent_factory=lambda *, callbacks: FakeAgent(
-                callbacks=callbacks,
+            agent_controller_factory=make_agent_controller_factory(
                 scripted_runs=[
                     make_scripted_run("第一条回复"),
                     make_scripted_run("第二条回复"),
@@ -197,8 +224,7 @@ class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
             callbacks.on_ai_content_delta(content_delta="新会话开始输出")
 
         session = WebSocketChatSession(
-            agent_factory=lambda *, callbacks: FakeAgent(
-                callbacks=callbacks,
+            agent_controller_factory=make_agent_controller_factory(
                 scripted_runs=[scripted_run],
             ),
         )

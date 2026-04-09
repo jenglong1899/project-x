@@ -4,7 +4,8 @@
 
 ## 核心心智模型（先看这个）
 - **核心抽象是 `Agent`**：`backend/src/core/agent.py` 对外暴露一个最小接口（排队 user message → `async run()` 生成 → 工具调用 → 持久化）；其他模块基本都在为它服务。
-- **`WebSocketChatSession` 是适配层**：`backend/src/websocket_chat_session.py` 直接 `await Agent.run()`，并把回调投影成前端事件（assistant delta / tool card / committed 等）；当前实现不再需要显式传入 event loop。
+- **`AgentController` 是驱动层**：`backend/src/core/agent_controller.py` 负责“提交消息 + 确保后台运行 + 防重入 + 跑到 idle”，适配层（如 WebSocket）只和它交互，避免直接操作 `Agent`。
+- **`WebSocketChatSession` 是适配层**：`backend/src/websocket_chat_session.py` 通过 `AgentController` 驱动 agent（busy/idle/turn 完成回调），并把回调投影成前端事件（assistant delta / tool card / committed 等）。
 - **`ConversationStore` 是持久化层**：`backend/src/conversation_store.py` 把对话落地到 `~/.project-x/memories/originals/*.json`，并提供 list/detail 所需字段（`displayName`/`lastChatTime`）。
 - **system/user instruction 由 prompts 构建**：`backend/src/prompts/builder.py` 会读取/确保 `~/.project-x/memories/summaries/main.md`，`reset_context` 会触发“新会话 + 重新加载指令”的编排。
 
@@ -30,6 +31,7 @@
 - 后端入口：`backend/main.py`（`PROJECT_X_HOST`/`PROJECT_X_PORT`）
 - 后端测试：在 `backend/` 下运行 `PYTHONPATH=. uv run --with pytest python -m pytest -q`（沙盒内若遇到 uv cache 写入失败，改为允许非沙盒执行）
 - 前端开发代理：`frontend/vite.config.ts` 代理 `/healthz`、`/conversations`、`/ws` 到 `PROJECT_X_BACKEND_ORIGIN`（默认 `http://127.0.0.1:8000`）
+- 回调约定：可选回调参数如果允许为 `None`，初始化时用 `backend/src/commons.py` 里的 `noop` 替代，避免到处写 `if callback is None`。
 
 ## 后端（围绕 Agent 的三层）
 
