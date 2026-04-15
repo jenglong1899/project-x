@@ -65,9 +65,9 @@ class AgentController:
             frontend_msg_id=frontend_msg_id,
             user_message=user_message,
         )
-        self.ensure_running()
+        self._ensure_running()
 
-    def ensure_running(self) -> None:
+    def _ensure_running(self) -> None:
         """
         确保后台 runner 已启动：
         - 如果当前没有 task，或 task 已结束，则启动新的 task
