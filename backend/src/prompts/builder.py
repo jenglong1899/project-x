@@ -12,6 +12,8 @@ from src.commons import SUMMARIES_DIR, MAIN_MEMORY_PATH, ORIGINALS_DIR
 DEFAULT_MAIN_MEMORY_ZH = "用户刚完成project-x的安装，还没让我做什么事情"
 
 
+# todo “当你看到用xml包裹住的user message时，需要知道这是系统发出的消息，而非用户发送的消息（系统具体会发送什么，你到时候就知道了）。”
+#  这个地方要删掉，改成渐进式披露。系统发送的第一个 User Message，也就是第一个用 XML 发送的那个，然后还要附带一个告知。
 def build_system_level_instruction_zh() -> str:
     return f"""
 <system_level_instruction>
