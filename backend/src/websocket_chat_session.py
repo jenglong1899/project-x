@@ -30,7 +30,7 @@ from src.prompts.builder import (
     build_system_level_instruction_zh,
     build_user_level_instruction_zh,
 )
-from src.tools.bash import BASH_TOOL
+from src.tools.bash import create_bash_tool
 from src.tools.reset_context import RESET_CONTEXT_AUTO_REMINDER, RESET_CONTEXT_TOOL
 
 
@@ -93,7 +93,8 @@ def create_default_agent(*, callbacks: AgentCallbacks) -> Agent:
         model_config=resolve_model_config(),
         system_instruction=build_system_level_instruction_zh(),
         user_instruction=build_user_level_instruction_zh(),
-        tools=[BASH_TOOL, RESET_CONTEXT_TOOL],
+        # bash 工具会记住 cwd，所以这里必须给每个 Agent 创建独立实例，不能复用全局单例。
+        tools=[create_bash_tool(), RESET_CONTEXT_TOOL],
         on_ai_content_delta=callbacks.on_ai_content_delta,
         on_ai_reasoning_delta=callbacks.on_ai_reasoning_delta,
         on_ai_tool_call_started=callbacks.on_ai_tool_call_started,
