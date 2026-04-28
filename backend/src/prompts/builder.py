@@ -64,15 +64,6 @@ def build_system_level_instruction_zh() -> str:
 
 """
 
-#TODO “如果当前摘要记忆过于精简，无法支持当前任务，你应当创建 subagent 去搜索完整原始记忆。”
-# 对 subagent 的prompt：
-# 搜索 ~/.project-x/memories/originals 中的相关 JSON 记录。
-# 返回与当前任务相关的信息。
-# 如果结果很长，不要完整复述原文，只需要告诉你相关信息的位置和简要摘要。
-# 原因：AI 输出成本通常高于输入成本，应避免大段重复输出。
-# TODO: "如果结果很长，不要完整复述原文，只需要告诉你相关信息的位置和简要摘要。 " 这里可以用上引用语法。
-
-
 # 目录设计成 memories/summaries/，是考虑到以后AI可能会为某一些记忆创建一个文件夹，
 # 如果是只有 memories/，那目录就会变成：
 # memories/originals
@@ -82,13 +73,6 @@ def build_system_level_instruction_zh() -> str:
 # memories/some_mem.md
 # 看起来很乱
 
-
-# todo <file_operation>
-# 系统安装了 ripgrep ，你可以用这个
-# 当你使用系统提供的编辑工具，或者用shell工具来编辑文件时，如果对应的文件夹中没有git，系统会自动创建，并自动commit你做的编辑，对应的commit message就是你当时进行编辑的tool_call_id
-# 如果你用shell来编辑，记得用 heredoc 模式，这样就不用处理转义符号了。
-# 如果你要编辑json、html、excel等文件，通常建议你用python脚本+对应的库来编辑，这样会更容易
-# </file_operation>
 
 def build_user_level_instruction_zh() -> str:
     # todo gpt说不展开的话，~会被当成字面量而不是真正的user home。真的假的？试验一下。
@@ -147,7 +131,6 @@ def build_user_level_instruction_zh() -> str:
 def build_memory_forked_subagent_prompt(is_first_time_awaken: bool) -> str:
     prompt_case_first_time_awaken = f"这是你第一次在当前会话中被唤醒，“磁盘中的{MAIN_MEMORY_MD}”和“上下文中的{MAIN_MEMORY_MD}”是一致的，没有被之前的你修改过"
 
-    # TODO 将来要改成：如果 diff 比较小才显示 diff。如果 diff 比较大，那就显示新版记忆的内容就行
     prompt_case_not_first_time_awaken = f"""
 这不是你第一次在当前会话中被唤醒，你之前已经更改过记忆文档。这是“磁盘中的{MAIN_MEMORY_MD}”和“上下文中的{MAIN_MEMORY_MD}”的diff：
 <memory_diff>
@@ -189,7 +172,14 @@ def build_memory_forked_subagent_prompt(is_first_time_awaken: bool) -> str:
 （2）如果记忆有点散乱了，要把它整理成结构化的。因为杂乱无章的记忆会影响worker的发挥和你的后续维护
  
 （3）检查是否需要重置上下文
-    - **是否应该重置上下文的判断标准：想象一下你要对上下文做摘要，如果摘要是原始内容的50%以内，就应该做摘要然后重置上下文**；如果摘要只是原始内容的80%，那么这就很不划算了，因为你做摘要，输出token是很贵的，通常是你输入token的5~10倍。
+    - **是否应该重置上下文的判断标准：
+    不要只根据摘要压缩率决定是否重置上下文。
+    需要估算重置后的回本轮数。
+        如果任务预计只剩 1～2 轮，默认不重置，除非上下文接近模型上限。
+        如果任务预计还要 3～8 轮，只有当摘要能压到原文 50% 以下时才倾向重置。
+        如果任务预计还要 8 轮以上，即使摘要是原文 60%～75%，也可以考虑重置。
+        如果摘要仍然超过原文 80%，默认不重置，除非任务还会执行非常多轮，或者原上下文中有大量重复、过期、低价值内容。
+        如果上下文接近窗口上限，优先为了稳定性重置，而不只看 token 成本。
     - 当你输出 PROJECT-X-RESET-CONTEXT 字样时，系统就会重置上下文
 </reference_memory_method>
 
