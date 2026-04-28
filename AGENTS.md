@@ -116,6 +116,7 @@
 
 ## 计划索引
 - 2026-03-31：把 Agent 改为 async（移除 WebSocket 层 to_thread）：`docs/zh/plans/2026-03-31-agent-async.md`
+- 2026-04-28：跨进程工具调用机制（用户预置脚本 → 本地 HTTP endpoint → `InterprocessToolRegistry`）：`docs/zh/plans/2026-04-28-interprocess-tool-call.md`
 
 ## 供应链安全备忘
 - LiteLLM 供应链投毒事件（2026-03-24）：受影响版本为 `litellm==1.82.7` 与 `litellm==1.82.8`（其中 `1.82.8` 包含会在 Python 启动时自动执行的恶意 `.pth`）。本项目当前 `backend/uv.lock` 锁定为 `litellm==1.82.0`，并在 `backend/pyproject.toml` 显式排除了 `1.82.7/1.82.8`。
