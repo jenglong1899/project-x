@@ -3,7 +3,7 @@ from unittest import mock
 
 from pydantic import ValidationError
 
-from src.tools.bash import BASH_TOOL
+from src.tools.bash import create_bash_tool
 
 
 class _FakeProcess:
@@ -22,12 +22,13 @@ class BashToolTests(unittest.IsolatedAsyncioTestCase):
     async def test_bash_tool_runs_command_and_returns_result(self, mock_exec: mock.Mock) -> None:
         mock_exec.return_value = _FakeProcess(stdout=b"/tmp\n", stderr=b"", returncode=0)
 
-        result = await BASH_TOOL.handler(arguments={"command": "pwd"})
+        bash_tool = create_bash_tool()
+        result = await bash_tool.handler(arguments={"command": "pwd"})
 
         mock_exec.assert_called_once()
         args = mock_exec.call_args.args
         kwargs = mock_exec.call_args.kwargs
-        self.assertEqual(args[:3], ("bash", "-lc", "pwd"))
+        self.assertEqual(args[:2], ("bash", "-lc"))
         self.assertIn("stdout", kwargs)
         self.assertIn("stderr", kwargs)
         self.assertEqual(
@@ -41,17 +42,37 @@ class BashToolTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_bash_tool_rejects_invalid_arguments(self) -> None:
         with self.assertRaises(ValidationError):
-            await BASH_TOOL.handler(arguments={})
+            await create_bash_tool().handler(arguments={})
 
     async def test_bash_tool_exposes_pydantic_schema(self) -> None:
-        self.assertEqual(BASH_TOOL.parameters_json_schema["type"], "object")
-        self.assertIn("command", BASH_TOOL.parameters_json_schema["required"])
+        bash_tool = create_bash_tool()
+        self.assertEqual(bash_tool.parameters_json_schema["type"], "object")
+        self.assertIn("command", bash_tool.parameters_json_schema["required"])
         self.assertEqual(
-            BASH_TOOL.parameters_json_schema["properties"]["command"]["type"],
+            bash_tool.parameters_json_schema["properties"]["command"]["type"],
             "string",
         )
+
+    async def test_bash_tool_remembers_cwd_between_calls(self) -> None:
+        bash_tool = create_bash_tool(initial_cwd="/")
+
+        cd_result = await bash_tool.handler(arguments={"command": "cd /tmp"})
+        pwd_result = await bash_tool.handler(arguments={"command": "pwd"})
+
+        self.assertEqual(cd_result["returncode"], 0)
+        self.assertEqual(pwd_result["stdout"], "/tmp\n")
+
+    async def test_bash_tool_instances_keep_independent_cwd(self) -> None:
+        first_tool = create_bash_tool(initial_cwd="/")
+        second_tool = create_bash_tool(initial_cwd="/")
+
+        await first_tool.handler(arguments={"command": "cd /tmp"})
+        first_pwd = await first_tool.handler(arguments={"command": "pwd"})
+        second_pwd = await second_tool.handler(arguments={"command": "pwd"})
+
+        self.assertEqual(first_pwd["stdout"], "/tmp\n")
+        self.assertEqual(second_pwd["stdout"], "/\n")
 
 
 if __name__ == "__main__":
     unittest.main()
-
