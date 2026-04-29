@@ -51,6 +51,29 @@ class ConversationStoreTests(unittest.TestCase):
             store.start_with_first_user_message(user_content="hello")
             self.assertTrue(store.has_persisted_conversation())
 
+    def test_memory_manager_state_is_persisted_and_loaded(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            originals_dir = Path(temp_dir)
+            store = ConversationStore(
+                system_instruction="system",
+                user_instruction="memory",
+                originals_dir=originals_dir,
+            )
+
+            store.start_with_first_user_message(user_content="hello")
+            store.update_memory_manager_state(
+                turns_since_memory_manager=7,
+                awaken_count=2,
+            )
+
+            loaded_store = ConversationStore.load_from_conversation_id(
+                conversation_id=store.conversation_id,
+                originals_dir=originals_dir,
+            )
+
+            self.assertEqual(loaded_store.memory_manager_turns_since_memory_manager, 7)
+            self.assertEqual(loaded_store.memory_manager_awaken_count, 2)
+
     def test_truncate_display_name_limits_to_twenty_characters_and_appends_ellipsis(self) -> None:
         self.assertEqual(truncate_display_name("12345678901234567890"), "12345678901234567890")
         self.assertEqual(

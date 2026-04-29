@@ -10,6 +10,9 @@ from src.commons import ORIGINALS_DIR
 
 DISPLAY_NAME_MAX_LENGTH = 20
 DISPLAY_NAME_ELLIPSIS = "..."
+MEMORY_MANAGER_META_KEY = "memory-manager"
+MEMORY_MANAGER_TURNS_KEY = "turns-since-memory-manager"
+MEMORY_MANAGER_AWAKEN_COUNT_KEY = "awaken-count"
 
 
 def truncate_display_name(text: str, *, max_length: int = DISPLAY_NAME_MAX_LENGTH) -> str:
@@ -26,6 +29,7 @@ def build_conversation_id() -> str:
     slug = coolname.generate_slug()
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
     return f"{slug}-{timestamp}.json"
+
 
 def _strip_meta_for_runtime(message: dict[str, Any]) -> dict[str, Any]:
     runtime_message = dict(message)
@@ -58,6 +62,8 @@ class ConversationStore:
         self._display_name = ""
         self._conversation_id = ""
         self._messages: list[dict[str, Any]] = []
+        self._memory_manager_turns_since_memory_manager = 0
+        self._memory_manager_awaken_count = 0
 
     @property
     def file_path(self) -> Path | None:
@@ -93,6 +99,27 @@ class ConversationStore:
 
     def has_persisted_conversation(self) -> bool:
         return self._file_path is not None
+
+    @property
+    def memory_manager_turns_since_memory_manager(self) -> int:
+        return self._memory_manager_turns_since_memory_manager
+
+    @property
+    def memory_manager_awaken_count(self) -> int:
+        return self._memory_manager_awaken_count
+
+    def update_memory_manager_state(
+        self,
+        *,
+        turns_since_memory_manager: int,
+        awaken_count: int,
+    ) -> None:
+        if turns_since_memory_manager < 0 or awaken_count < 0:
+            raise ValueError("memory manager 状态不能为负数")
+        self._memory_manager_turns_since_memory_manager = turns_since_memory_manager
+        self._memory_manager_awaken_count = awaken_count
+        if self.has_persisted_conversation():
+            self._write_json_atomically()
 
     def start_with_first_user_message(self, *, user_content: str, display_name: str | None = None) -> None:
         if self.has_persisted_conversation():
@@ -166,6 +193,14 @@ class ConversationStore:
         store._display_name = display_name
         store._conversation_id = conversation_id
         store._messages = messages
+        memory_manager_meta = meta.get(MEMORY_MANAGER_META_KEY)
+        if isinstance(memory_manager_meta, dict):
+            turns_since_memory_manager = memory_manager_meta.get(MEMORY_MANAGER_TURNS_KEY)
+            awaken_count = memory_manager_meta.get(MEMORY_MANAGER_AWAKEN_COUNT_KEY)
+            if isinstance(turns_since_memory_manager, int) and turns_since_memory_manager >= 0:
+                store._memory_manager_turns_since_memory_manager = turns_since_memory_manager
+            if isinstance(awaken_count, int) and awaken_count >= 0:
+                store._memory_manager_awaken_count = awaken_count
 
         # 继续旧对话时，system/user instruction 以历史为准（从 messages 的前两条恢复）。
         system_msg = messages[0]
@@ -205,6 +240,10 @@ class ConversationStore:
         payload = {
             "meta": {
                 "display-name": self._display_name,
+                MEMORY_MANAGER_META_KEY: {
+                    MEMORY_MANAGER_TURNS_KEY: self._memory_manager_turns_since_memory_manager,
+                    MEMORY_MANAGER_AWAKEN_COUNT_KEY: self._memory_manager_awaken_count,
+                },
             },
             "messages": self._messages,
         }

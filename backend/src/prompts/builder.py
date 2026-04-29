@@ -7,13 +7,15 @@
 
 # memory 是最重要的，所以memory一开始的讲解是放在system prompt的开头。记忆文件的内容放在 user prompt 的末尾。（AI对开头和结尾记得最牢）
 
+import difflib
 import os
 import sys
 from datetime import datetime
 
-from src.commons import MAIN_MEMORY_FILEPATH, SUMMARIES_DIR, TODO_MEMORY_FILEPATH, MAIN_MEMORY_MD, TODO_MEMORY_MD
+from src.commons import MAIN_MEMORY_FILEPATH, SUMMARIES_DIR, TODO_MEMORY_FILEPATH, MEMORY_MAIN_MD, MEMORY_TODO_MD
 
 INITIAL_MAIN_MEMORY_CONTENT_ZH = "用户刚完成 project-x 的安装，还没让我做什么事情"
+INITIAL_TODO_MEMORY_CONTENT_ZH = ""
 
 
 def build_system_level_instruction_zh() -> str:
@@ -32,11 +34,11 @@ def build_system_level_instruction_zh() -> str:
 
 1. worker 
     - 接收用户消息，和用户互动，执行任务。 
-    - 除了 {TODO_MEMORY_MD} 之外，不能编辑任何其他记忆文件（比如 {MAIN_MEMORY_MD}），也不能重置上下文。TODO机制会在后面讲解
+    - 除了 {MEMORY_TODO_MD} 之外，不能编辑任何其他记忆文件（比如 {MEMORY_MAIN_MD}），也不能重置上下文。TODO机制会在后面讲解
  
 2. memory manager 
     - 由系统定期从 worker 的当前上下文创建出来，随后会收到专门的记忆处理指令。 
-    - 负责更新摘要记忆、整理长期记忆，并在需要时触发上下文重置。除了 {TODO_MEMORY_MD} 之外，其他的记忆文件都可以编辑。
+    - 负责更新摘要记忆、整理长期记忆，并在需要时触发上下文重置。除了 {MEMORY_TODO_MD} 之外，其他的记忆文件都可以编辑。
 
 **如果你没有收到处理记忆的指令（会用<roles_change_notice>包裹住），你就是 worker。**
 **如果你收到了处理记忆的指令，你就是 memory manager。**
@@ -69,20 +71,27 @@ def build_system_level_instruction_zh() -> str:
 # memories/originals
 # memories/some_ai_created_folder_1
 # memories/some_ai_created_folder_2
-# memories/main.md
+# memories/MAIN_MEMORY.md
 # memories/some_mem.md
 # 看起来很乱
 
-
-def build_user_level_instruction_zh() -> str:
-    # todo gpt说不展开的话，~会被当成字面量而不是真正的user home。真的假的？试验一下。
+def read_main_memory() -> str:
     SUMMARIES_DIR.mkdir(parents=True, exist_ok=True)
-
     if not MAIN_MEMORY_FILEPATH.exists():
         MAIN_MEMORY_FILEPATH.write_text(INITIAL_MAIN_MEMORY_CONTENT_ZH, encoding="utf-8")
-    main_memory_content = MAIN_MEMORY_FILEPATH.read_text(encoding="utf-8")
+    return MAIN_MEMORY_FILEPATH.read_text(encoding="utf-8")
 
-    todo_memory_content = TODO_MEMORY_FILEPATH.read_text(encoding="utf-8")
+
+def read_todo_memory() -> str:
+    TODO_MEMORY_FILEPATH.parent.mkdir(parents=True, exist_ok=True)
+    if not TODO_MEMORY_FILEPATH.exists():
+        TODO_MEMORY_FILEPATH.write_text(INITIAL_TODO_MEMORY_CONTENT_ZH, encoding="utf-8")
+    return TODO_MEMORY_FILEPATH.read_text(encoding="utf-8")
+
+
+def build_user_level_instruction_zh() -> str:
+    main_memory_content = read_main_memory()
+    todo_memory_content = read_todo_memory()
 
     _user_level_instruction = f"""
 <user_level_instruction>
@@ -90,7 +99,7 @@ def build_user_level_instruction_zh() -> str:
 <todo_mechanism>
 如果任务比较大，你要把它拆解成小的todo。
 
-你只能在 {TODO_MEMORY_MD} 记录 todo，这样系统就能识别出来，在todo更改时就能显示diff给用户，有助于用户看到进度。
+你只能在 {MEMORY_TODO_MD} 记录 todo，这样系统就能识别出来，在todo更改时就能显示diff给用户，有助于用户看到进度。
 
 格式示例如下：
 ```
@@ -115,30 +124,33 @@ def build_user_level_instruction_zh() -> str:
 
 以下是记忆文档的内容：
 
-<{MAIN_MEMORY_MD}>
+<{MEMORY_MAIN_MD}>
 {main_memory_content}
-</{MAIN_MEMORY_MD}>
+</{MEMORY_MAIN_MD}>
 
-<{TODO_MEMORY_MD}>
+<{MEMORY_TODO_MD}>
 {todo_memory_content}
-</{TODO_MEMORY_MD}>
+</{MEMORY_TODO_MD}>
 
 </user_level_instruction>
 """
     return _user_level_instruction
 
 
-def build_memory_forked_subagent_prompt(is_first_time_awaken: bool) -> str:
-    prompt_case_first_time_awaken = f"这是你第一次在当前会话中被唤醒，“磁盘中的{MAIN_MEMORY_MD}”和“上下文中的{MAIN_MEMORY_MD}”是一致的，没有被之前的你修改过"
-
-    prompt_case_not_first_time_awaken = f"""
-这不是你第一次在当前会话中被唤醒，你之前已经更改过记忆文档。这是“磁盘中的{MAIN_MEMORY_MD}”和“上下文中的{MAIN_MEMORY_MD}”的diff：
+def build_memory_forked_subagent_prompt(
+    *,
+    is_first_time_awaken: bool,
+    loaded_main_memory_content: str,
+) -> str:
+    if is_first_time_awaken:
+        memory_operation_history_prompt = f"这是你第一次在当前会话中被唤醒，“磁盘中的{MEMORY_MAIN_MD}”和“上下文中的{MEMORY_MAIN_MD}”是一致的，没有被之前的你修改过"
+    else:
+        memory_operation_history_prompt = f"""
+这不是你第一次在当前会话中被唤醒，你之前已经更改过记忆文档。这是“磁盘中的{MEMORY_MAIN_MD}”和“上下文中的{MEMORY_MAIN_MD}”的diff：
 <memory_diff>
-{_build_diff()}
+{_build_diff(loaded_main_memory_content=loaded_main_memory_content)}
 </memory_diff>
 """
-
-    memory_operation_history_prompt = prompt_case_first_time_awaken if is_first_time_awaken else prompt_case_not_first_time_awaken
 
     return f"""
 <roles_change_notice>
@@ -165,7 +177,7 @@ def build_memory_forked_subagent_prompt(is_first_time_awaken: bool) -> str:
     - 人类会记得一个文件大概讲了什么
     - 人类会记住自己的 todo list
 
-随着worker做的事情越来越多，应当被记录进记忆文档的东西也会越来越多，你要确保 {MAIN_MEMORY_MD} 只存储最重要（换句话说，长期都会经常用到的）的记忆，比如用户偏好，其他记忆要放到其他文档中，然后在 {MAIN_MEMORY_MD} 里面留下对这些文档的引用就行了。这里的引用不是说所有的其他记忆文档都要被 {MAIN_MEMORY_MD} 直接引用，而是可以被间接引用，比如有20个文档都是关于某个主题的，要把它们都放进一个文件夹里面，然后在 {MAIN_MEMORY_MD} 里面引用这个文件夹就行。
+随着worker做的事情越来越多，应当被记录进记忆文档的东西也会越来越多，你要确保 {MEMORY_MAIN_MD} 只存储最重要（换句话说，长期都会经常用到的）的记忆，比如用户偏好，其他记忆要放到其他文档中，然后在 {MEMORY_MAIN_MD} 里面留下对这些文档的引用就行了。这里的引用不是说所有的其他记忆文档都要被 {MEMORY_MAIN_MD} 直接引用，而是可以被间接引用，比如有20个文档都是关于某个主题的，要把它们都放进一个文件夹里面，然后在 {MEMORY_MAIN_MD} 里面引用这个文件夹就行。
  
 （2）如果记忆有点散乱了，要把它整理成结构化的。因为杂乱无章的记忆会影响worker的发挥和你的后续维护。
 这里说的结构化，意思是把他们划分成块，如果你写的是md文档，要起好标题，如果是xml文件，你要想好标签怎么起，这些标题、xml标签相当于对这些块的摘要，将来 AI 可能会用 ripgrep 来先查看这些标题、标签，再决定去查看哪些块。
@@ -180,7 +192,10 @@ def build_memory_forked_subagent_prompt(is_first_time_awaken: bool) -> str:
         如果任务预计还要 8 轮以上，即使摘要是原文 60%～75%，也可以考虑重置。
         如果摘要仍然超过原文 80%，默认不重置，除非任务还会执行非常多轮，或者原上下文中有大量重复、过期、低价值内容。
         如果上下文接近窗口上限，优先为了稳定性重置，而不只看 token 成本。
-    - 当你输出 PROJECT-X-RESET-CONTEXT 字样时，系统就会重置上下文
+    - 当你输出 PROJECT-X-RESET-CONTEXT 字样时，系统就会重置上下文。
+
+用户看不到你的输出，所以你只管执行工具就行，你唯一的输出就是当你决定重置上下文时输出的 PROJECT-X-RESET-CONTEXT
+    
 </reference_memory_method>
 
 {memory_operation_history_prompt}
@@ -189,5 +204,17 @@ def build_memory_forked_subagent_prompt(is_first_time_awaken: bool) -> str:
 """
 
 
-def _build_diff() -> str:
-    raise NotImplementedError
+def _build_diff(*, loaded_main_memory_content: str) -> str:
+    disk_main_memory_content = read_main_memory()
+    diff_lines = list(
+        difflib.unified_diff(
+            loaded_main_memory_content.splitlines(),
+            disk_main_memory_content.splitlines(),
+            fromfile=f"context-{MEMORY_MAIN_MD}",
+            tofile=f"disk-{MEMORY_MAIN_MD}",
+            lineterm="",
+        )
+    )
+    if not diff_lines:
+        return "(project-x-hint: no difference)"
+    return "\n".join(diff_lines)

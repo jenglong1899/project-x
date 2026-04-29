@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from pydantic import ValidationError
@@ -51,6 +52,18 @@ class BashToolTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             bash_tool.parameters_json_schema["properties"]["command"]["type"],
             "string",
+        )
+
+    @mock.patch("src.tools.bash.asyncio.create_subprocess_exec")
+    async def test_bash_tool_expands_user_in_initial_cwd(self, mock_exec: mock.Mock) -> None:
+        mock_exec.return_value = _FakeProcess(stdout=b"", stderr=b"", returncode=0)
+
+        bash_tool = create_bash_tool(initial_cwd="~")
+        await bash_tool.handler(arguments={"command": "pwd"})
+
+        self.assertEqual(
+            mock_exec.call_args.kwargs["cwd"],
+            str(Path.home().resolve()),
         )
 
     async def test_bash_tool_remembers_cwd_between_calls(self) -> None:

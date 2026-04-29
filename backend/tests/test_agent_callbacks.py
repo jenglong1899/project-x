@@ -6,13 +6,10 @@ from unittest import mock
 
 from src.conversation_store import ConversationStore
 from src.core.agent import Agent
-from src.core.agent_turn import ContinueLoopDirective, ResetContextDirective, ToolSpec, execute_tool_calls
+from src.core.agent_turn import ToolSpec, execute_tool_calls
+from src.core.memory_manager import MemoryManagerResult
 from src.core.model_config import ModelConfig
-from src.tools.reset_context import (
-    RESET_CONTEXT_AUTO_REMINDER,
-    RESET_CONTEXT_FIRST_CALL_HINT,
-    RESET_CONTEXT_TOOL,
-)
+from src.tools.reset_context import RESET_CONTEXT_AUTO_REMINDER
 
 
 async def _echo_handler(*, arguments: dict[str, object]) -> dict[str, object]:
@@ -26,6 +23,16 @@ async def _raw_text_handler(*, arguments: dict[str, object]) -> str:
 async def _boom_handler(*, arguments: dict[str, object]) -> object:
     _ = arguments
     raise RuntimeError("boom")
+
+
+class _StaticMemoryManagerRunner:
+    def __init__(self, *, requested_reset_context: bool) -> None:
+        self.requested_reset_context = requested_reset_context
+        self.calls: list[dict[str, object]] = []
+
+    async def run(self, **kwargs: object) -> MemoryManagerResult:
+        self.calls.append(kwargs)
+        return MemoryManagerResult(requested_reset_context=self.requested_reset_context)
 
 
 class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
@@ -106,7 +113,6 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
             on_tool_result=lambda **kwargs: tool_results.append(kwargs),
         )
 
-        self.assertIsInstance(outcome.directive, ContinueLoopDirective)
         self.assertEqual(len(tool_results), 1)
         self.assertEqual(
             tool_results[0],
@@ -126,7 +132,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
 
-    async def test_execute_tool_calls_returns_reset_context_directive(self) -> None:
+    async def test_execute_tool_calls_returns_tool_error_for_unregistered_reset_context(self) -> None:
         tool_results: list[dict[str, object]] = []
         ai_msg_dict = {
             "role": "assistant",
@@ -149,50 +155,14 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
             on_tool_result=lambda **kwargs: tool_results.append(kwargs),
         )
 
-        self.assertIsInstance(outcome.directive, ResetContextDirective)
-        self.assertEqual(outcome.tool_messages, [])
-        self.assertEqual(tool_results, [])
+        self.assertEqual(len(outcome.tool_messages), 1)
+        self.assertEqual(len(tool_results), 1)
+        parsed = json.loads(outcome.tool_messages[0]["content"])
+        self.assertEqual(parsed["tool"], "reset_context")
+        self.assertEqual(parsed["stage"], "run")
+        self.assertIn("未注册的工具", parsed["error"])
 
-    async def test_execute_tool_calls_returns_tool_error_when_reset_context_is_concurrent(self) -> None:
-        tool_results: list[dict[str, object]] = []
-        ai_msg_dict = {
-            "role": "assistant",
-            "content": None,
-            "tool_calls": [
-                {
-                    "id": "call_reset",
-                    "type": "function",
-                    "function": {
-                        "name": "reset_context",
-                        "arguments": "",
-                    },
-                },
-                {
-                    "id": "call_echo",
-                    "type": "function",
-                    "function": {
-                        "name": "echo",
-                        "arguments": "{\"value\": 1}",
-                    },
-                },
-            ],
-        }
-
-        outcome = await execute_tool_calls(
-            ai_msg_dict=ai_msg_dict,
-            tools_by_name={},
-            on_tool_result=lambda **kwargs: tool_results.append(kwargs),
-        )
-
-        self.assertIsInstance(outcome.directive, ContinueLoopDirective)
-        self.assertEqual(len(outcome.tool_messages), 2)
-        self.assertEqual(len(tool_results), 2)
-
-        for tool_result in tool_results:
-            parsed = json.loads(str(tool_result["result_json_str"]))
-            self.assertIn("reset_context 不能和其他工具并发调用", parsed["error"])
-
-    async def test_execute_tool_calls_always_returns_continue_loop_directive(self) -> None:
+    async def test_execute_tool_calls_preserves_raw_text_result(self) -> None:
         tool_results: list[dict[str, object]] = []
         ai_msg_dict = {
             "role": "assistant",
@@ -228,7 +198,6 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
             on_tool_result=lambda **kwargs: tool_results.append(kwargs),
         )
 
-        self.assertIsInstance(outcome.directive, ContinueLoopDirective)
         self.assertEqual(tool_results[0]["result_json_str"], "keep this")
         self.assertEqual(outcome.tool_messages[0]["content"], "keep this")
 
@@ -255,7 +224,6 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
             on_tool_result=lambda **kwargs: tool_results.append(kwargs),
         )
 
-        self.assertIsInstance(outcome.directive, ContinueLoopDirective)
         self.assertEqual(len(outcome.tool_messages), 1)
         parsed = json.loads(outcome.tool_messages[0]["content"])
         self.assertEqual(parsed["tool"], "echo")
@@ -293,7 +261,6 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
             on_tool_result=lambda **kwargs: tool_results.append(kwargs),
         )
 
-        self.assertIsInstance(outcome.directive, ContinueLoopDirective)
         self.assertEqual(len(outcome.tool_messages), 1)
         parsed = json.loads(outcome.tool_messages[0]["content"])
         self.assertEqual(parsed["tool"], "boom")
@@ -431,78 +398,9 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                 tools=[self._echo_tool(), self._echo_tool()],
             )
 
-    async def test_agent_reset_context_first_call_only_returns_hint(self) -> None:
-        tool_results: list[dict[str, object]] = []
+    async def test_memory_manager_magic_word_switches_conversation(self) -> None:
         reset_events: list[dict[str, str]] = []
-        stored_payload: dict[str, object]
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            with mock.patch(
-                "src.core.agent.ConversationStore",
-                side_effect=lambda *, system_instruction, user_instruction: ConversationStore(
-                    system_instruction=system_instruction,
-                    user_instruction=user_instruction,
-                    originals_dir=Path(temp_dir),
-                ),
-            ):
-                agent = Agent(
-                    name="demo",
-                    model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
-                    system_instruction="system",
-                    user_instruction="hello",
-                    tools=[RESET_CONTEXT_TOOL],
-                    on_tool_result=lambda **kwargs: tool_results.append(kwargs),
-                    on_reset_context=lambda *, conversation_id, display_name: reset_events.append(
-                        {"conversation_id": conversation_id, "display_name": display_name}
-                    ),
-                )
-                agent.new_conversation()
-                agent.enqueue_user_message(frontend_msg_id="u1", user_message="hi")
-
-                ai_msg_with_reset_context = {
-                    "role": "assistant",
-                    "content": None,
-                    "tool_calls": [
-                        {
-                            "id": "call_reset_1",
-                            "type": "function",
-                            "function": {"name": "reset_context", "arguments": ""},
-                        }
-                    ],
-                }
-                final_ai_msg = {"role": "assistant", "content": "done"}
-
-                with mock.patch.object(
-                    Agent,
-                    "_safe_stream",
-                    new=mock.AsyncMock(side_effect=[ai_msg_with_reset_context, final_ai_msg]),
-                ):
-                    result = await agent.run()
-
-                stored_files = list(Path(temp_dir).glob("*.json"))
-                self.assertEqual(len(stored_files), 1)
-                stored_payload = json.loads(stored_files[0].read_text(encoding="utf-8"))
-
-        self.assertEqual(result, final_ai_msg)
-        self.assertEqual(reset_events, [])
-        self.assertEqual(
-            tool_results,
-            [
-                {
-                    "tool_call_id": "call_reset_1",
-                    "result_json_str": json.dumps({"hint": RESET_CONTEXT_FIRST_CALL_HINT}, ensure_ascii=False),
-                }
-            ],
-        )
-        stored_tool_messages = [m for m in stored_payload["messages"] if m.get("role") == "tool"]
-        self.assertEqual(len(stored_tool_messages), 1)
-        parsed = json.loads(stored_tool_messages[0]["content"])
-        self.assertEqual(parsed["hint"], RESET_CONTEXT_FIRST_CALL_HINT)
-
-    async def test_agent_reset_context_second_call_switches_conversation(self) -> None:
-        reset_events: list[dict[str, str]] = []
-        old_conversation_id = ""
-        old_display_name = ""
+        runner = _StaticMemoryManagerRunner(requested_reset_context=True)
 
         with tempfile.TemporaryDirectory() as temp_dir:
             with mock.patch(
@@ -518,80 +416,164 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
                     system_instruction="system-1",
                     user_instruction="user-1",
-                    tools=[RESET_CONTEXT_TOOL],
+                    tools=[self._echo_tool()],
                     on_reset_context=lambda *, conversation_id, display_name: reset_events.append(
                         {"conversation_id": conversation_id, "display_name": display_name}
                     ),
+                    memory_manager_runner=runner,
+                    memory_manager_turn_interval=1,
+                    loaded_main_memory_content="memory before reset",
                 )
                 agent.new_conversation()
 
-                ai_msg_with_reset_context_1 = {
+                ai_msg_with_tool_call = {
                     "role": "assistant",
                     "content": None,
                     "tool_calls": [
                         {
-                            "id": "call_reset_1",
+                            "id": "call_echo_1",
                             "type": "function",
-                            "function": {"name": "reset_context", "arguments": ""},
+                            "function": {"name": "echo", "arguments": "{\"value\": 1}"},
                         }
                     ],
                 }
-                ai_msg_with_reset_context_2 = {
-                    "role": "assistant",
-                    "content": None,
-                    "tool_calls": [
-                        {
-                            "id": "call_reset_2",
-                            "type": "function",
-                            "function": {"name": "reset_context", "arguments": ""},
-                        }
-                    ],
-                }
-                final_ai_msg_1 = {"role": "assistant", "content": "done-1"}
-                final_ai_msg_2 = {"role": "assistant", "content": "done-2"}
+                final_ai_msg = {"role": "assistant", "content": "done after reset"}
 
                 with mock.patch.object(
                     Agent,
                     "_safe_stream",
-                    new=mock.AsyncMock(
-                        side_effect=[
-                            ai_msg_with_reset_context_1,
-                            final_ai_msg_1,
-                            ai_msg_with_reset_context_2,
-                            final_ai_msg_2,
-                        ]
-                    ),
+                    new=mock.AsyncMock(side_effect=[ai_msg_with_tool_call, final_ai_msg]),
+                ), mock.patch(
+                    "src.prompts.builder.build_system_level_instruction_zh",
+                    return_value="system-2",
+                ), mock.patch(
+                    "src.prompts.builder.build_user_level_instruction_zh",
+                    return_value="user-2",
+                ), mock.patch(
+                    "src.prompts.builder.read_main_memory",
+                    return_value="memory after reset",
                 ):
                     agent.enqueue_user_message(frontend_msg_id="u1", user_message="hello")
-                    await agent.run()
-
-                    stored_files_after_first = list(Path(temp_dir).glob("*.json"))
-                    self.assertEqual(len(stored_files_after_first), 1)
-                    old_conversation_id = stored_files_after_first[0].name
-                    old_payload = json.loads(stored_files_after_first[0].read_text(encoding="utf-8"))
-                    old_display_name = old_payload["meta"]["display-name"]
-
-                    with mock.patch(
-                        "src.prompts.builder.build_system_level_instruction_zh",
-                        return_value="system-2",
-                    ), mock.patch(
-                        "src.prompts.builder.build_user_level_instruction_zh",
-                        return_value="user-2",
-                    ):
-                        agent.enqueue_user_message(frontend_msg_id="u2", user_message="trigger second")
-                        await agent.run()
+                    result = await agent.run()
 
                 stored_files = list(Path(temp_dir).glob("*.json"))
                 self.assertEqual(len(stored_files), 2)
 
+        self.assertEqual(result, final_ai_msg)
+        self.assertEqual(len(runner.calls), 1)
         self.assertEqual(len(reset_events), 1)
-        self.assertNotEqual(reset_events[0]["conversation_id"], old_conversation_id)
-        self.assertEqual(reset_events[0]["display_name"], old_display_name)
+        self.assertEqual(reset_events[0]["display_name"], "hello")
         self.assertEqual(agent._messages[0], {"role": "system", "content": "system-2"})
         self.assertEqual(agent._messages[1], {"role": "user", "content": "user-2"})
         self.assertEqual(agent._messages[2], {"role": "user", "content": RESET_CONTEXT_AUTO_REMINDER})
+        self.assertEqual(agent._worker_turns_since_memory_manager, 0)
+        self.assertEqual(agent._memory_manager_awaken_count, 0)
+        self.assertEqual(agent._loaded_main_memory_content, "memory after reset")
+
+    async def test_memory_manager_does_not_awaken_before_tool_turn_interval(self) -> None:
+        runner = _StaticMemoryManagerRunner(requested_reset_context=False)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with mock.patch(
+                "src.core.agent.ConversationStore",
+                side_effect=lambda *, system_instruction, user_instruction: ConversationStore(
+                    system_instruction=system_instruction,
+                    user_instruction=user_instruction,
+                    originals_dir=Path(temp_dir),
+                ),
+            ):
+                agent = Agent(
+                    name="demo",
+                    model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
+                    system_instruction="system",
+                    user_instruction="user",
+                    tools=[self._echo_tool()],
+                    memory_manager_runner=runner,
+                    memory_manager_turn_interval=2,
+                )
+                agent.new_conversation()
+
+                ai_msg_with_tool_call = {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_echo_1",
+                            "type": "function",
+                            "function": {"name": "echo", "arguments": "{\"value\": 1}"},
+                        }
+                    ],
+                }
+                final_ai_msg = {"role": "assistant", "content": "done"}
+
+                with mock.patch.object(
+                    Agent,
+                    "_safe_stream",
+                    new=mock.AsyncMock(side_effect=[ai_msg_with_tool_call, final_ai_msg]),
+                ):
+                    agent.enqueue_user_message(frontend_msg_id="u1", user_message="hello")
+                    result = await agent.run()
+
+        self.assertEqual(result, final_ai_msg)
+        self.assertEqual(runner.calls, [])
+        self.assertEqual(agent._worker_turns_since_memory_manager, 1)
+        self.assertEqual(agent._memory_manager_awaken_count, 0)
+
+    async def test_memory_manager_awakes_when_tool_turn_interval_is_reached(self) -> None:
+        runner = _StaticMemoryManagerRunner(requested_reset_context=False)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with mock.patch(
+                "src.core.agent.ConversationStore",
+                side_effect=lambda *, system_instruction, user_instruction: ConversationStore(
+                    system_instruction=system_instruction,
+                    user_instruction=user_instruction,
+                    originals_dir=Path(temp_dir),
+                ),
+            ):
+                agent = Agent(
+                    name="demo",
+                    model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
+                    system_instruction="system",
+                    user_instruction="user",
+                    tools=[self._echo_tool()],
+                    memory_manager_runner=runner,
+                    memory_manager_turn_interval=2,
+                    loaded_main_memory_content="main memory snapshot",
+                )
+                agent.new_conversation()
+
+                ai_msgs_with_tool_call = [
+                    {
+                        "role": "assistant",
+                        "content": None,
+                        "tool_calls": [
+                            {
+                                "id": f"call_echo_{value}",
+                                "type": "function",
+                                "function": {"name": "echo", "arguments": f"{{\"value\": {value}}}"},
+                            }
+                        ],
+                    }
+                    for value in (1, 2)
+                ]
+                final_ai_msg = {"role": "assistant", "content": "done"}
+
+                with mock.patch.object(
+                    Agent,
+                    "_safe_stream",
+                    new=mock.AsyncMock(side_effect=[*ai_msgs_with_tool_call, final_ai_msg]),
+                ):
+                    agent.enqueue_user_message(frontend_msg_id="u1", user_message="hello")
+                    result = await agent.run()
+
+        self.assertEqual(result, final_ai_msg)
+        self.assertEqual(len(runner.calls), 1)
+        self.assertTrue(runner.calls[0]["is_first_time_awaken"])
+        self.assertEqual(runner.calls[0]["loaded_main_memory_content"], "main memory snapshot")
+        self.assertEqual(agent._worker_turns_since_memory_manager, 0)
+        self.assertEqual(agent._memory_manager_awaken_count, 1)
 
 
 if __name__ == "__main__":
     unittest.main()
-

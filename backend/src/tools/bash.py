@@ -21,7 +21,7 @@ class BashToolOutput(BaseModel):
 
 class BashTool:
     def __init__(self, *, initial_cwd: str | None = None) -> None:
-        self._cwd = Path(initial_cwd or os.getcwd()).resolve()
+        self._cwd = Path(initial_cwd or os.getcwd()).expanduser().resolve()
 
     def to_tool_spec(self) -> ToolSpec:
         return ToolSpec(

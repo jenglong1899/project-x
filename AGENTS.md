@@ -118,6 +118,31 @@
 ## 计划索引
 - 2026-03-31：把 Agent 改为 async（移除 WebSocket 层 to_thread）：`docs/zh/plans/2026-03-31-agent-async.md`
 - 2026-04-28：跨进程工具调用机制（用户预置脚本 → 本地 HTTP endpoint → `InterprocessToolRegistry`）：`docs/zh/plans/2026-04-28-interprocess-tool-call.md`
+- 2026-04-29：记忆管理与 MagicWord reset-context（memory manager fork、记忆 diff、reset_context tool 废弃路径）：`docs/zh/plans/2026-04-29-memory-forked-subagent.md`
+
+## 当前进行中：memory forked subagent
+- 开发方式：用户要求使用 incremental-coding，小步实现；每一步停下来让用户看，用户确认后再继续/提交。不要一口气做完整功能。
+- 已确认设计：
+  - memory manager 是从 worker 当前上下文 fork 出来，再 append `build_memory_forked_subagent_prompt(...)`，不是重新构造 system/user prompt。
+  - MagicWord 是 `PROJECT-X-RESET-CONTEXT`；只需要检测最终 assistant message content 中是否有独立一行，不剥离内容。
+  - memory manager 触发频率按 tool turn 计数：一组 `assistant tool_calls -> tool result` 算 1 turn；不是按完整 assistant 回答轮数计数。
+  - “context 中的 main memory”是本段上下文启动时加载的 `MEMORY_MAIN_MD` 快照；未 reset 前不应从磁盘刷新。
+  - 常量改名方向：`MEMORY_MAIN_MD` / `MEMORY_TODO_MD` 比旧的 `MAIN_MEMORY_MD` / `TODO_MEMORY_MD` 更清楚。
+- 已做过的实现片段：
+  - `backend/src/core/memory_manager.py` 已有 `MemoryForkedSubagentRunnerLike` / `MemoryForkedSubagentRunner` / `MemoryManagerResult`；runner 会 fork worker messages，append memory prompt，并循环执行 `stream -> execute_tool_calls -> stream`，最终用 `content.splitlines()` 检测 MagicWord。`tools` list 原样传给模型，不排序、不转 set；`tools_by_name` 只用于工具查表。
+  - `backend/src/prompts/builder.py` 已拆出 `read_main_memory()` / `read_todo_memory()`；`build_memory_forked_subagent_prompt(...)` 基于 `MEMORY_MAIN_MD` 做 diff，而不是 TODO memory。
+  - `backend/src/core/agent.py` 已接入 memory manager：注入 runner、`MEMORY_MANAGER_TURN_INTERVAL = 20`、`loaded_main_memory_content` 参数；按 tool turn 调 `_maybe_reset_context()`；当 `MemoryManagerResult.requested_reset_context=True` 时走 `_start_new_context_with_auto_reminder()`，重新 build system/user instruction、刷新 `loaded_main_memory_content`、重置 memory manager 计数，并用 auto reminder 开新 conversation segment。
+  - `backend/src/websocket_chat_session.py` 创建默认 Agent 时会先 `read_main_memory()`，把本段上下文初始 main memory 快照传给 Agent。
+  - `backend/src/conversation_store.py` 已加入 memory manager 计数 meta 持久化：`meta["memory-manager"]["turns-since-memory-manager"]` 和 `meta["memory-manager"]["awaken-count"]`；用户觉得 dataclass 封装更丑，所以已回退为直接 dict 读写。
+  - 旧 `reset_context` tool 路径已移除：`create_default_agent()` 默认 tools 里不再包含 `RESET_CONTEXT_TOOL`；`backend/src/tools/reset_context.py` 只保留 `RESET_CONTEXT_AUTO_REMINDER` 常量；`backend/src/core/agent_turn.py` 的 `execute_tool_calls()` 只返回 `ToolExecutionOutcome(tool_messages=...)`，不再返回 orchestration directive。
+  - 已提交测试 `partial-test: cover memory manager magic word detection`，新增 `backend/tests/test_memory_manager.py`，覆盖 MagicWord 独立行触发、句子中提到不触发、非文本 content 不触发。
+  - 曾验证：`cd backend && PYTHONPATH=. uv run --with pytest python -m pytest -q tests/test_agent_callbacks.py tests/test_bash_tool.py tests/test_websocket_chat_session.py tests/test_conversation_store.py tests/test_resume_conversation.py` 通过 27 个测试；新增 memory manager 测试和 agent callback 测试一起跑通过 14 个测试。
+- 当前工作区：
+  - 只有 `docs/zh/plans/2026-04-29-memory-forked-subagent.md` 未提交。该改动是把计划文档从旧方案同步到当前实现：TODO memory diff 改为 `MEMORY_MAIN.md` diff；`loaded_todo_memory_content` 改为 `loaded_main_memory_content`；`Agent._reset_context()` 改为 `_start_new_context_with_auto_reminder()`；MagicWord 说明改为“不剥离 content”；`execute_tool_calls()` 说明改为只返回 tool messages。
+- 下一步建议：
+  - 先让用户确认计划文档同步改动；确认后提交一个 `partial-doc:` commit。
+  - 继续按小步推进：可选下一步是补 prompt builder 记忆 diff 测试（首次唤醒不输出 diff、非首次输出 unified diff、无差异输出 no difference hint），或检查 `Agent` 的 memory manager 触发频率测试是否足够。
+
 
 ## 供应链安全备忘
 - LiteLLM 供应链投毒事件（2026-03-24）：受影响版本为 `litellm==1.82.7` 与 `litellm==1.82.8`（其中 `1.82.8` 包含会在 Python 启动时自动执行的恶意 `.pth`）。本项目当前 `backend/uv.lock` 锁定为 `litellm==1.82.0`，并在 `backend/pyproject.toml` 显式排除了 `1.82.7/1.82.8`。

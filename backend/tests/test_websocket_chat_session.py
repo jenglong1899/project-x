@@ -1,12 +1,33 @@
 import asyncio
 import unittest
 from collections.abc import Callable
+from types import SimpleNamespace
+from unittest import mock
 
 from src.core.agent_controller import AgentController
-from src.websocket_chat_session import AgentCallbacks, WebSocketChatSession
+from src.core.model_config import ModelConfig
+from src.websocket_chat_session import AgentCallbacks, WebSocketChatSession, create_default_agent
 
 
 ScriptedRun = Callable[[AgentCallbacks, str, str], None]
+
+
+def noop_callback(**_kwargs: object) -> None:
+    return None
+
+
+def make_noop_agent_callbacks() -> AgentCallbacks:
+    return AgentCallbacks(
+        on_ai_content_delta=noop_callback,
+        on_ai_reasoning_delta=noop_callback,
+        on_ai_tool_call_started=noop_callback,
+        on_ai_tool_call_arguments_delta=noop_callback,
+        on_ai_tool_call_finished=noop_callback,
+        on_tool_result=noop_callback,
+        on_queued_user_msg_committed=noop_callback,
+        on_conversation_persisted=noop_callback,
+        on_reset_context=noop_callback,
+    )
 
 
 class FakeAgent:
@@ -64,6 +85,33 @@ def make_agent_controller_factory(*, scripted_runs: list[ScriptedRun]):
 
 
 class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
+    def test_create_default_agent_passes_main_memory_snapshot_and_only_bash_tool(self) -> None:
+        fake_bash_tool = SimpleNamespace(name="bash")
+
+        with mock.patch(
+            "src.websocket_chat_session.read_main_memory",
+            return_value="main memory snapshot",
+        ) as read_main_memory, mock.patch(
+            "src.websocket_chat_session.build_system_level_instruction_zh",
+            return_value="system",
+        ), mock.patch(
+            "src.websocket_chat_session.build_user_level_instruction_zh",
+            return_value="user",
+        ), mock.patch(
+            "src.websocket_chat_session.resolve_model_config",
+            return_value=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
+        ), mock.patch(
+            "src.websocket_chat_session.create_bash_tool",
+            return_value=fake_bash_tool,
+        ), mock.patch("src.websocket_chat_session.Agent") as agent_cls:
+            create_default_agent(callbacks=make_noop_agent_callbacks())
+
+        read_main_memory.assert_called_once_with()
+        agent_kwargs = agent_cls.call_args.kwargs
+        self.assertEqual(agent_kwargs["loaded_main_memory_content"], "main memory snapshot")
+        self.assertEqual([tool.name for tool in agent_kwargs["tools"]], ["bash"])
+        self.assertNotIn("reset_context", [tool.name for tool in agent_kwargs["tools"]])
+
     async def _collect_events_until_generation_completed(
         self,
         session: WebSocketChatSession,

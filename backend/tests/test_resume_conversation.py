@@ -66,6 +66,34 @@ class ResumeConversationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "不允许包含路径"):
             agent.resume_conversation(conversation_id="../evil")
 
+    def test_resume_conversation_restores_memory_manager_state(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            originals_dir = Path(temp_dir)
+            store = ConversationStore(
+                system_instruction="system-old",
+                user_instruction="user-old",
+                originals_dir=originals_dir,
+            )
+            store.start_with_first_user_message(user_content="hello")
+            store.update_memory_manager_state(
+                turns_since_memory_manager=7,
+                awaken_count=2,
+            )
+
+            agent = Agent(
+                name="demo",
+                model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
+                system_instruction="system-new",
+                user_instruction="user-new",
+                tools=[],
+            )
+
+            with mock.patch("src.conversation_store.ORIGINALS_DIR", originals_dir):
+                agent.resume_conversation(conversation_id=store.conversation_id)
+
+        self.assertEqual(agent._worker_turns_since_memory_manager, 7)
+        self.assertEqual(agent._memory_manager_awaken_count, 2)
+
 
 if __name__ == "__main__":
     unittest.main()

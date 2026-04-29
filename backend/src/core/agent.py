@@ -1,4 +1,3 @@
-import json
 from collections import deque
 from typing import Any, Protocol
 from dataclasses import dataclass
@@ -14,12 +13,14 @@ from src.core.agent_turn import (
     OnAiToolCallArgumentsDelta,
     OnAiToolCallFinished,
     OnToolResult,
-    ResetContextDirective,
     ToolSpec,
 )
+from src.core.memory_manager import MemoryForkedSubagentRunner, MemoryForkedSubagentRunnerLike
 from src.core.model_config import ModelConfig
 from src.core.policies import strip_reasoning_content_if_needed
-from src.tools.reset_context import RESET_CONTEXT_AUTO_REMINDER, RESET_CONTEXT_FIRST_CALL_HINT
+from src.tools.reset_context import RESET_CONTEXT_AUTO_REMINDER
+
+MEMORY_MANAGER_TURN_INTERVAL = 20
 
 
 @dataclass(frozen=True)
@@ -35,8 +36,10 @@ class OnUserMsgEnqueued(Protocol):
 class OnQueuedUserMsgCommitted(Protocol):
     def __call__(self, *, frontend_msg_id: str) -> None: ...
 
+
 class OnConversationPersisted(Protocol):
     def __call__(self, *, conversation_id: str, display_name: str) -> None: ...
+
 
 class OnResetContext(Protocol):
     def __call__(self, *, conversation_id: str, display_name: str) -> None: ...
@@ -57,7 +60,13 @@ class Agent:
                  on_queued_user_msg_committed: OnQueuedUserMsgCommitted | None = None,
                  on_conversation_persisted: OnConversationPersisted | None = None,
                  on_reset_context: OnResetContext | None = None,
+                 memory_manager_runner: MemoryForkedSubagentRunnerLike | None = None,
+                 memory_manager_turn_interval: int = MEMORY_MANAGER_TURN_INTERVAL,
+                 loaded_main_memory_content: str = "",
                  ) -> None:
+        if memory_manager_turn_interval <= 0:
+            raise ValueError("memory_manager_turn_interval 必须大于 0")
+
         self.name = name
         self._model_config = model_config
         self._messages: list[dict[str, Any]] = []
@@ -82,6 +91,11 @@ class Agent:
         self._on_reset_context = on_reset_context or noop
 
         self._user_msg_queue: deque[QueuedUserMessage] = deque()
+        self._memory_manager_runner = memory_manager_runner or MemoryForkedSubagentRunner()
+        self._memory_manager_turn_interval = memory_manager_turn_interval
+        self._worker_turns_since_memory_manager = 0
+        self._memory_manager_awaken_count = 0
+        self._loaded_main_memory_content = loaded_main_memory_content
 
         # 调用Agent的必须选择 new_conversation 或者 resume_conversation，
         # self._conversation_store 会在这两个函数中被初始化。
@@ -116,6 +130,8 @@ class Agent:
         # 继续旧对话时，system/user instruction 以历史为准。
         self._system_instruction = system_msg["content"]
         self._user_instruction = user_instruction_msg["content"]
+        self._worker_turns_since_memory_manager = store.memory_manager_turns_since_memory_manager
+        self._memory_manager_awaken_count = store.memory_manager_awaken_count
 
         self._messages = messages
         self._conversation_store = store
@@ -145,10 +161,40 @@ class Agent:
                     conversation_id=self._conversation_store.conversation_id,
                     display_name=self._conversation_store.display_name,
                 )
+                self._persist_memory_manager_state()
             else:
                 self._conversation_store.append_message(user_message)
             self._on_queued_user_msg_committed(frontend_msg_id=item.frontend_msg_id)
         return drained
+
+    def _persist_memory_manager_state(self) -> None:
+        if self._conversation_store is None:
+            return
+        self._conversation_store.update_memory_manager_state(
+            turns_since_memory_manager=self._worker_turns_since_memory_manager,
+            awaken_count=self._memory_manager_awaken_count,
+        )
+
+    async def _maybe_reset_context(self) -> None:
+        self._worker_turns_since_memory_manager += 1
+        if self._worker_turns_since_memory_manager < self._memory_manager_turn_interval:
+            self._persist_memory_manager_state()
+            return
+
+        self._worker_turns_since_memory_manager = 0
+        self._persist_memory_manager_state()
+        result = await self._memory_manager_runner.run(
+            worker_messages=self._messages,
+            model_config=self._model_config,
+            tools=self._tools,
+            is_first_time_awaken=self._memory_manager_awaken_count == 0,
+            loaded_main_memory_content=self._loaded_main_memory_content,
+        )
+        self._memory_manager_awaken_count += 1
+        self._persist_memory_manager_state()
+
+        if result.requested_reset_context:
+            self._start_new_context_with_auto_reminder()
 
     def _append_runtime_message(self, message: dict[str, Any]) -> None:
         # 这个函数被用的地方都是在 run 函数的后方，
@@ -183,49 +229,11 @@ class Agent:
                             on_ai_tool_call_arguments_delta=on_ai_tool_call_arguments_delta,
                             on_ai_tool_call_finished=on_ai_tool_call_finished)
 
-    def _has_reset_context_call_before(self) -> bool:
-        """
-        判断当前 runtime messages 里是否出现过“历史 reset_context 调用”。
-
-        说明：
-        - 这里主要扫描 assistant message 的 tool_calls，因为 tool message 本身没有 tool name。
-        - 当前这一轮触发 reset_context 的 assistant message 一般会位于 messages 的最后一条，
-          所以扫描时会跳过最后一条，避免把“当前调用”算成历史调用。
-        """
-        for message in self._messages[:-1]:
-            if message.get("role") != "assistant":
-                continue
-            tool_calls = message.get("tool_calls", [])
-            if not isinstance(tool_calls, list):
-                continue
-            for tool_call in tool_calls:
-                function_payload = tool_call.get("function") if isinstance(tool_call, dict) else None
-                if not isinstance(function_payload, dict):
-                    continue
-                if function_payload.get("name") == "reset_context":
-                    return True
-        return False
-
-    def _reset_context(self, directive: ResetContextDirective) -> None:
-        tool_call_id = directive.tool_call_id
-        if not tool_call_id:
-            raise RuntimeError("reset_context 的 tool_call_id 为空，当前前端协议不支持该情况")
-
-        is_first_call = not self._has_reset_context_call_before()
-        if is_first_call:
-            result_json_str = json.dumps({"hint": RESET_CONTEXT_FIRST_CALL_HINT}, ensure_ascii=False)
-            tool_message: dict[str, Any] = {
-                "role": "tool",
-                "content": result_json_str,
-                "tool_call_id": tool_call_id,
-            }
-            self._append_runtime_message(tool_message)
-            self._on_tool_result(tool_call_id=tool_call_id, result_json_str=result_json_str)
-            return
-
+    def _start_new_context_with_auto_reminder(self) -> None:
         from src.prompts.builder import (
             build_system_level_instruction_zh,
             build_user_level_instruction_zh,
+            read_main_memory,
         )
 
         if self._conversation_store is None:
@@ -234,11 +242,14 @@ class Agent:
 
         self._system_instruction = build_system_level_instruction_zh()
         self._user_instruction = build_user_level_instruction_zh()
+        self._loaded_main_memory_content = read_main_memory()
+        self._worker_turns_since_memory_manager = 0
+        self._memory_manager_awaken_count = 0
         self.new_conversation()
 
         auto_reminder = RESET_CONTEXT_AUTO_REMINDER
 
-        # 复用 start_with_first_user_message：用 auto_reminder 作为新会话的第一条 user message，
+        # 用 auto_reminder 作为新会话的第一条 user message，
         # 这样 conversation 文件会立刻创建且模型也能看到 reminder。
         self._conversation_store.start_with_first_user_message(
             user_content=auto_reminder,
@@ -284,12 +295,10 @@ class Agent:
             for tool_message in tool_execution.tool_messages:
                 self._append_runtime_message(tool_message)
 
-            if isinstance(tool_execution.directive, ResetContextDirective):
-                self._reset_context(tool_execution.directive)
-                continue
+            await self._maybe_reset_context()
 
             # steer message 注入点。在执行完toolcall后注入最符合直觉
-            # 另外注意，我们是在_reset_context之后才注入，
+            # 另外注意，我们是在 memory manager reset-context 之后才注入，
             # 因为上下文越精简，ai表现越好，reset context的优先级应高于steer conversation
             self._safe_drain_user_message_queue()
             continue
