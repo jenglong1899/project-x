@@ -17,7 +17,7 @@
 - 想改“对外能力/时序/回调/持久化规则”：`backend/src/core/agent.py`
 - 想改“模型流式/工具流式/工具执行规则（含 reset_context 特判）”：`backend/src/core/agent_turn.py`
 - 想改“会话文件格式/落盘时机”：`backend/src/conversation_store.py`
-- 想改“WebSocket 事件长什么样/事件边界/assistant ↔ tool 拆分/reset.context 行为”：`backend/src/websocket_chat_session.py`
+- 想改“WebSocket 事件长什么样/事件边界/assistant ↔ tool 拆分/conversation.switched 行为”：`backend/src/websocket_chat_session.py`
 - 想改“HTTP API（会话列表/详情）或 WebSocket 路由”：`backend/src/web_app.py`
 - 想改“模型选择/API key/Mock”：`backend/src/core/model_config.py`
 - 想改“前端渲染/时间线/侧栏/输入框”：`frontend/src/App.tsx`、`frontend/src/features/chat/components/*`
@@ -78,7 +78,7 @@
 - `ChatEventProjector` 决定 assistant 卡片边界：遇到 tool start 会 close 当前 assistant，因此前端时间线呈 `assistant → tool → assistant`
 - 生成状态事件：`agent.became.busy` / `agent.became.idle`（前端用它们驱动 `isGenerating`）
 - WS 支持 `/ws?conversationId=...` 以 resume 历史会话
-- `reset_context`：先投影 `reset.context`，然后**由WebSocketChatSession直接推送**一条 `user.message.committed`（auto reminder），触发前端渲染出 auto reminder 文本
+- `conversation.switched`：初始恢复最新 conversation JSON 和 reset-context 切 segment 都走同一事件；payload 只包含 `visibleMessages`，不暴露 conversation 文件名
 
 ### HTTP + WS 路由（`backend/src/web_app.py`、`backend/main.py`）
 - `GET /healthz`
@@ -88,7 +88,7 @@
 
 ### 核心文件
 - 页面布局/交互：`frontend/src/App.tsx`（侧栏会话 + 主区时间线 + 底部输入；会话列表仅启动时拉取一次，持久化后通过事件 upsert）
-- 协议类型：`frontend/src/features/chat/protocol.ts`（zod 校验；事件含 `reset.context` 等）
+- 协议类型：`frontend/src/features/chat/protocol.ts`（zod 校验；事件含 `conversation.switched` 等）
 - Store：`frontend/src/features/chat/store.ts`（核心状态：`items[]`、`pendingUserMessages[]`、`isGenerating`）
 - WS 客户端：`frontend/src/features/chat/client.ts`（切换会话会重连 `/ws?conversationId=...`；忽略过期 socket 事件以兼容 StrictMode）
 - 历史会话：`frontend/src/features/chat/conversations.ts`（HTTP list/detail + 把后端历史 messages 投影成平铺 `ChatItem[]`）
@@ -113,32 +113,11 @@
 - 2026-03-31：把 Agent 改为 async（移除 WebSocket 层 to_thread）：`docs/zh/plans/2026-03-31-agent-async.md`
 - 2026-04-28：跨进程工具调用机制（用户预置脚本 → 本地 HTTP endpoint → `InterprocessToolRegistry`）：`docs/zh/plans/2026-04-28-interprocess-tool-call.md`
 - 2026-04-29：记忆管理与 MagicWord reset-context（memory manager fork、记忆 diff、reset_context tool 废弃路径）：`docs/zh/plans/2026-04-29-memory-forked-subagent.md`
+- 2026-04-29：`conversation.switched` 事件（初始恢复最新 conversation JSON、reset-context 切 segment 时统一 hydrate 前端）：`docs/zh/plans/2026-04-29-conversation-switched-event.md`
 
-## 当前进行中：memory forked subagent
-- 开发方式：用户要求使用 incremental-coding，小步实现；每一步停下来让用户看，用户确认后再继续/提交。不要一口气做完整功能。
-- 已确认设计：
-  - memory manager 是从 worker 当前上下文 fork 出来，再 append `build_memory_forked_subagent_prompt(...)`，不是重新构造 system/user prompt。
-  - MagicWord 是 `PROJECT-X-RESET-CONTEXT`；只需要检测最终 assistant message content 中是否有独立一行，不剥离内容。
-  - memory manager 触发频率按 tool turn 计数：一组 `assistant tool_calls -> tool result` 算 1 turn；不是按完整 assistant 回答轮数计数。
-  - “context 中的 main memory”是本段上下文启动时加载的 `MEMORY_MAIN_MD` 快照；未 reset 前不应从磁盘刷新。
-  - 常量改名方向：`MEMORY_MAIN_MD` / `MEMORY_TODO_MD` 比旧的 `MAIN_MEMORY_MD` / `TODO_MEMORY_MD` 更清楚。
-- 已做过的实现片段：
-  - `backend/src/core/memory_manager.py` 已有 `MemoryForkedSubagentRunnerLike` / `MemoryForkedSubagentRunner` / `MemoryManagerResult`；runner 会 fork worker messages，append memory prompt，并循环执行 `stream -> execute_tool_calls -> stream`，最终用 `content.splitlines()` 检测 MagicWord。`tools` list 原样传给模型，不排序、不转 set；`tools_by_name` 只用于工具查表。
-  - `backend/src/prompts/builder.py` 已拆出 `read_main_memory()` / `read_todo_memory()`；`build_memory_forked_subagent_prompt(...)` 基于 `MEMORY_MAIN_MD` 做 diff，而不是 TODO memory。
-  - `backend/src/core/agent.py` 已接入 memory manager：注入 runner、`MEMORY_MANAGER_TURN_INTERVAL = 20`、`loaded_main_memory_content` 参数；按 tool turn 调 `_maybe_reset_context()`；当 `MemoryManagerResult.requested_reset_context=True` 时走 `_start_new_context_with_auto_reminder()`，重新 build system/user instruction、刷新 `loaded_main_memory_content`、重置 memory manager 计数，并用 auto reminder 开新 conversation segment。
-  - `backend/src/websocket_chat_session.py` 创建默认 Agent 时会先 `read_main_memory()`，把本段上下文初始 main memory 快照传给 Agent。
-  - `backend/src/conversation_store.py` 已加入 memory manager 计数 meta 持久化：`meta["memory-manager"]["turns-since-memory-manager"]` 和 `meta["memory-manager"]["awaken-count"]`；用户觉得 dataclass 封装更丑，所以已回退为直接 dict 读写。
-  - 旧 `reset_context` tool 路径已移除：`create_default_agent()` 默认 tools 里不再包含 `RESET_CONTEXT_TOOL`；`backend/src/tools/reset_context.py` 只保留 `RESET_CONTEXT_AUTO_REMINDER` 常量；`backend/src/core/agent_turn.py` 的 `execute_tool_calls()` 只返回 `ToolExecutionOutcome(tool_messages=...)`，不再返回 orchestration directive。
-  - 已补测试并由用户陆续提交：memory manager MagicWord 检测、prompt builder 记忆 diff、按 tool turn interval 唤醒、resume conversation 恢复 memory manager 计数、`create_default_agent()` 传入 main memory 快照且默认 tools 不含 `reset_context`。
-  - `ConversationStore` 已新增“找最新 conversation segment”的能力；用户纠正后改成解析 conversation 文件名里的时间戳，而不是依赖将来要废掉的 `lastChatTime`。conversation 文件名格式是 `cool-name-YYYYMMDDTHHMMSSffffffZ.json`。
-  - 用户指出 `conversation_id` 实际就是带 `.json` 后缀的文件名，持久化层已改名为 `conversation_file_name`：`build_conversation_file_name()`、`load_from_conversation_file_name()`、`find_latest_conversation_file_name()`、`ConversationStore.conversation_file_name`。但 HTTP/WS payload、前端协议、`Agent.resume_conversation(conversation_id=...)`、回调参数里仍叫 `conversationId`/`conversation_id`，用户明确要求下一步也要改掉这些协议命名。
-- 当前工作区/上下文注意：
-  - 用户通常会在每个小步确认后自行提交；不要假设上一步未提交，必要时再查工作区。
-  - 2026-04-29：已按产品决策移除前端会话列表/切换/新建 UI；删除 `/conversations*` HTTP 路由；前端永远不传 conversation id；后端在 WS 连接建立时自动恢复最近 conversation segment（没有才 new）。
-- 下一步建议：
-  - 把后端现存的 `conversation_id` 命名（以及对外事件字段里的 `conversationId`）系统性重命名为 `conversation_file_name`/`conversationFileName`，以匹配真实含义（文件名，含 `.json` 后缀）。前端已不再依赖该字段，但内部代码/测试/日志/类型仍应统一。
-  - 进展（2026-04-29）：
-    - 已完成后端侧对外字段/回调参数的重命名：统一使用 `conversation_file_name`（WS 事件字段为 `conversationFileName`），并清理了 `conversationId`/`conversation_id` 残留。
-    - 按产品目标“单栏无限长对话，不暴露会话持久化概念”，已删除 `conversation.persisted` 事件整条链路（`Agent` 不再对外回调，`WebSocketChatSession` 不再发送该事件）。
-    - `reset.context` 事件仍保留且携带 `conversationFileName`，用于让前端在 reset 后清空聊天并切到新 segment 语义。
-    - 后端测试已通过：`backend/` 下 `PYTHONPATH=. uv run --with pytest python -m pytest -q` -> `40 passed`。
+## 最近完成
+- 2026-04-29：已实现 `conversation.switched { visibleMessages }` 作为 conversation segment 切换的唯一前端事件；payload 不暴露 `conversationFileName`。
+- 初始 WS 自动恢复最近 conversation JSON 时，`Agent.start_conversation()` 会通过 `on_switch_conversation` 把用户可见历史交给 `WebSocketChatSession`，前端用 `visibleMessages` 重建时间线。
+- reset-context / memory manager auto reminder 也走同一个 `conversation.switched` 事件，auto reminder 作为 `visibleMessages` 中的 user message 呈现。
+- 已补 `backend/tests/test_websocket_chat_session.py` 覆盖“WebSocketChatSession 初始化时转发 conversation.switched 历史内容”。
+- 验证记录：`backend/` 下 `PYTHONPATH=. uv run --with pytest python -m pytest -q tests/test_websocket_chat_session.py tests/test_resume_conversation.py tests/test_agent_callbacks.py` 通过（21 passed）；`frontend/` 下 `npm run build` 通过。

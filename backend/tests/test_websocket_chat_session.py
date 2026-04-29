@@ -25,20 +25,28 @@ def make_noop_agent_callbacks() -> AgentCallbacks:
         on_ai_tool_call_finished=noop_callback,
         on_tool_result=noop_callback,
         on_queued_user_msg_committed=noop_callback,
-        on_reset_context=noop_callback,
+        on_switch_conversation=noop_callback,
     )
 
 
 class FakeAgent:
-    def __init__(self, *, callbacks: AgentCallbacks, scripted_runs: list[ScriptedRun]) -> None:
+    def __init__(
+        self,
+        *,
+        callbacks: AgentCallbacks,
+        scripted_runs: list[ScriptedRun],
+        start_visible_messages: list[dict[str, object]] | None,
+    ) -> None:
         self._callbacks = callbacks
         self._scripted_runs = scripted_runs
         self._queued_messages: list[tuple[str, str]] = []
+        self._start_visible_messages = start_visible_messages
 
-    def new_conversation(self) -> None:
-        return None
-
-    def resume_conversation(self, *, conversation_file_name: str) -> None:
+    def start_conversation(self) -> None:
+        if self._start_visible_messages is not None:
+            self._callbacks.on_switch_conversation(
+                visible_messages=self._start_visible_messages,
+            )
         return None
 
     def enqueue_user_message(self, *, frontend_msg_id: str, user_message: str) -> None:
@@ -55,7 +63,11 @@ class FakeAgent:
         return {"role": "assistant", "content": "done"}
 
 
-def make_agent_controller_factory(*, scripted_runs: list[ScriptedRun]):
+def make_agent_controller_factory(
+    *,
+    scripted_runs: list[ScriptedRun],
+    start_visible_messages: list[dict[str, object]] | None = None,
+):
     def factory(
         *,
         callbacks: AgentCallbacks,
@@ -69,6 +81,7 @@ def make_agent_controller_factory(*, scripted_runs: list[ScriptedRun]):
             agent=FakeAgent(
                 callbacks=callbacks,
                 scripted_runs=list(scripted_runs),
+                start_visible_messages=start_visible_messages,
             ),
             is_closed=is_closed,
             on_agent_became_busy=on_agent_became_busy,
@@ -76,7 +89,7 @@ def make_agent_controller_factory(*, scripted_runs: list[ScriptedRun]):
             on_agent_became_idle=on_agent_became_idle,
             on_error=on_error,
         )
-        controller.start(conversation_file_name=None)
+        controller.start()
         return controller
 
     return factory
@@ -261,10 +274,38 @@ class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
 
         await session.close()
 
-    async def test_websocket_chat_session_emits_reset_context_and_auto_reminder_in_order(self) -> None:
+    async def test_websocket_chat_session_emits_initial_conversation_switched_on_start(
+        self,
+    ) -> None:
+        session = WebSocketChatSession(
+            agent_controller_factory=make_agent_controller_factory(
+                scripted_runs=[],
+                start_visible_messages=[
+                    {"role": "user", "content": "上一轮问题"},
+                    {"role": "assistant", "content": "上一轮回答"},
+                ],
+            ),
+        )
+
+        event = await asyncio.wait_for(session.next_event(), timeout=1)
+
+        self.assertEqual(
+            event,
+            {
+                "type": "conversation.switched",
+                "visibleMessages": [
+                    {"role": "user", "content": "上一轮问题"},
+                    {"role": "assistant", "content": "上一轮回答"},
+                ],
+            },
+        )
+
+        await session.close()
+
+    async def test_websocket_chat_session_emits_conversation_switched_before_next_delta(self) -> None:
         def scripted_run(callbacks: AgentCallbacks, _user_message_id: str, _content: str) -> None:
-            callbacks.on_reset_context(
-                conversation_file_name="conv-2.json",
+            callbacks.on_switch_conversation(
+                visible_messages=[{"role": "user", "content": "<auto_reminder>继续之前的任务</auto_reminder>"}],
             )
             callbacks.on_ai_content_delta(content_delta="新会话开始输出")
 
@@ -278,13 +319,14 @@ class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
         events = await self._collect_events_until_generation_completed(session)
 
         types = [event["type"] for event in events]
-        reset_index = types.index("reset.context")
-        auto_user_index = types.index("user.message.committed", reset_index + 1)
-        assistant_delta_index = types.index("assistant.message.delta", auto_user_index + 1)
+        switched_index = types.index("conversation.switched")
+        assistant_delta_index = types.index("assistant.message.delta", switched_index + 1)
 
-        self.assertLess(reset_index, auto_user_index)
-        self.assertLess(auto_user_index, assistant_delta_index)
-        self.assertTrue(str(events[auto_user_index]["content"]).startswith("<auto_reminder>"))
+        self.assertLess(switched_index, assistant_delta_index)
+        self.assertEqual(
+            events[switched_index]["visibleMessages"],
+            [{"role": "user", "content": "<auto_reminder>继续之前的任务</auto_reminder>"}],
+        )
 
         await session.close()
 

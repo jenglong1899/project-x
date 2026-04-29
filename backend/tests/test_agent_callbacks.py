@@ -1,6 +1,8 @@
 import json
 import tempfile
 import unittest
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 from unittest import mock
 
@@ -35,6 +37,18 @@ class _StaticMemoryManagerRunner:
         return MemoryManagerResult(requested_reset_context=self.requested_reset_context)
 
 
+@contextmanager
+def _patch_agent_conversation_store_without_history(temp_dir: str) -> Iterator[None]:
+    with mock.patch("src.core.agent.ConversationStore") as store_cls:
+        store_cls.find_latest_conversation_file_name.return_value = None
+        store_cls.side_effect = lambda *, system_instruction, user_instruction: ConversationStore(
+            system_instruction=system_instruction,
+            user_instruction=user_instruction,
+            originals_dir=Path(temp_dir),
+        )
+        yield
+
+
 class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
 
     @staticmethod
@@ -56,14 +70,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
         enqueued_ids: list[str] = []
         committed_ids: list[str] = []
         with tempfile.TemporaryDirectory() as temp_dir:
-            with mock.patch(
-                "src.core.agent.ConversationStore",
-                side_effect=lambda *, system_instruction, user_instruction: ConversationStore(
-                    system_instruction=system_instruction,
-                    user_instruction=user_instruction,
-                    originals_dir=Path(temp_dir),
-                ),
-            ):
+            with _patch_agent_conversation_store_without_history(temp_dir):
                 agent = Agent(
                     name="demo",
                     model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
@@ -74,7 +81,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     on_queued_user_msg_committed=lambda *, frontend_msg_id: committed_ids.append(frontend_msg_id),
                 )
 
-                agent.new_conversation()
+                agent.start_conversation()
                 self.assertEqual(list(Path(temp_dir).glob("*.json")), [])
 
                 agent.enqueue_user_message(frontend_msg_id="frontend-1", user_message="world")
@@ -272,14 +279,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
     async def test_run_passes_on_tool_result_through_agent(self) -> None:
         tool_results: list[dict[str, object]] = []
         with tempfile.TemporaryDirectory() as temp_dir:
-            with mock.patch(
-                "src.core.agent.ConversationStore",
-                side_effect=lambda *, system_instruction, user_instruction: ConversationStore(
-                    system_instruction=system_instruction,
-                    user_instruction=user_instruction,
-                    originals_dir=Path(temp_dir),
-                ),
-            ):
+            with _patch_agent_conversation_store_without_history(temp_dir):
                 agent = Agent(
                     name="demo",
                     model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
@@ -288,7 +288,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     tools=[self._echo_tool()],
                     on_tool_result=lambda **kwargs: tool_results.append(kwargs),
                 )
-                agent.new_conversation()
+                agent.start_conversation()
                 agent.enqueue_user_message(
                     frontend_msg_id="frontend-1",
                     user_message="第一条用户消息已经超过二十个字符限制了并且后面还有内容",
@@ -346,14 +346,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_append_runtime_message_requires_persisted_conversation(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            with mock.patch(
-                "src.core.agent.ConversationStore",
-                side_effect=lambda *, system_instruction, user_instruction: ConversationStore(
-                    system_instruction=system_instruction,
-                    user_instruction=user_instruction,
-                    originals_dir=Path(temp_dir),
-                ),
-            ):
+            with _patch_agent_conversation_store_without_history(temp_dir):
                 agent = Agent(
                     name="demo",
                     model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
@@ -361,21 +354,14 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     user_instruction="hello",
                     tools=[],
                 )
-                agent.new_conversation()
+                agent.start_conversation()
 
                 with self.assertRaisesRegex(RuntimeError, "尚未开始"):
                     agent._append_runtime_message({"role": "assistant", "content": "hi"})
 
     async def test_run_requires_first_user_message(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            with mock.patch(
-                "src.core.agent.ConversationStore",
-                side_effect=lambda *, system_instruction, user_instruction: ConversationStore(
-                    system_instruction=system_instruction,
-                    user_instruction=user_instruction,
-                    originals_dir=Path(temp_dir),
-                ),
-            ):
+            with _patch_agent_conversation_store_without_history(temp_dir):
                 agent = Agent(
                     name="demo",
                     model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
@@ -383,7 +369,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     user_instruction="hello",
                     tools=[],
                 )
-                agent.new_conversation()
+                agent.start_conversation()
 
                 with mock.patch.object(Agent, "_safe_stream", new=mock.AsyncMock(side_effect=AssertionError("不应调用 _safe_stream"))):
                     with self.assertRaisesRegex(RuntimeError, "尚未开始"):
@@ -400,32 +386,23 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
             )
 
     async def test_memory_manager_magic_word_switches_conversation(self) -> None:
-        reset_events: list[dict[str, str]] = []
+        switch_events: list[list[dict[str, object]]] = []
         runner = _StaticMemoryManagerRunner(requested_reset_context=True)
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            with mock.patch(
-                "src.core.agent.ConversationStore",
-                side_effect=lambda *, system_instruction, user_instruction: ConversationStore(
-                    system_instruction=system_instruction,
-                    user_instruction=user_instruction,
-                    originals_dir=Path(temp_dir),
-                ),
-            ):
+            with _patch_agent_conversation_store_without_history(temp_dir):
                 agent = Agent(
                     name="demo",
                     model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
                     system_instruction="system-1",
                     user_instruction="user-1",
                     tools=[self._echo_tool()],
-                    on_reset_context=lambda *, conversation_file_name: reset_events.append(
-                        {"conversation_file_name": conversation_file_name}
-                    ),
+                    on_switch_conversation=lambda *, visible_messages: switch_events.append(visible_messages),
                     memory_manager_runner=runner,
                     memory_manager_turn_interval=1,
                     loaded_main_memory_content="memory before reset",
                 )
-                agent.new_conversation()
+                agent.start_conversation()
 
                 ai_msg_with_tool_call = {
                     "role": "assistant",
@@ -462,7 +439,10 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, final_ai_msg)
         self.assertEqual(len(runner.calls), 1)
-        self.assertEqual(len(reset_events), 1)
+        self.assertEqual(
+            switch_events[-1],
+            [{"role": "user", "content": RESET_CONTEXT_AUTO_REMINDER}],
+        )
         self.assertEqual(agent._messages[0], {"role": "system", "content": "system-2"})
         self.assertEqual(agent._messages[1], {"role": "user", "content": "user-2"})
         self.assertEqual(agent._messages[2], {"role": "user", "content": RESET_CONTEXT_AUTO_REMINDER})
@@ -474,14 +454,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
         runner = _StaticMemoryManagerRunner(requested_reset_context=False)
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            with mock.patch(
-                "src.core.agent.ConversationStore",
-                side_effect=lambda *, system_instruction, user_instruction: ConversationStore(
-                    system_instruction=system_instruction,
-                    user_instruction=user_instruction,
-                    originals_dir=Path(temp_dir),
-                ),
-            ):
+            with _patch_agent_conversation_store_without_history(temp_dir):
                 agent = Agent(
                     name="demo",
                     model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
@@ -491,7 +464,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     memory_manager_runner=runner,
                     memory_manager_turn_interval=2,
                 )
-                agent.new_conversation()
+                agent.start_conversation()
 
                 ai_msg_with_tool_call = {
                     "role": "assistant",
@@ -523,14 +496,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
         runner = _StaticMemoryManagerRunner(requested_reset_context=False)
 
         with tempfile.TemporaryDirectory() as temp_dir:
-            with mock.patch(
-                "src.core.agent.ConversationStore",
-                side_effect=lambda *, system_instruction, user_instruction: ConversationStore(
-                    system_instruction=system_instruction,
-                    user_instruction=user_instruction,
-                    originals_dir=Path(temp_dir),
-                ),
-            ):
+            with _patch_agent_conversation_store_without_history(temp_dir):
                 agent = Agent(
                     name="demo",
                     model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
@@ -541,7 +507,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     memory_manager_turn_interval=2,
                     loaded_main_memory_content="main memory snapshot",
                 )
-                agent.new_conversation()
+                agent.start_conversation()
 
                 ai_msgs_with_tool_call = [
                     {

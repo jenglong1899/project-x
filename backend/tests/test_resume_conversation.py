@@ -9,8 +9,8 @@ from src.core.agent import Agent
 from src.core.model_config import ModelConfig
 
 
-class ResumeConversationTests(unittest.TestCase):
-    def test_resume_conversation_restores_messages_and_reuses_file(self) -> None:
+class StartConversationTests(unittest.TestCase):
+    def test_start_conversation_restores_latest_messages_and_reuses_file(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             originals_dir = Path(temp_dir)
             store = ConversationStore(
@@ -21,6 +21,7 @@ class ResumeConversationTests(unittest.TestCase):
             store.start_with_first_user_message(user_content="hello")
             store.append_message({"role": "assistant", "content": "hi"})
             conversation_file_name = store.conversation_file_name
+            switch_events: list[list[dict]] = []
 
             stored_files = list(originals_dir.glob("*.json"))
             self.assertEqual(len(stored_files), 1)
@@ -33,16 +34,24 @@ class ResumeConversationTests(unittest.TestCase):
                 system_instruction="system-new",
                 user_instruction="user-new",
                 tools=[],
+                on_switch_conversation=lambda *, visible_messages: switch_events.append(visible_messages),
             )
 
             with mock.patch("src.conversation_store.ORIGINALS_DIR", originals_dir):
-                agent.resume_conversation(conversation_file_name=conversation_file_name)
+                agent.start_conversation()
 
             self.assertEqual(agent._system_instruction, "system-old")
             self.assertEqual(agent._user_instruction, "user-old")
             self.assertTrue(all("meta" not in m for m in agent._messages))
             self.assertEqual(agent._messages[0]["content"], "system-old")
             self.assertEqual(agent._messages[1]["content"], "user-old")
+            self.assertEqual(
+                switch_events,
+                [[
+                    {"role": "user", "content": "hello"},
+                    {"role": "assistant", "content": "hi"},
+                ]],
+            )
 
             agent.enqueue_user_message(frontend_msg_id="frontend-1", user_message="next")
             drained = agent._safe_drain_user_message_queue()
@@ -55,7 +64,7 @@ class ResumeConversationTests(unittest.TestCase):
             self.assertEqual(payload["messages"][-1]["content"], "next")
             self.assertNotIn("meta", payload["messages"][-1])
 
-    def test_resume_conversation_rejects_path_like_id(self) -> None:
+    def test_start_conversation_rejects_path_like_latest_file_name(self) -> None:
         agent = Agent(
             name="demo",
             model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
@@ -63,10 +72,16 @@ class ResumeConversationTests(unittest.TestCase):
             user_instruction="user",
             tools=[],
         )
-        with self.assertRaisesRegex(ValueError, "不允许包含路径"):
-            agent.resume_conversation(conversation_file_name="../evil")
+        with (
+            mock.patch(
+                "src.conversation_store.ConversationStore.find_latest_conversation_file_name",
+                return_value="../evil.json",
+            ),
+            self.assertRaisesRegex(ValueError, "不允许包含路径"),
+        ):
+            agent.start_conversation()
 
-    def test_resume_conversation_restores_memory_manager_state(self) -> None:
+    def test_start_conversation_restores_memory_manager_state(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             originals_dir = Path(temp_dir)
             store = ConversationStore(
@@ -89,7 +104,7 @@ class ResumeConversationTests(unittest.TestCase):
             )
 
             with mock.patch("src.conversation_store.ORIGINALS_DIR", originals_dir):
-                agent.resume_conversation(conversation_file_name=store.conversation_file_name)
+                agent.start_conversation()
 
         self.assertEqual(agent._worker_turns_since_memory_manager, 7)
         self.assertEqual(agent._memory_manager_awaken_count, 2)

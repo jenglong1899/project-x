@@ -10,9 +10,32 @@ const agentBecameIdleEventSchema = z.object({
   type: z.literal('agent.became.idle'),
 })
 
-const resetContextEventSchema = z.object({
-  type: z.literal('reset.context'),
-  conversationFileName: nonEmptyString,
+const visibleToolCallSchema = z
+  .object({
+    id: nonEmptyString.optional(),
+    function: z
+      .object({
+        name: z.string().optional(),
+        arguments: z.string().optional(),
+      })
+      .optional(),
+  })
+  .passthrough()
+
+const visibleConversationMessageSchema = z
+  .object({
+    role: z.enum(['user', 'assistant', 'tool']),
+    content: z.string().nullable().optional(),
+    reasoning_content: z.string().nullable().optional(),
+    tool_call_id: z.string().optional(),
+    name: z.string().optional(),
+    tool_calls: z.array(visibleToolCallSchema).optional(),
+  })
+  .passthrough()
+
+const conversationSwitchedEventSchema = z.object({
+  type: z.literal('conversation.switched'),
+  visibleMessages: z.array(visibleConversationMessageSchema),
 })
 
 const userMessageCommittedEventSchema = z.object({
@@ -74,7 +97,7 @@ const errorEventSchema = z.object({
 export const serverEventSchema = z.discriminatedUnion('type', [
   agentBecameBusyEventSchema,
   agentBecameIdleEventSchema,
-  resetContextEventSchema,
+  conversationSwitchedEventSchema,
   userMessageCommittedEventSchema,
   assistantMessageStartedEventSchema,
   assistantMessageDeltaEventSchema,
@@ -103,6 +126,7 @@ export const clientCommandSchema = z.discriminatedUnion('type', [
 
 export type ServerEvent = z.infer<typeof serverEventSchema>
 export type ClientCommand = z.infer<typeof clientCommandSchema>
+export type VisibleConversationMessage = z.infer<typeof visibleConversationMessageSchema>
 
 export function parseServerEvent(payload: unknown): ServerEvent {
   return serverEventSchema.parse(payload)

@@ -6,9 +6,7 @@ from src.commons import noop
 
 
 class AgentLike(Protocol):
-    def new_conversation(self) -> None: ...
-
-    def resume_conversation(self, *, conversation_file_name: str) -> None: ...
+    def start_conversation(self) -> None: ...
 
     def enqueue_user_message(self, *, frontend_msg_id: str, user_message: str) -> None: ...
 
@@ -45,7 +43,7 @@ class AgentController:
 
         self._task: asyncio.Task[None] | None = None
 
-    def start(self, *, conversation_file_name: str | None) -> None:
+    def start(self) -> None:
         """
         初始化对话状态（必须先调用，否则 agent.run 可能因为 conversation_store 未初始化而报错）。
 
@@ -55,10 +53,7 @@ class AgentController:
         if self._task is not None and not self._task.done():
             raise RuntimeError("AgentController 忙，不能切换会话")
 
-        if conversation_file_name:
-            self._agent.resume_conversation(conversation_file_name=conversation_file_name)
-        else:
-            self._agent.new_conversation()
+        self._agent.start_conversation()
 
     def submit_user_message(self, *, frontend_msg_id: str, user_message: str) -> None:
         self._agent.enqueue_user_message(

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 from uuid import uuid4
 
-from src.core.agent import Agent, OnQueuedUserMsgCommitted, OnResetContext
+from src.core.agent import Agent, OnQueuedUserMsgCommitted, OnSwitchConversation
 from src.core.agent_controller import AgentController
 from src.core.agent_turn import (
     OnAiContentDelta,
@@ -31,9 +31,7 @@ from src.prompts.builder import (
     build_user_level_instruction_zh,
     read_main_memory,
 )
-from src.conversation_store import ConversationStore
 from src.tools.bash import create_bash_tool
-from src.tools.reset_context import RESET_CONTEXT_AUTO_REMINDER
 
 
 logger = logging.getLogger(__name__)
@@ -50,9 +48,7 @@ MODEL_CONFIGS: dict[str, ModelConfig] = {
 
 
 class AgentLike(Protocol):
-    def new_conversation(self) -> None: ...
-
-    def resume_conversation(self, *, conversation_file_name: str) -> None: ...
+    def start_conversation(self) -> None: ...
 
     def enqueue_user_message(self, *, frontend_msg_id: str, user_message: str) -> None: ...
 
@@ -70,7 +66,7 @@ class AgentCallbacks:
     on_ai_tool_call_finished: OnAiToolCallFinished
     on_tool_result: OnToolResult
     on_queued_user_msg_committed: OnQueuedUserMsgCommitted
-    on_reset_context: OnResetContext
+    on_switch_conversation: OnSwitchConversation
 
 
 def resolve_model_config() -> ModelConfig:
@@ -105,7 +101,7 @@ def create_default_agent(*, callbacks: AgentCallbacks) -> Agent:
         on_ai_tool_call_finished=callbacks.on_ai_tool_call_finished,
         on_tool_result=callbacks.on_tool_result,
         on_queued_user_msg_committed=callbacks.on_queued_user_msg_committed,
-        on_reset_context=callbacks.on_reset_context,
+        on_switch_conversation=callbacks.on_switch_conversation,
     )
 
 
@@ -142,8 +138,7 @@ def create_agent_controller(
         on_agent_became_idle=on_agent_became_idle,
         on_error=on_error,
     )
-    conversation_file_name = ConversationStore.find_latest_conversation_file_name()
-    controller.start(conversation_file_name=conversation_file_name)
+    controller.start()
     return controller
 
 
@@ -364,7 +359,7 @@ class WebSocketChatSession:
             on_ai_tool_call_finished=self._projector.on_ai_tool_call_finished,
             on_tool_result=self._projector.on_tool_result,
             on_queued_user_msg_committed=self._on_queued_user_msg_committed,
-            on_reset_context=self._on_reset_context,
+            on_switch_conversation=self._on_switch_conversation,
         )
         if agent_controller_factory is None:
             self._agent_controller = create_agent_controller(
@@ -412,29 +407,11 @@ class WebSocketChatSession:
             return
         self._outgoing_queue.put_nowait(event)
 
-    def _on_reset_context(
-        self,
-        *,
-        conversation_file_name: str,
-    ) -> None:
-        # 这里选择由后端直接推送 auto_reminder 的 user.message.committed，而不是让前端收到 reset.context 后再去 HTTP 拉取会话详情：
-        # - 否则前端会出现“正在流式追加 items”与“loadConversation 覆盖 items”的竞态，容易丢流式内容；
-        # - 后端按顺序推事件，前端按顺序渲染，最简单也最稳定。
-        #
-        # 备注：为什么不在 Agent 里直接“复用 on_queued_user_msg_committed”来发这条 user.message.committed？
-        # - 因为 on_queued_user_msg_committed 的参数只有 frontend_msg_id，并不包含内容；
-        # 因此这里由 WebSocket 投影层显式发送一条 user.message.committed，并保证它紧随 reset.context、先于任何 delta。
+    def _on_switch_conversation(self, *, visible_messages: list[dict[str, Any]]) -> None:
         self._emit_sync(
             {
-                "type": "reset.context",
-                "conversationFileName": conversation_file_name,
-            }
-        )
-        self._emit_sync(
-            {
-                "type": "user.message.committed",
-                "userMessageId": f"auto-{uuid4().hex}",
-                "content": RESET_CONTEXT_AUTO_REMINDER,
+                "type": "conversation.switched",
+                "visibleMessages": visible_messages,
             }
         )
 

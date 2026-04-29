@@ -37,8 +37,8 @@ class OnQueuedUserMsgCommitted(Protocol):
     def __call__(self, *, frontend_msg_id: str) -> None: ...
 
 
-class OnResetContext(Protocol):
-    def __call__(self, *, conversation_file_name: str) -> None: ...
+class OnSwitchConversation(Protocol):
+    def __call__(self, *, visible_messages: list[dict[str, Any]]) -> None: ...
 
 
 class Agent:
@@ -54,7 +54,7 @@ class Agent:
                  on_tool_result: OnToolResult | None = None,
                  on_user_msg_enqueued: OnUserMsgEnqueued | None = None,
                  on_queued_user_msg_committed: OnQueuedUserMsgCommitted | None = None,
-                 on_reset_context: OnResetContext | None = None,
+                 on_switch_conversation: OnSwitchConversation | None = None,
                  memory_manager_runner: MemoryForkedSubagentRunnerLike | None = None,
                  memory_manager_turn_interval: int = MEMORY_MANAGER_TURN_INTERVAL,
                  loaded_main_memory_content: str = "",
@@ -82,7 +82,7 @@ class Agent:
 
         self._on_user_msg_enqueued = on_user_msg_enqueued or noop
         self._on_queued_user_msg_committed = on_queued_user_msg_committed or noop
-        self._on_reset_context = on_reset_context or noop
+        self._on_switch_conversation = on_switch_conversation or noop
 
         self._user_msg_queue: deque[QueuedUserMessage] = deque()
         self._memory_manager_runner = memory_manager_runner or MemoryForkedSubagentRunner()
@@ -91,11 +91,18 @@ class Agent:
         self._memory_manager_awaken_count = 0
         self._loaded_main_memory_content = loaded_main_memory_content
 
-        # 调用Agent的必须选择 new_conversation 或者 resume_conversation，
+        # 调用Agent的必须先选择 conversation segment，
         # self._conversation_store 会在这两个函数中被初始化。
         self._conversation_store: ConversationStore | None = None
 
-    def new_conversation(self) -> None:
+    def start_conversation(self) -> None:
+        conversation_file_name = ConversationStore.find_latest_conversation_file_name()
+        if conversation_file_name:
+            self._load_conversation_from_file(conversation_file_name=conversation_file_name)
+        else:
+            self._start_new_conversation_segment()
+
+    def _start_new_conversation_segment(self) -> None:
         self._messages = [
             {"role": "system", "content": self._system_instruction},
             {"role": "user", "content": self._user_instruction},
@@ -104,10 +111,11 @@ class Agent:
             system_instruction=self._system_instruction,
             user_instruction=self._user_instruction,
         )
+        self._notify_switch_conversation(messages=self._messages)
 
-    def resume_conversation(self, *, conversation_file_name: str) -> None:
+    def _load_conversation_from_file(self, *, conversation_file_name: str) -> None:
         if self._user_msg_queue:
-            raise RuntimeError("resume_conversation 之前不能有排队中的 user message")
+            raise RuntimeError("加载 conversation 文件之前不能有排队中的 user message")
 
         store = ConversationStore.load_from_conversation_file_name(conversation_file_name=conversation_file_name)
         messages = store.build_messages_from_history()
@@ -129,6 +137,14 @@ class Agent:
 
         self._messages = messages
         self._conversation_store = store
+        self._notify_switch_conversation(messages=messages)
+
+    @staticmethod
+    def _visible_messages_from(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [dict(message) for message in messages[2:]]
+
+    def _notify_switch_conversation(self, *, messages: list[dict[str, Any]]) -> None:
+        self._on_switch_conversation(visible_messages=self._visible_messages_from(messages))
 
     def enqueue_user_message(self, *, frontend_msg_id: str, user_message: str) -> None:
         self._user_msg_queue.append(QueuedUserMessage(frontend_msg_id, user_message))
@@ -183,7 +199,7 @@ class Agent:
         self._persist_memory_manager_state()
 
         if result.requested_reset_context:
-            self._start_new_context_with_auto_reminder()
+            self._reset_context()
 
     def _append_runtime_message(self, message: dict[str, Any]) -> None:
         # 这个函数被用的地方都是在 run 函数的后方，
@@ -218,7 +234,7 @@ class Agent:
                             on_ai_tool_call_arguments_delta=on_ai_tool_call_arguments_delta,
                             on_ai_tool_call_finished=on_ai_tool_call_finished)
 
-    def _start_new_context_with_auto_reminder(self) -> None:
+    def _reset_context(self) -> None:
         from src.prompts.builder import (
             build_system_level_instruction_zh,
             build_user_level_instruction_zh,
@@ -233,24 +249,28 @@ class Agent:
         self._loaded_main_memory_content = read_main_memory()
         self._worker_turns_since_memory_manager = 0
         self._memory_manager_awaken_count = 0
-        self.new_conversation()
-
         auto_reminder = RESET_CONTEXT_AUTO_REMINDER
 
         # 用 auto_reminder 作为新会话的第一条 user message，
         # 这样 conversation 文件会立刻创建且模型也能看到 reminder。
+        self._messages = [
+            {"role": "system", "content": self._system_instruction},
+            {"role": "user", "content": self._user_instruction},
+        ]
+        self._conversation_store = ConversationStore(
+            system_instruction=self._system_instruction,
+            user_instruction=self._user_instruction,
+        )
         self._conversation_store.start_with_first_user_message(
             user_content=auto_reminder,
         )
         self._messages = self._conversation_store.build_messages_from_history()
-        self._on_reset_context(
-            conversation_file_name=self._conversation_store.conversation_file_name,
-        )
+        self._notify_switch_conversation(messages=self._messages)
         # 接下来 run() 会继续 while 循环，直接以 auto_reminder 为最后一条 user message 进行下一轮模型调用。
 
     async def run(self) -> dict[str, Any]:
         if self._conversation_store is None:
-            raise RuntimeError("conversation_store 未初始化，请先调用 new_conversation() 或 resume_conversation()")
+            raise RuntimeError("conversation_store 未初始化，请先调用 start_conversation()")
 
         self._safe_drain_user_message_queue()
         if not self._conversation_store.has_persisted_conversation():

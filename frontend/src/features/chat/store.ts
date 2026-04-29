@@ -1,6 +1,6 @@
 import { create } from 'zustand'
 
-import type { ServerEvent } from './protocol'
+import type { ServerEvent, VisibleConversationMessage } from './protocol'
 
 export type ConnectionStatus = 'idle' | 'connecting' | 'open' | 'closed' | 'error'
 export type ToolMessageStatus = 'streaming' | 'completed'
@@ -188,6 +188,63 @@ function upsertUserItem(
   return updateItemById<UserMessageItem>(items, nextItem.id, () => nextItem)
 }
 
+function buildItemsFromVisibleMessages(visibleMessages: VisibleConversationMessage[]): ChatItem[] {
+  const items: ChatItem[] = []
+
+  for (const [index, message] of visibleMessages.entries()) {
+    if (message.role === 'user') {
+      items.push(createUserItem(`history-${index}`, message.content ?? ''))
+      continue
+    }
+
+    if (message.role === 'assistant') {
+      const messageId = `history-${index}`
+      const assistant: AssistantMessageItem = {
+        ...createAssistantItem(messageId),
+        reasoning: message.reasoning_content ?? '',
+        text: message.content ?? '',
+        streaming: false,
+      }
+      const toolItems =
+        message.tool_calls?.map((toolCall, toolIndex): ToolMessageItem => {
+          const toolCallId = toolCall.id ?? `history-${index}-tool-${toolIndex}`
+          return {
+            ...createToolItem(toolCallId),
+            toolName: toolCall.function?.name ?? '',
+            index: toolIndex,
+            args: toolCall.function?.arguments ?? '',
+            status: 'completed',
+          }
+        }) ?? []
+      items.push(assistant, ...toolItems)
+      continue
+    }
+
+    const toolCallId = message.tool_call_id || `history-${index}`
+    const itemId = `tool:${toolCallId}`
+    const existingIndex = items.findIndex((item) => item.id === itemId)
+    if (existingIndex !== -1) {
+      const item = items[existingIndex] as ToolMessageItem
+      items[existingIndex] = {
+        ...item,
+        toolName: message.name || item.toolName,
+        result: message.content ?? '',
+        status: 'completed',
+      }
+      continue
+    }
+
+    items.push({
+      ...createToolItem(toolCallId),
+      toolName: message.name ?? '',
+      result: message.content ?? '',
+      status: 'completed',
+    })
+  }
+
+  return items
+}
+
 function reduceServerEvent(state: ChatState, event: ServerEvent): Partial<ChatState> {
   switch (event.type) {
     case 'agent.became.busy':
@@ -200,9 +257,9 @@ function reduceServerEvent(state: ChatState, event: ServerEvent): Partial<ChatSt
         isGenerating: false,
       }
 
-    case 'reset.context':
+    case 'conversation.switched':
       return {
-        items: [],
+        items: buildItemsFromVisibleMessages(event.visibleMessages),
         pendingUserMessages: [],
         errorMessage: null,
       }
