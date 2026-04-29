@@ -14,7 +14,7 @@
 
 ## file operation
 <file_operation>
-系统安装了 ripgrep ，你可以用这个
+系统安装了 rg(ripgrep) ，你可以用这个。一个使用案例是，你可以用rg去查看某个md文件的所有标题，然后只查看对应标题的内容，而不是用行号这种粒度比较粗的方法（你很可能会读到一些你不需要的）。
 当你使用系统提供的编辑工具，或者用shell工具来编辑文件时，如果对应的文件夹中没有git，系统会自动创建，并自动commit你做的编辑，对应的commit message就是你当时进行编辑的tool_call_id
 如果你用shell来编辑，记得用 heredoc 模式，这样就不用处理转义符号了。
 如果你要编辑json、html、excel等文件，通常建议你用python脚本+对应的库来编辑，这样会更容易

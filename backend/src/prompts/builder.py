@@ -147,8 +147,6 @@ def build_memory_forked_subagent_prompt(is_first_time_awaken: bool) -> str:
 
 **你的角色是memory manager，你刚从worker的上下文中被 fork 出来**
 
-{memory_operation_history_prompt}
-
 你现在要做的唯一事情就是处理记忆，之前的指令里除了<memory_mechanism>部分，其他的通通忽略掉。
 
 为了方便起见，worker现在已经暂停运行，等你结束操作后，才会继续运行
@@ -167,9 +165,11 @@ def build_memory_forked_subagent_prompt(is_first_time_awaken: bool) -> str:
     - 人类会记得一个文件大概讲了什么
     - 人类会记住自己的 todo list
 
-随着worker做的事情越来越多，应当被记录进记忆文档的东西也会越来越多，你要确保 main.md 只存储最重要（换句话说，长期都会经常用到的）的记忆，比如用户偏好，其他记忆要放到其他文档中，然后在 main.md 里面留下对这些文档的引用就行了
+随着worker做的事情越来越多，应当被记录进记忆文档的东西也会越来越多，你要确保 {MAIN_MEMORY_MD} 只存储最重要（换句话说，长期都会经常用到的）的记忆，比如用户偏好，其他记忆要放到其他文档中，然后在 {MAIN_MEMORY_MD} 里面留下对这些文档的引用就行了。这里的引用不是说所有的其他记忆文档都要被 {MAIN_MEMORY_MD} 直接引用，而是可以被间接引用，比如有20个文档都是关于某个主题的，要把它们都放进一个文件夹里面，然后在 {MAIN_MEMORY_MD} 里面引用这个文件夹就行。
  
-（2）如果记忆有点散乱了，要把它整理成结构化的。因为杂乱无章的记忆会影响worker的发挥和你的后续维护
+（2）如果记忆有点散乱了，要把它整理成结构化的。因为杂乱无章的记忆会影响worker的发挥和你的后续维护。
+这里说的结构化，意思是把他们划分成块，如果你写的是md文档，要起好标题，如果是xml文件，你要想好标签怎么起，这些标题、xml标签相当于对这些块的摘要，将来 AI 可能会用 ripgrep 来先查看这些标题、标签，再决定去查看哪些块。
+这里也不是说让你把标题、xml标签写得很长，一个参考是，他们的长度不应超过其内容的1/5
  
 （3）检查是否需要重置上下文
     - **是否应该重置上下文的判断标准：
@@ -182,6 +182,8 @@ def build_memory_forked_subagent_prompt(is_first_time_awaken: bool) -> str:
         如果上下文接近窗口上限，优先为了稳定性重置，而不只看 token 成本。
     - 当你输出 PROJECT-X-RESET-CONTEXT 字样时，系统就会重置上下文
 </reference_memory_method>
+
+{memory_operation_history_prompt}
 
 </roles_change_notice>
 """
