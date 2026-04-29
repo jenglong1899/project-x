@@ -25,7 +25,6 @@ def make_noop_agent_callbacks() -> AgentCallbacks:
         on_ai_tool_call_finished=noop_callback,
         on_tool_result=noop_callback,
         on_queued_user_msg_committed=noop_callback,
-        on_conversation_persisted=noop_callback,
         on_reset_context=noop_callback,
     )
 
@@ -39,7 +38,7 @@ class FakeAgent:
     def new_conversation(self) -> None:
         return None
 
-    def resume_conversation(self, *, conversation_id: str) -> None:
+    def resume_conversation(self, *, conversation_file_name: str) -> None:
         return None
 
     def enqueue_user_message(self, *, frontend_msg_id: str, user_message: str) -> None:
@@ -60,7 +59,6 @@ def make_agent_controller_factory(*, scripted_runs: list[ScriptedRun]):
     def factory(
         *,
         callbacks: AgentCallbacks,
-        conversation_id: str | None,
         is_closed: Callable[[], bool],
         on_agent_became_busy: Callable[[], None],
         on_agent_turn_completed: Callable[[], None],
@@ -78,7 +76,7 @@ def make_agent_controller_factory(*, scripted_runs: list[ScriptedRun]):
             on_agent_became_idle=on_agent_became_idle,
             on_error=on_error,
         )
-        controller.start(conversation_id=conversation_id)
+        controller.start(conversation_file_name=None)
         return controller
 
     return factory
@@ -266,8 +264,7 @@ class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
     async def test_websocket_chat_session_emits_reset_context_and_auto_reminder_in_order(self) -> None:
         def scripted_run(callbacks: AgentCallbacks, _user_message_id: str, _content: str) -> None:
             callbacks.on_reset_context(
-                conversation_id="conv-2.json",
-                display_name="旧会话标题",
+                conversation_file_name="conv-2.json",
             )
             callbacks.on_ai_content_delta(content_delta="新会话开始输出")
 

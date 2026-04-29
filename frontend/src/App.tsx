@@ -1,60 +1,26 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { PanelLeft } from 'lucide-react'
-
 import { Button } from '@/components/ui/button'
 import { chatClient } from '@/features/chat/client'
 import { AssistantTurnBubble } from '@/features/chat/components/assistant-turn-bubble'
 import { ChatComposer } from '@/features/chat/components/chat-composer'
-import { ChatSidebar } from '@/features/chat/components/chat-sidebar'
 import { ToolCallCard } from '@/features/chat/components/tool-call-card'
 import { UserTurnBubble } from '@/features/chat/components/user-turn-bubble'
-import {
-  buildChatItemsFromConversationHistory,
-  fetchConversationDetail,
-  fetchConversationList,
-} from '@/features/chat/conversations'
 import { useChatStore } from '@/features/chat/store'
 
 import './App.css'
 
 const SCROLL_BOTTOM_THRESHOLD_PX = 60
 
-type SessionEntry = {
-  id: string
-  conversationId: string
-  displayName: string
-}
-
-function upsertSessionEntry(entries: SessionEntry[], entry: SessionEntry): SessionEntry[] {
-  const existingIndex = entries.findIndex((item) => item.conversationId === entry.conversationId)
-  if (existingIndex === -1) {
-    return [entry, ...entries]
-  }
-
-  const nextEntries = [...entries]
-  const currentEntry = nextEntries[existingIndex]
-  nextEntries.splice(existingIndex, 1)
-  nextEntries.unshift({
-    ...currentEntry,
-    ...entry,
-  })
-  return nextEntries
-}
-
 function App() {
   const [draft, setDraft] = useState('')
   const [composerError, setComposerError] = useState<string | null>(null)
-  const [mobileSidebarOpen, setMobileSidebarOpen] = useState(false)
 
   const connectionStatus = useChatStore((state) => state.connectionStatus)
   const errorMessage = useChatStore((state) => state.errorMessage)
   const items = useChatStore((state) => state.items)
   const pendingUserMessages = useChatStore((state) => state.pendingUserMessages)
   const isGenerating = useChatStore((state) => state.isGenerating)
-  const activeConversationId = useChatStore((state) => state.activeConversationId)
-  const loadConversation = useChatStore((state) => state.loadConversation)
-  const resetChatStore = useChatStore((state) => state.reset)
 
   const feedbackText =
     composerError || errorMessage || '当 AI 用非常自信的语气回答的时候，也不代表其说的话是真的，请核查。'
@@ -91,60 +57,6 @@ function App() {
       syncAtBottomState(element)
     })
   }, [syncAtBottomState])
-
-  const [sessionEntries, setSessionEntries] = useState<SessionEntry[]>([])
-  const hasLoadedSessionListRef = useRef(false)
-  const activeConversationTitle =
-    sessionEntries.find((entry) => entry.conversationId === activeConversationId)?.displayName ?? '新对话'
-
-  const loadSessionList = useCallback(async () => {
-    try {
-      const list = await fetchConversationList()
-      setSessionEntries(
-        list.map((item) => ({
-          id: item.conversationId,
-          conversationId: item.conversationId,
-          displayName: item.displayName || item.conversationId,
-        })),
-      )
-    } catch (error) {
-      setComposerError(error instanceof Error ? error.message : '加载会话列表失败。')
-    }
-  }, [])
-
-  useEffect(() => {
-    type ChatStoreSnapshot = ReturnType<typeof useChatStore.getState>
-
-    const applySessionUpdates = (nextState: ChatStoreSnapshot, prevState?: ChatStoreSnapshot) => {
-      const nextPersisted = nextState.persistedConversation
-      const prevPersisted = prevState?.persistedConversation ?? null
-      if (!nextPersisted || nextPersisted === prevPersisted) {
-        return
-      }
-
-      setSessionEntries((currentEntries) =>
-        upsertSessionEntry(currentEntries, {
-          id: nextPersisted.conversationId,
-          conversationId: nextPersisted.conversationId,
-          displayName: nextPersisted.displayName || nextPersisted.conversationId,
-        }),
-      )
-    }
-
-    const unsubscribe = useChatStore.subscribe((nextState, prevState) => {
-      applySessionUpdates(nextState, prevState)
-    })
-
-    Promise.resolve().then(() => {
-      if (!hasLoadedSessionListRef.current) {
-        hasLoadedSessionListRef.current = true
-        void loadSessionList()
-      }
-      applySessionUpdates(useChatStore.getState())
-    })
-
-    return unsubscribe
-  }, [loadSessionList])
 
   useEffect(() => {
     chatClient.connect()
@@ -231,61 +143,14 @@ function App() {
     }
   }
 
-  const disableSwitching = pendingUserMessages.length > 0 || isGenerating
-
-  const handleNewConversation = useCallback(() => {
-    if (disableSwitching) {
-      return
-    }
-    setComposerError(null)
-    resetChatStore()
-    chatClient.disconnect()
-    chatClient.connect()
-  }, [disableSwitching, resetChatStore])
-
-  const handleSelectConversation = useCallback(
-    async (conversationId: string) => {
-      if (disableSwitching) {
-        return
-      }
-      setComposerError(null)
-      const detail = await fetchConversationDetail(conversationId)
-      const nextItems = buildChatItemsFromConversationHistory(detail.messages)
-      loadConversation({ conversationId: detail.conversationId, items: nextItems })
-      chatClient.disconnect()
-      chatClient.connect({ conversationId: detail.conversationId })
-      setMobileSidebarOpen(false)
-    },
-    [disableSwitching, loadConversation],
-  )
-
   return (
     <div className="flex h-full overflow-hidden bg-zinc-950 text-zinc-100">
-      <ChatSidebar
-        activeConversationId={activeConversationId}
-        mobileVisible={mobileSidebarOpen}
-        onCloseMobile={() => setMobileSidebarOpen(false)}
-        sessionEntries={sessionEntries}
-        disableSwitching={disableSwitching}
-        onNewConversation={handleNewConversation}
-        onSelectConversation={(conversationId) => void handleSelectConversation(conversationId)}
-      />
-
       <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-zinc-950">
         <header className="border-b border-zinc-800/80 px-4 py-3">
           <div className="flex items-center justify-between gap-4">
             <div className="flex min-w-0 items-center gap-2">
-              <Button
-                className="rounded-full lg:hidden"
-                onClick={() => setMobileSidebarOpen(true)}
-                size="icon-sm"
-                type="button"
-                variant="ghost"
-              >
-                <PanelLeft />
-              </Button>
               <div className="min-w-0">
-                <div className="truncate text-sm font-medium text-zinc-100">{activeConversationTitle}</div>
+                <div className="truncate text-sm font-medium text-zinc-100">对话</div>
                 <div className="mt-1 text-xs text-zinc-500">
                   {isGenerating ? '生成中' : ''}
                 </div>
@@ -319,7 +184,7 @@ function App() {
                       今天想聊点什么？
                     </div>
                     <div className="mt-4 text-sm leading-6 text-zinc-500">
-                      可以直接继续历史会话，也可以新建一个对话开始新的任务。
+                      直接开聊就行。
                     </div>
                   </div>
                 </section>

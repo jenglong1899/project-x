@@ -20,12 +20,12 @@ class ResumeConversationTests(unittest.TestCase):
             )
             store.start_with_first_user_message(user_content="hello")
             store.append_message({"role": "assistant", "content": "hi"})
-            conversation_id = store.conversation_id
+            conversation_file_name = store.conversation_file_name
 
             stored_files = list(originals_dir.glob("*.json"))
             self.assertEqual(len(stored_files), 1)
             file_path = stored_files[0]
-            self.assertEqual(file_path.name, conversation_id)
+            self.assertEqual(file_path.name, conversation_file_name)
 
             agent = Agent(
                 name="demo",
@@ -36,7 +36,7 @@ class ResumeConversationTests(unittest.TestCase):
             )
 
             with mock.patch("src.conversation_store.ORIGINALS_DIR", originals_dir):
-                agent.resume_conversation(conversation_id=conversation_id)
+                agent.resume_conversation(conversation_file_name=conversation_file_name)
 
             self.assertEqual(agent._system_instruction, "system-old")
             self.assertEqual(agent._user_instruction, "user-old")
@@ -53,7 +53,7 @@ class ResumeConversationTests(unittest.TestCase):
             payload = json.loads(file_path.read_text(encoding="utf-8"))
             self.assertEqual(payload["messages"][-1]["role"], "user")
             self.assertEqual(payload["messages"][-1]["content"], "next")
-            self.assertIn("timestamp", payload["messages"][-1]["meta"])
+            self.assertNotIn("meta", payload["messages"][-1])
 
     def test_resume_conversation_rejects_path_like_id(self) -> None:
         agent = Agent(
@@ -64,7 +64,7 @@ class ResumeConversationTests(unittest.TestCase):
             tools=[],
         )
         with self.assertRaisesRegex(ValueError, "不允许包含路径"):
-            agent.resume_conversation(conversation_id="../evil")
+            agent.resume_conversation(conversation_file_name="../evil")
 
     def test_resume_conversation_restores_memory_manager_state(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -89,7 +89,7 @@ class ResumeConversationTests(unittest.TestCase):
             )
 
             with mock.patch("src.conversation_store.ORIGINALS_DIR", originals_dir):
-                agent.resume_conversation(conversation_id=store.conversation_id)
+                agent.resume_conversation(conversation_file_name=store.conversation_file_name)
 
         self.assertEqual(agent._worker_turns_since_memory_manager, 7)
         self.assertEqual(agent._memory_manager_awaken_count, 2)

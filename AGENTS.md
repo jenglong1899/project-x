@@ -6,17 +6,17 @@
 - **核心抽象是 `Agent`**：`backend/src/core/agent.py` 对外暴露一个最小接口（排队 user message → `async run()` 生成 → 工具调用 → 持久化）；其他模块基本都在为它服务。
 - **`AgentController` 是驱动层**：`backend/src/core/agent_controller.py` 负责“提交消息 + 确保后台运行 + 防重入 + 跑到 idle”，适配层（如 WebSocket）只和它交互，避免直接操作 `Agent`。
 - **`WebSocketChatSession` 是适配层**：`backend/src/websocket_chat_session.py` 通过 `AgentController` 驱动 agent（busy/idle/turn 完成回调），并把回调投影成前端事件（assistant delta / tool card / committed 等）。
-- **`ConversationStore` 是持久化层**：`backend/src/conversation_store.py` 把对话落地到 `~/.project-x/memories/originals/*.json`，并提供 list/detail 所需字段（`displayName`/`lastChatTime`）。
+- **`ConversationStore` 是持久化层**：`backend/src/conversation_store.py` 把对话落地到 `~/.project-x/memories/originals/*.json`，并负责追加消息与恢复历史 messages。
 - **system/user instruction 由 prompts 构建**：`backend/src/prompts/builder.py` 会读取/确保 `~/.project-x/memories/summaries/main.md`，`reset_context` 会触发“新会话 + 重新加载指令”的编排。
 
 数据流（大致）：
 `frontend` → `/ws` → `WebSocketChatSession.submit_user_message()` → `Agent.enqueue_user_message()` → `await Agent.run()` → `await agent_turn.stream()` →（可选）`await execute_tool_calls()` → `ConversationStore.append_message()` → 事件经 `ChatEventProjector` 回前端  
-历史会话：`/conversations` / `/conversations/{conversationId}` 读取 `ConversationStore`。
+备注：产品已移除“历史会话列表/切换/详情”能力；前端只走 `/ws`，后端在建立连接时自动恢复最近的 conversation segment（没有才 new）。
 
 ## 快速定位表（改功能先看这里）
 - 想改“对外能力/时序/回调/持久化规则”：`backend/src/core/agent.py`
 - 想改“模型流式/工具流式/工具执行规则（含 reset_context 特判）”：`backend/src/core/agent_turn.py`
-- 想改“会话文件格式/displayName/lastChatTime/落盘时机”：`backend/src/conversation_store.py`
+- 想改“会话文件格式/落盘时机”：`backend/src/conversation_store.py`
 - 想改“WebSocket 事件长什么样/事件边界/assistant ↔ tool 拆分/reset.context 行为”：`backend/src/websocket_chat_session.py`
 - 想改“HTTP API（会话列表/详情）或 WebSocket 路由”：`backend/src/web_app.py`
 - 想改“模型选择/API key/Mock”：`backend/src/core/model_config.py`
@@ -24,13 +24,12 @@
 - 想改“前端协议类型/校验”：`frontend/src/features/chat/protocol.ts`
 - 想改“前端状态机/事件投影逻辑”：`frontend/src/features/chat/store.ts`
 - 想改“WS 客户端连接/重连/发送/事件校验”：`frontend/src/features/chat/client.ts`
-- 想改“会话 HTTP API + 历史转前端 items”：`frontend/src/features/chat/conversations.ts`
 
 ## 开发与运行（常用）
 - 一键启动：根目录 `dev.sh`（前端 `npm run dev` + 后端 `PYTHONPATH=. uv run python main.py`）
 - 后端入口：`backend/main.py`（`PROJECT_X_HOST`/`PROJECT_X_PORT`）
 - 后端测试：在 `backend/` 下运行 `PYTHONPATH=. uv run --with pytest python -m pytest -q`（沙盒内若遇到 uv cache 写入失败，改为允许非沙盒执行）
-- 前端开发代理：`frontend/vite.config.ts` 代理 `/healthz`、`/conversations`、`/ws` 到 `PROJECT_X_BACKEND_ORIGIN`（默认 `http://127.0.0.1:8000`）
+- 前端开发代理：`frontend/vite.config.ts` 代理 `/healthz`、`/ws` 到 `PROJECT_X_BACKEND_ORIGIN`（默认 `http://127.0.0.1:8000`）
 - 回调约定：可选回调参数如果允许为 `None`，初始化时用 `backend/src/commons.py` 里的 `noop` 替代，避免到处写 `if callback is None`。
 
 ## 后端（围绕 Agent 的三层）
@@ -55,8 +54,7 @@
 - 工具流式：`on_ai_tool_call_started` / `on_ai_tool_call_arguments_delta` / `on_ai_tool_call_finished`
 - 工具结果：`on_tool_result(tool_call_id, result_json_str)`
 - 队列提交：`on_queued_user_msg_committed(frontend_msg_id=...)`
-- 首次持久化：`on_conversation_persisted(conversation_id, display_name)`
-- 重置上下文：`on_reset_context(conversation_id, display_name)`
+- 重置上下文：`on_reset_context(conversation_file_name)`
 
 ### 2) 回合引擎与工具系统（`backend/src/core/agent_turn.py`）
 - `stream()`：通过 `litellm.acompletion(..., stream=True)` 拉流（async），拼装最终 assistant message（OpenAI 风格 dict）
@@ -70,10 +68,8 @@
 ### 3) 持久化（`backend/src/conversation_store.py`）
 - 落地目录：`~/.project-x/memories/originals/`（可用 `PROJECT_X_MEMORIES_ROOT` 覆盖根目录，见 `backend/src/commons.py`）
 - `conversation_id`：文件名 `<coolname>-<UTC时间戳>.json`
-- JSON 结构：`{ meta: { "display-name": str }, messages: [ {role, content, ..., meta:{timestamp}} ] }`
-- `displayName`：默认取首条 committed 的 user message，最多 20 字符，超出补 `...`
-- `lastChatTime`：取最后一条持久化消息的 `meta.timestamp`（UTC ISO），`GET /conversations` 用它倒序排序
-- 给模型用的 runtime messages 会 strip 掉每条 message 的 `meta`
+- JSON 结构：`{ meta: { "memory-manager": {...} }, messages: [ {role, content, ...} ] }`
+- 给模型用的 runtime messages 会 strip 掉每条 message 的 `meta`（目前消息本身不带 meta）
 
 ## 服务层：把 Agent 暴露给前端
 
@@ -86,16 +82,14 @@
 
 ### HTTP + WS 路由（`backend/src/web_app.py`、`backend/main.py`）
 - `GET /healthz`
-- `GET /conversations`：会话列表（按 `lastChatTime` 倒序）
-- `GET /conversations/{conversationId}`：会话详情（含历史 messages）
 - `WS /ws`：收 `send_user_message` / `ping`（命令协议：`backend/src/web_protocol.py`）
 
 ## 前端（保持“简单单栏聊天”的约束）
 
 ### 核心文件
 - 页面布局/交互：`frontend/src/App.tsx`（侧栏会话 + 主区时间线 + 底部输入；会话列表仅启动时拉取一次，持久化后通过事件 upsert）
-- 协议类型：`frontend/src/features/chat/protocol.ts`（zod 校验；事件含 `reset.context`、`conversation.persisted` 等）
-- Store：`frontend/src/features/chat/store.ts`（核心状态：`items[]`、`pendingUserMessages[]`、`isGenerating`、`activeConversationId`、`persistedConversation`）
+- 协议类型：`frontend/src/features/chat/protocol.ts`（zod 校验；事件含 `reset.context` 等）
+- Store：`frontend/src/features/chat/store.ts`（核心状态：`items[]`、`pendingUserMessages[]`、`isGenerating`）
 - WS 客户端：`frontend/src/features/chat/client.ts`（切换会话会重连 `/ws?conversationId=...`；忽略过期 socket 事件以兼容 StrictMode）
 - 历史会话：`frontend/src/features/chat/conversations.ts`（HTTP list/detail + 把后端历史 messages 投影成平铺 `ChatItem[]`）
 - 组件：`frontend/src/features/chat/components/*`（assistant reasoning 默认展开；tool result 过长会折叠）
@@ -135,14 +129,16 @@
   - `backend/src/websocket_chat_session.py` 创建默认 Agent 时会先 `read_main_memory()`，把本段上下文初始 main memory 快照传给 Agent。
   - `backend/src/conversation_store.py` 已加入 memory manager 计数 meta 持久化：`meta["memory-manager"]["turns-since-memory-manager"]` 和 `meta["memory-manager"]["awaken-count"]`；用户觉得 dataclass 封装更丑，所以已回退为直接 dict 读写。
   - 旧 `reset_context` tool 路径已移除：`create_default_agent()` 默认 tools 里不再包含 `RESET_CONTEXT_TOOL`；`backend/src/tools/reset_context.py` 只保留 `RESET_CONTEXT_AUTO_REMINDER` 常量；`backend/src/core/agent_turn.py` 的 `execute_tool_calls()` 只返回 `ToolExecutionOutcome(tool_messages=...)`，不再返回 orchestration directive。
-  - 已提交测试 `partial-test: cover memory manager magic word detection`，新增 `backend/tests/test_memory_manager.py`，覆盖 MagicWord 独立行触发、句子中提到不触发、非文本 content 不触发。
-  - 曾验证：`cd backend && PYTHONPATH=. uv run --with pytest python -m pytest -q tests/test_agent_callbacks.py tests/test_bash_tool.py tests/test_websocket_chat_session.py tests/test_conversation_store.py tests/test_resume_conversation.py` 通过 27 个测试；新增 memory manager 测试和 agent callback 测试一起跑通过 14 个测试。
-- 当前工作区：
-  - 只有 `docs/zh/plans/2026-04-29-memory-forked-subagent.md` 未提交。该改动是把计划文档从旧方案同步到当前实现：TODO memory diff 改为 `MEMORY_MAIN.md` diff；`loaded_todo_memory_content` 改为 `loaded_main_memory_content`；`Agent._reset_context()` 改为 `_start_new_context_with_auto_reminder()`；MagicWord 说明改为“不剥离 content”；`execute_tool_calls()` 说明改为只返回 tool messages。
+  - 已补测试并由用户陆续提交：memory manager MagicWord 检测、prompt builder 记忆 diff、按 tool turn interval 唤醒、resume conversation 恢复 memory manager 计数、`create_default_agent()` 传入 main memory 快照且默认 tools 不含 `reset_context`。
+  - `ConversationStore` 已新增“找最新 conversation segment”的能力；用户纠正后改成解析 conversation 文件名里的时间戳，而不是依赖将来要废掉的 `lastChatTime`。conversation 文件名格式是 `cool-name-YYYYMMDDTHHMMSSffffffZ.json`。
+  - 用户指出 `conversation_id` 实际就是带 `.json` 后缀的文件名，持久化层已改名为 `conversation_file_name`：`build_conversation_file_name()`、`load_from_conversation_file_name()`、`find_latest_conversation_file_name()`、`ConversationStore.conversation_file_name`。但 HTTP/WS payload、前端协议、`Agent.resume_conversation(conversation_id=...)`、回调参数里仍叫 `conversationId`/`conversation_id`，用户明确要求下一步也要改掉这些协议命名。
+- 当前工作区/上下文注意：
+  - 用户通常会在每个小步确认后自行提交；不要假设上一步未提交，必要时再查工作区。
+  - 2026-04-29：已按产品决策移除前端会话列表/切换/新建 UI；删除 `/conversations*` HTTP 路由；前端永远不传 conversation id；后端在 WS 连接建立时自动恢复最近 conversation segment（没有才 new）。
 - 下一步建议：
-  - 先让用户确认计划文档同步改动；确认后提交一个 `partial-doc:` commit。
-  - 继续按小步推进：可选下一步是补 prompt builder 记忆 diff 测试（首次唤醒不输出 diff、非首次输出 unified diff、无差异输出 no difference hint），或检查 `Agent` 的 memory manager 触发频率测试是否足够。
-
-
-## 供应链安全备忘
-- LiteLLM 供应链投毒事件（2026-03-24）：受影响版本为 `litellm==1.82.7` 与 `litellm==1.82.8`（其中 `1.82.8` 包含会在 Python 启动时自动执行的恶意 `.pth`）。本项目当前 `backend/uv.lock` 锁定为 `litellm==1.82.0`，并在 `backend/pyproject.toml` 显式排除了 `1.82.7/1.82.8`。
+  - 把后端现存的 `conversation_id` 命名（以及对外事件字段里的 `conversationId`）系统性重命名为 `conversation_file_name`/`conversationFileName`，以匹配真实含义（文件名，含 `.json` 后缀）。前端已不再依赖该字段，但内部代码/测试/日志/类型仍应统一。
+  - 进展（2026-04-29）：
+    - 已完成后端侧对外字段/回调参数的重命名：统一使用 `conversation_file_name`（WS 事件字段为 `conversationFileName`），并清理了 `conversationId`/`conversation_id` 残留。
+    - 按产品目标“单栏无限长对话，不暴露会话持久化概念”，已删除 `conversation.persisted` 事件整条链路（`Agent` 不再对外回调，`WebSocketChatSession` 不再发送该事件）。
+    - `reset.context` 事件仍保留且携带 `conversationFileName`，用于让前端在 reset 后清空聊天并切到新 segment 语义。
+    - 后端测试已通过：`backend/` 下 `PYTHONPATH=. uv run --with pytest python -m pytest -q` -> `40 passed`。

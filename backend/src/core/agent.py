@@ -37,12 +37,8 @@ class OnQueuedUserMsgCommitted(Protocol):
     def __call__(self, *, frontend_msg_id: str) -> None: ...
 
 
-class OnConversationPersisted(Protocol):
-    def __call__(self, *, conversation_id: str, display_name: str) -> None: ...
-
-
 class OnResetContext(Protocol):
-    def __call__(self, *, conversation_id: str, display_name: str) -> None: ...
+    def __call__(self, *, conversation_file_name: str) -> None: ...
 
 
 class Agent:
@@ -58,7 +54,6 @@ class Agent:
                  on_tool_result: OnToolResult | None = None,
                  on_user_msg_enqueued: OnUserMsgEnqueued | None = None,
                  on_queued_user_msg_committed: OnQueuedUserMsgCommitted | None = None,
-                 on_conversation_persisted: OnConversationPersisted | None = None,
                  on_reset_context: OnResetContext | None = None,
                  memory_manager_runner: MemoryForkedSubagentRunnerLike | None = None,
                  memory_manager_turn_interval: int = MEMORY_MANAGER_TURN_INTERVAL,
@@ -87,7 +82,6 @@ class Agent:
 
         self._on_user_msg_enqueued = on_user_msg_enqueued or noop
         self._on_queued_user_msg_committed = on_queued_user_msg_committed or noop
-        self._on_conversation_persisted = on_conversation_persisted or noop
         self._on_reset_context = on_reset_context or noop
 
         self._user_msg_queue: deque[QueuedUserMessage] = deque()
@@ -111,11 +105,11 @@ class Agent:
             user_instruction=self._user_instruction,
         )
 
-    def resume_conversation(self, *, conversation_id: str) -> None:
+    def resume_conversation(self, *, conversation_file_name: str) -> None:
         if self._user_msg_queue:
             raise RuntimeError("resume_conversation 之前不能有排队中的 user message")
 
-        store = ConversationStore.load_from_conversation_id(conversation_id=conversation_id)
+        store = ConversationStore.load_from_conversation_file_name(conversation_file_name=conversation_file_name)
         messages = store.build_messages_from_history()
         if len(messages) < 2:
             raise ValueError("缺少 system/user level instruction，无法恢复")
@@ -156,11 +150,6 @@ class Agent:
             # 然后用户 resume conversation ，结果发现这玩意是空的，这就很不合理。
             if not self._conversation_store.has_persisted_conversation():
                 self._conversation_store.start_with_first_user_message(user_content=item.content)
-                # 首次持久化后，把 conversationId 通知到外层（例如 WebSocket 层），用于前端展示/列表更新。
-                self._on_conversation_persisted(
-                    conversation_id=self._conversation_store.conversation_id,
-                    display_name=self._conversation_store.display_name,
-                )
                 self._persist_memory_manager_state()
             else:
                 self._conversation_store.append_message(user_message)
@@ -238,7 +227,6 @@ class Agent:
 
         if self._conversation_store is None:
             raise RuntimeError("conversation_store 未初始化，无法 reset_context")
-        display_name = self._conversation_store.display_name or "新对话"
 
         self._system_instruction = build_system_level_instruction_zh()
         self._user_instruction = build_user_level_instruction_zh()
@@ -253,12 +241,10 @@ class Agent:
         # 这样 conversation 文件会立刻创建且模型也能看到 reminder。
         self._conversation_store.start_with_first_user_message(
             user_content=auto_reminder,
-            display_name=display_name,
         )
         self._messages = self._conversation_store.build_messages_from_history()
         self._on_reset_context(
-            conversation_id=self._conversation_store.conversation_id,
-            display_name=self._conversation_store.display_name,
+            conversation_file_name=self._conversation_store.conversation_file_name,
         )
         # 接下来 run() 会继续 while 循环，直接以 auto_reminder 为最后一条 user message 进行下一轮模型调用。
 

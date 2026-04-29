@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 from uuid import uuid4
 
-from src.core.agent import Agent, OnConversationPersisted, OnQueuedUserMsgCommitted, OnResetContext
+from src.core.agent import Agent, OnQueuedUserMsgCommitted, OnResetContext
 from src.core.agent_controller import AgentController
 from src.core.agent_turn import (
     OnAiContentDelta,
@@ -31,6 +31,7 @@ from src.prompts.builder import (
     build_user_level_instruction_zh,
     read_main_memory,
 )
+from src.conversation_store import ConversationStore
 from src.tools.bash import create_bash_tool
 from src.tools.reset_context import RESET_CONTEXT_AUTO_REMINDER
 
@@ -51,7 +52,7 @@ MODEL_CONFIGS: dict[str, ModelConfig] = {
 class AgentLike(Protocol):
     def new_conversation(self) -> None: ...
 
-    def resume_conversation(self, *, conversation_id: str) -> None: ...
+    def resume_conversation(self, *, conversation_file_name: str) -> None: ...
 
     def enqueue_user_message(self, *, frontend_msg_id: str, user_message: str) -> None: ...
 
@@ -69,7 +70,6 @@ class AgentCallbacks:
     on_ai_tool_call_finished: OnAiToolCallFinished
     on_tool_result: OnToolResult
     on_queued_user_msg_committed: OnQueuedUserMsgCommitted
-    on_conversation_persisted: OnConversationPersisted
     on_reset_context: OnResetContext
 
 
@@ -105,7 +105,6 @@ def create_default_agent(*, callbacks: AgentCallbacks) -> Agent:
         on_ai_tool_call_finished=callbacks.on_ai_tool_call_finished,
         on_tool_result=callbacks.on_tool_result,
         on_queued_user_msg_committed=callbacks.on_queued_user_msg_committed,
-        on_conversation_persisted=callbacks.on_conversation_persisted,
         on_reset_context=callbacks.on_reset_context,
     )
 
@@ -115,7 +114,6 @@ class AgentControllerFactory(Protocol):
         self,
         *,
         callbacks: AgentCallbacks,
-        conversation_id: str | None,
         is_closed: Callable[[], bool],
         on_agent_became_busy: Callable[[], None],
         on_agent_turn_completed: Callable[[], None],
@@ -127,13 +125,15 @@ class AgentControllerFactory(Protocol):
 def create_agent_controller(
     *,
     callbacks: AgentCallbacks,
-    conversation_id: str | None,
     is_closed: Callable[[], bool],
     on_agent_became_busy: Callable[[], None],
     on_agent_turn_completed: Callable[[], None],
     on_agent_became_idle: Callable[[], None],
     on_error: Callable[[Exception], None],
 ) -> AgentController:
+    # 产品形态上不再暴露“会话列表/切换/显式恢复某个会话文件”给前端：
+    # WebSocket 连接建立时永远走“自动恢复最近的 conversation segment”，
+    # 如果本地还没有任何对话文件，则退化为 new_conversation。
     controller = AgentController(
         agent=create_default_agent(callbacks=callbacks),
         is_closed=is_closed,
@@ -142,7 +142,8 @@ def create_agent_controller(
         on_agent_became_idle=on_agent_became_idle,
         on_error=on_error,
     )
-    controller.start(conversation_id=conversation_id)
+    conversation_file_name = ConversationStore.find_latest_conversation_file_name()
+    controller.start(conversation_file_name=conversation_file_name)
     return controller
 
 
@@ -345,12 +346,10 @@ class WebSocketChatSession:
         self,
         *,
         agent_controller_factory: AgentControllerFactory | None = None,
-        conversation_id: str | None = None,
     ) -> None:
         """
         WebSocket 连接的会话编排器：桥接 Agent（agent.py）和 WebSocket。
-        :param agent_factory:
-        :param conversation_id: 不填则 new_conversation，填写则 resume_conversation
+        :param agent_controller_factory: 用于测试注入
         """
         self._outgoing_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
         self._closed = False
@@ -365,13 +364,11 @@ class WebSocketChatSession:
             on_ai_tool_call_finished=self._projector.on_ai_tool_call_finished,
             on_tool_result=self._projector.on_tool_result,
             on_queued_user_msg_committed=self._on_queued_user_msg_committed,
-            on_conversation_persisted=self._on_conversation_persisted,
             on_reset_context=self._on_reset_context,
         )
         if agent_controller_factory is None:
             self._agent_controller = create_agent_controller(
                 callbacks=callbacks,
-                conversation_id=conversation_id,
                 is_closed=lambda: self._closed,
                 on_agent_became_busy=self._projector.on_agent_became_busy,
                 on_agent_turn_completed=self._projector.on_agent_turn_completed,
@@ -381,7 +378,6 @@ class WebSocketChatSession:
         else:
             self._agent_controller = agent_controller_factory(
                 callbacks=callbacks,
-                conversation_id=conversation_id,
                 is_closed=lambda: self._closed,
                 on_agent_became_busy=self._projector.on_agent_became_busy,
                 on_agent_turn_completed=self._projector.on_agent_turn_completed,
@@ -416,20 +412,10 @@ class WebSocketChatSession:
             return
         self._outgoing_queue.put_nowait(event)
 
-    def _on_conversation_persisted(self, *, conversation_id: str, display_name: str) -> None:
-        self._emit_sync(
-            {
-                "type": "conversation.persisted",
-                "conversationId": conversation_id,
-                "displayName": display_name,
-            }
-        )
-
     def _on_reset_context(
         self,
         *,
-        conversation_id: str,
-        display_name: str,
+        conversation_file_name: str,
     ) -> None:
         # 这里选择由后端直接推送 auto_reminder 的 user.message.committed，而不是让前端收到 reset.context 后再去 HTTP 拉取会话详情：
         # - 否则前端会出现“正在流式追加 items”与“loadConversation 覆盖 items”的竞态，容易丢流式内容；
@@ -441,8 +427,7 @@ class WebSocketChatSession:
         self._emit_sync(
             {
                 "type": "reset.context",
-                "conversationId": conversation_id,
-                "displayName": display_name,
+                "conversationFileName": conversation_file_name,
             }
         )
         self._emit_sync(

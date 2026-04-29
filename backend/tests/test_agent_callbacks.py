@@ -335,13 +335,14 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                 "content": "done",
             },
         )
-        self.assertEqual(stored_payload["meta"]["display-name"], "第一条用户消息已经超过二十个字符限制了并...")
+        self.assertIsInstance(stored_payload["meta"], dict)
+        self.assertNotIn("display-name", stored_payload["meta"])
         self.assertEqual(
             [message["role"] for message in stored_payload["messages"]],
             ["system", "user", "user", "assistant", "tool", "assistant"],
         )
         self.assertEqual(stored_payload["messages"][4]["content"], "{\"echoed\": 7}")
-        self.assertTrue(all("timestamp" in message["meta"] for message in stored_payload["messages"]))
+        self.assertTrue(all("meta" not in message for message in stored_payload["messages"]))
 
     async def test_append_runtime_message_requires_persisted_conversation(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -417,8 +418,8 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     system_instruction="system-1",
                     user_instruction="user-1",
                     tools=[self._echo_tool()],
-                    on_reset_context=lambda *, conversation_id, display_name: reset_events.append(
-                        {"conversation_id": conversation_id, "display_name": display_name}
+                    on_reset_context=lambda *, conversation_file_name: reset_events.append(
+                        {"conversation_file_name": conversation_file_name}
                     ),
                     memory_manager_runner=runner,
                     memory_manager_turn_interval=1,
@@ -462,7 +463,6 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, final_ai_msg)
         self.assertEqual(len(runner.calls), 1)
         self.assertEqual(len(reset_events), 1)
-        self.assertEqual(reset_events[0]["display_name"], "hello")
         self.assertEqual(agent._messages[0], {"role": "system", "content": "system-2"})
         self.assertEqual(agent._messages[1], {"role": "user", "content": "user-2"})
         self.assertEqual(agent._messages[2], {"role": "user", "content": RESET_CONTEXT_AUTO_REMINDER})

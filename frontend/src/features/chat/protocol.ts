@@ -10,16 +10,9 @@ const agentBecameIdleEventSchema = z.object({
   type: z.literal('agent.became.idle'),
 })
 
-const conversationPersistedEventSchema = z.object({
-  type: z.literal('conversation.persisted'),
-  conversationId: nonEmptyString,
-  displayName: z.string(),
-})
-
 const resetContextEventSchema = z.object({
   type: z.literal('reset.context'),
-  conversationId: nonEmptyString,
-  displayName: z.string(),
+  conversationFileName: nonEmptyString,
 })
 
 const userMessageCommittedEventSchema = z.object({
@@ -81,7 +74,6 @@ const errorEventSchema = z.object({
 export const serverEventSchema = z.discriminatedUnion('type', [
   agentBecameBusyEventSchema,
   agentBecameIdleEventSchema,
-  conversationPersistedEventSchema,
   resetContextEventSchema,
   userMessageCommittedEventSchema,
   assistantMessageStartedEventSchema,

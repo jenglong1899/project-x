@@ -4,18 +4,14 @@ import { useChatStore } from './store'
 type ChatClientOptions = {
   url?: string
   path?: string
-  conversationId?: string | null
 }
 
-function resolveWebSocketUrl({ url, path = '/ws', conversationId }: ChatClientOptions): string {
+function resolveWebSocketUrl({ url, path = '/ws' }: ChatClientOptions): string {
   if (url) {
     return url
   }
 
   const resolvedUrl = new URL(path, window.location.href)
-  if (conversationId) {
-    resolvedUrl.searchParams.set('conversationId', conversationId)
-  }
   if (resolvedUrl.protocol === 'http:') {
     resolvedUrl.protocol = 'ws:'
   } else if (resolvedUrl.protocol === 'https:') {
