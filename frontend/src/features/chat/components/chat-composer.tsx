@@ -1,4 +1,4 @@
-import type { FormEvent } from 'react'
+import type { ComponentProps } from 'react'
 
 import { ArrowUp, CircleAlert } from 'lucide-react'
 
@@ -9,7 +9,7 @@ type ChatComposerProps = {
   draft: string
   feedbackText: string
   onDraftChange: (value: string) => void
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void
+  onSubmit: NonNullable<ComponentProps<'form'>['onSubmit']>
 }
 
 export function ChatComposer({

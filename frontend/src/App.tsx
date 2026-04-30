@@ -1,3 +1,4 @@
+import type { ComponentProps } from 'react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 import { CircleAlert, LoaderCircle } from 'lucide-react'
@@ -13,6 +14,7 @@ import { useChatStore } from '@/features/chat/store'
 import './App.css'
 
 const SCROLL_BOTTOM_THRESHOLD_PX = 60
+type FormSubmitHandler = NonNullable<ComponentProps<'form'>['onSubmit']>
 
 function App() {
   const [draft, setDraft] = useState('')
@@ -160,7 +162,7 @@ function App() {
     return unsubscribe
   }, [requestScrollToBottom])
 
-  function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
+  const handleSubmit: FormSubmitHandler = (event) => {
     event.preventDefault()
     setComposerError(null)
 
@@ -189,7 +191,7 @@ function App() {
                 <CircleAlert className="mt-0.5 size-4 shrink-0 text-red-300" />
                 <div className="min-w-0">
                   <div className="font-medium">连接异常</div>
-                  <div className="mt-1 break-words text-red-100/80">{connectionIssueText}</div>
+                  <div className="mt-1 wrap-break-word text-red-100/80">{connectionIssueText}</div>
                 </div>
               </div>
             </div>
