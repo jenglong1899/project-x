@@ -28,7 +28,7 @@
 ## 开发与运行（常用）
 - 一键启动：根目录 `dev.sh`（前端 `npm run dev` + 后端 `PYTHONPATH=. uv run python main.py`）
 - 后端入口：`backend/main.py`（`PROJECT_X_HOST`/`PROJECT_X_PORT`）
-- 后端测试：在 `backend/` 下运行 `PYTHONPATH=. uv run --with pytest python -m pytest -q`（沙盒内若遇到 uv cache 写入失败，改为允许非沙盒执行）
+- 后端测试：在 `backend/` 下直接运行 `uv run pytest -q`；指定测试文件也用 `uv run pytest -q tests/...`，不需要写 `PYTHONPATH=.`
 - 前端开发代理：`frontend/vite.config.ts` 代理 `/healthz`、`/ws` 到 `PROJECT_X_BACKEND_ORIGIN`（默认 `http://127.0.0.1:8000`）
 - 回调约定：可选回调参数如果允许为 `None`，初始化时用 `backend/src/commons.py` 里的 `noop` 替代，避免到处写 `if callback is None`。
 
@@ -120,4 +120,4 @@
 - 初始 WS 自动恢复最近 conversation JSON 时，`Agent.start_conversation()` 会通过 `on_switch_conversation` 把用户可见历史交给 `WebSocketChatSession`，前端用 `visibleMessages` 重建时间线。
 - reset-context / memory manager auto reminder 也走同一个 `conversation.switched` 事件，auto reminder 作为 `visibleMessages` 中的 user message 呈现。
 - 已补 `backend/tests/test_websocket_chat_session.py` 覆盖“WebSocketChatSession 初始化时转发 conversation.switched 历史内容”。
-- 验证记录：`backend/` 下 `PYTHONPATH=. uv run --with pytest python -m pytest -q tests/test_websocket_chat_session.py tests/test_resume_conversation.py tests/test_agent_callbacks.py` 通过（21 passed）；`frontend/` 下 `npm run build` 通过。
+- 验证记录：`backend/` 下 `uv run pytest -q tests/test_agent_callbacks.py tests/test_resume_conversation.py tests/test_websocket_chat_session.py` 通过（21 passed）；`frontend/` 下 `npm run build` 通过。

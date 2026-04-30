@@ -87,14 +87,13 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                 agent.enqueue_user_message(frontend_msg_id="frontend-1", user_message="world")
                 self.assertEqual(list(Path(temp_dir).glob("*.json")), [])
 
-                drained = agent._safe_drain_user_message_queue()
+                agent._safe_drain_user_message_queue()
                 stored_files = list(Path(temp_dir).glob("*.json"))
 
                 self.assertEqual(len(stored_files), 1)
 
         self.assertEqual(enqueued_ids, ["frontend-1"])
         self.assertEqual(committed_ids, ["frontend-1"])
-        self.assertEqual(drained, 1)
         self.assertEqual(agent._messages[-1], {"role": "user", "content": "world"})
 
     async def test_execute_tool_calls_emits_tool_result(self) -> None:

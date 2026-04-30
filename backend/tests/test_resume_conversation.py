@@ -54,8 +54,7 @@ class StartConversationTests(unittest.TestCase):
             )
 
             agent.enqueue_user_message(frontend_msg_id="frontend-1", user_message="next")
-            drained = agent._safe_drain_user_message_queue()
-            self.assertEqual(drained, 1)
+            agent._safe_drain_user_message_queue()
 
             stored_files_after = list(originals_dir.glob("*.json"))
             self.assertEqual(stored_files_after, [file_path])

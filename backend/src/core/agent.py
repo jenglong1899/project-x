@@ -146,6 +146,11 @@ class Agent:
     def _notify_switch_conversation(self, *, messages: list[dict[str, Any]]) -> None:
         self._on_switch_conversation(visible_messages=self._visible_messages_from(messages))
 
+    def _require_conversation_store(self) -> ConversationStore:
+        if self._conversation_store is None:
+            raise RuntimeError("conversation_store 未初始化，请先调用 start_conversation()")
+        return self._conversation_store
+
     def enqueue_user_message(self, *, frontend_msg_id: str, user_message: str) -> None:
         self._user_msg_queue.append(QueuedUserMessage(frontend_msg_id, user_message))
         self._on_user_msg_enqueued(frontend_msg_id=frontend_msg_id)
@@ -153,24 +158,22 @@ class Agent:
     def has_pending_user_messages(self) -> bool:
         return bool(self._user_msg_queue)
 
-    def _safe_drain_user_message_queue(self) -> int:
-        drained = 0
+    def _safe_drain_user_message_queue(self) -> None:
+        conversation_store = self._require_conversation_store()
         while self._user_msg_queue:
             item = self._user_msg_queue.popleft()
             strip_reasoning_content_if_needed(model=self._model_config.model, messages=self._messages)
-            drained += 1
             user_message = {"role": "user", "content": item.content}
             self._messages.append(user_message)
             # 只有等到用户发送了一个消息 之后，才创建对话文件。
             # 不然用户创建了一个会话，但是没有说任何内容，然后这个对话文件就被持久化下来了，
             # 然后用户 resume conversation ，结果发现这玩意是空的，这就很不合理。
-            if not self._conversation_store.has_persisted_conversation():
-                self._conversation_store.start_with_first_user_message(user_content=item.content)
+            if not conversation_store.has_persisted_conversation():
+                conversation_store.start_with_first_user_message(user_content=item.content)
                 self._persist_memory_manager_state()
             else:
-                self._conversation_store.append_message(user_message)
+                conversation_store.append_message(user_message)
             self._on_queued_user_msg_committed(frontend_msg_id=item.frontend_msg_id)
-        return drained
 
     def _persist_memory_manager_state(self) -> None:
         if self._conversation_store is None:
@@ -205,7 +208,7 @@ class Agent:
         # 这个函数被用的地方都是在 run 函数的后方，
         # run开头就drain user message，这函数出来之后一定是已经有持久化文件了。
         self._messages.append(message)
-        self._conversation_store.append_message(message)
+        self._require_conversation_store().append_message(message)
 
     @staticmethod
     async def _safe_stream(*, model_config: ModelConfig,
@@ -249,31 +252,30 @@ class Agent:
         self._loaded_main_memory_content = read_main_memory()
         self._worker_turns_since_memory_manager = 0
         self._memory_manager_awaken_count = 0
-        auto_reminder = RESET_CONTEXT_AUTO_REMINDER
 
-        # 用 auto_reminder 作为新会话的第一条 user message，
-        # 这样 conversation 文件会立刻创建且模型也能看到 reminder。
         self._messages = [
             {"role": "system", "content": self._system_instruction},
             {"role": "user", "content": self._user_instruction},
         ]
-        self._conversation_store = ConversationStore(
+        conversation_store = ConversationStore(
             system_instruction=self._system_instruction,
             user_instruction=self._user_instruction,
         )
-        self._conversation_store.start_with_first_user_message(
-            user_content=auto_reminder,
+        # 用 auto_reminder 作为新会话的第一条 user message，
+        # 这样 conversation 文件会立刻创建且模型也能看到 reminder。
+        conversation_store.start_with_first_user_message(
+            user_content=RESET_CONTEXT_AUTO_REMINDER
         )
-        self._messages = self._conversation_store.build_messages_from_history()
+        self._conversation_store = conversation_store
+        self._messages = conversation_store.build_messages_from_history()
         self._notify_switch_conversation(messages=self._messages)
         # 接下来 run() 会继续 while 循环，直接以 auto_reminder 为最后一条 user message 进行下一轮模型调用。
 
     async def run(self) -> dict[str, Any]:
-        if self._conversation_store is None:
-            raise RuntimeError("conversation_store 未初始化，请先调用 start_conversation()")
+        conversation_store = self._require_conversation_store()
 
         self._safe_drain_user_message_queue()
-        if not self._conversation_store.has_persisted_conversation():
+        if not conversation_store.has_persisted_conversation():
             # 显式校验：如果没有待处理的 user message，就不应该进入模型生成路径。
             # 否则会进入 _append_runtime_message -> ConversationStore.append_message，最终抛出更隐晦的异常。
             raise RuntimeError("conversation 尚未开始：没有待处理的 user message，请先 enqueue_user_message()")
