@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-import { CircleAlert } from 'lucide-react'
+import { CircleAlert, LoaderCircle } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { chatClient } from '@/features/chat/client'
@@ -22,6 +22,7 @@ function App() {
   const errorMessage = useChatStore((state) => state.errorMessage)
   const items = useChatStore((state) => state.items)
   const pendingUserMessages = useChatStore((state) => state.pendingUserMessages)
+  const isGenerating = useChatStore((state) => state.isGenerating)
 
   const feedbackText =
     composerError || '当 AI 用非常自信的语气回答的时候，也不代表其说的话是真的，请核查。'
@@ -31,6 +32,30 @@ function App() {
       : connectionStatus === 'closed'
         ? 'WebSocket 连接已断开。'
         : null
+
+  // 只看最后一条用户消息之后的 assistant/tool 内容，避免历史消息误判成当前输出；
+  // 第一个 chunk 或工具事件抵达后，占位就可以消失，不必等整轮结束。
+  let lastUserItemIndex = -1
+  for (let index = items.length - 1; index >= 0; index -= 1) {
+    if (items[index].kind === 'user') {
+      lastUserItemIndex = index
+      break
+    }
+  }
+  const hasCurrentAssistantOutput =
+    lastUserItemIndex !== -1 &&
+    items.slice(lastUserItemIndex + 1).some((item) => {
+      if (item.kind === 'assistant') {
+        return Boolean(item.reasoning || item.text)
+      }
+
+      if (item.kind === 'tool') {
+        return Boolean(item.toolName || item.args || item.result)
+      }
+
+      return false
+    })
+  const shouldShowGeneratingPlaceholder = isGenerating && !hasCurrentAssistantOutput
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const scrollToBottomRafIdRef = useRef<number | null>(null)
@@ -173,25 +198,33 @@ function App() {
           <div ref={scrollRef} className="h-full overflow-auto px-4 py-6">
             <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
               {items.length > 0 ? (
-                items.map((item) => {
-                  if (item.kind === 'user') {
-                    return <UserTurnBubble key={item.id} item={item} />
-                  }
+                <>
+                  {items.map((item) => {
+                    if (item.kind === 'user') {
+                      return <UserTurnBubble key={item.id} item={item} />
+                    }
 
-                  if (item.kind === 'assistant') {
-                    return <AssistantTurnBubble key={item.id} item={item} />
-                  }
+                    if (item.kind === 'assistant') {
+                      return <AssistantTurnBubble key={item.id} item={item} />
+                    }
 
-                  return <ToolCallCard key={item.id} item={item} />
-                })
+                    return <ToolCallCard key={item.id} item={item} />
+                  })}
+
+                  {shouldShowGeneratingPlaceholder ? (
+                    <article className="flex justify-start">
+                      <div className="flex max-w-[85%] items-center gap-3 rounded-md bg-zinc-900 p-3 text-sm text-zinc-400 ring-1 ring-zinc-800">
+                        <LoaderCircle className="size-4 animate-spin text-zinc-500" />
+                        <span>正在等待 AI 响应…</span>
+                      </div>
+                    </article>
+                  ) : null}
+                </>
               ) : (
                 <section className="flex min-h-full flex-1 items-center justify-center py-16">
                   <div className="max-w-xl text-center">
                     <div className="text-3xl font-medium tracking-tight text-zinc-100 sm:text-4xl">
                       今天想聊点什么？
-                    </div>
-                    <div className="mt-4 text-sm leading-6 text-zinc-500">
-                      直接开聊就行。
                     </div>
                   </div>
                 </section>
