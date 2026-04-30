@@ -1,9 +1,9 @@
 import asyncio
 import os
 import json
-from collections.abc import Mapping
+from collections.abc import AsyncIterable, Mapping
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any, Protocol, cast
 from litellm import acompletion
 
 from src.core.model_config import ModelConfig
@@ -124,11 +124,11 @@ def _merge_tool_call_delta(tool_calls_by_index: dict[int, dict[str, Any]], tool_
     if not function_delta:
         return
 
-    function_name_delta = _get_field(function_delta, "name")
+    function_name_delta = _normalize_text_chunk(_get_field(function_delta, "name"))
     if function_name_delta:
         tool_call["function"]["name"] += function_name_delta
 
-    function_arguments_delta = _get_field(function_delta, "arguments")
+    function_arguments_delta = _normalize_text_chunk(_get_field(function_delta, "arguments"))
     if function_arguments_delta:
         tool_call["function"]["arguments"] += function_arguments_delta
 
@@ -196,7 +196,7 @@ async def stream(*, model_config: ModelConfig,
     started_tool_call_indexes: set[int] = set()
     assistant_role = "assistant"
 
-    response_stream = await acompletion(**completion_kwargs)
+    response_stream = cast(AsyncIterable[Any], await acompletion(**completion_kwargs))
     async for chunk in response_stream:
         choices = _get_field(chunk, "choices", [])
         if not choices:
@@ -233,7 +233,9 @@ async def stream(*, model_config: ModelConfig,
             )
 
             function_delta = _get_field(tool_call_delta, "function")
-            arguments_delta = _get_field(function_delta, "arguments") if function_delta else None
+            arguments_delta = _normalize_text_chunk(
+                _get_field(function_delta, "arguments") if function_delta else None
+            )
             if arguments_delta:
                 tool_call = tool_calls_by_index[tool_call_index]
                 on_ai_tool_call_arguments_delta(
