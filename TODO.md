@@ -1,3 +1,8 @@
+# 1
+把前端代码弄懂
+加一个功能：用户可以主动唤起memory manager，让它去重置。就是得显示memory manager的工作过程
+我们希望 Worker 和 Memory Manager 尽可能分离，就是 Worker 尽量不要涉及去跟记忆相关的事情。所以是用户主动去跟 Memory Manager 谈，而不是说给 Worker 一个工具让他去唤醒 Memory Manager。
+
 # memory
 
 ## 如果worker尝试去读最新版的记忆文件，要返回报错，告诉他不需要去读。到时候重置了，它会读到的。
