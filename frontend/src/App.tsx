@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 
+import { CircleAlert } from 'lucide-react'
+
 import { Button } from '@/components/ui/button'
 import { chatClient } from '@/features/chat/client'
 import { AssistantTurnBubble } from '@/features/chat/components/assistant-turn-bubble'
@@ -20,10 +22,15 @@ function App() {
   const errorMessage = useChatStore((state) => state.errorMessage)
   const items = useChatStore((state) => state.items)
   const pendingUserMessages = useChatStore((state) => state.pendingUserMessages)
-  const isGenerating = useChatStore((state) => state.isGenerating)
 
   const feedbackText =
-    composerError || errorMessage || '当 AI 用非常自信的语气回答的时候，也不代表其说的话是真的，请核查。'
+    composerError || '当 AI 用非常自信的语气回答的时候，也不代表其说的话是真的，请核查。'
+  const connectionIssueText =
+    connectionStatus === 'error'
+      ? errorMessage || 'WebSocket 连接发生错误。'
+      : connectionStatus === 'closed'
+        ? 'WebSocket 连接已断开。'
+        : null
 
   const scrollRef = useRef<HTMLDivElement>(null)
   const scrollToBottomRafIdRef = useRef<number | null>(null)
@@ -145,24 +152,24 @@ function App() {
 
   return (
     <div className="flex h-full overflow-hidden bg-zinc-950 text-zinc-100">
-      <main className="flex min-h-0 min-w-0 flex-1 flex-col bg-zinc-950">
-        <header className="border-b border-zinc-800/80 px-4 py-3">
-          <div className="flex items-center justify-between gap-4">
-            <div className="flex min-w-0 items-center gap-2">
-              <div className="min-w-0">
-                <div className="truncate text-sm font-medium text-zinc-100">对话</div>
-                <div className="mt-1 text-xs text-zinc-500">
-                  {isGenerating ? '生成中' : ''}
+      <main className="flex flex-col min-h-0 min-w-0 flex-1 bg-zinc-950">
+        <div className="relative min-h-0 flex-1">
+          {connectionIssueText ? (
+            <div className="pointer-events-none absolute right-4 top-4 z-20 max-w-[min(22rem,calc(100%-2rem))]">
+              <div
+                aria-live="polite"
+                className="pointer-events-auto flex items-start gap-3 rounded-lg border border-red-900/70 bg-red-950/95 px-4 py-3 text-sm text-red-100 shadow-2xl shadow-black/40"
+                role="status"
+              >
+                <CircleAlert className="mt-0.5 size-4 shrink-0 text-red-300" />
+                <div className="min-w-0">
+                  <div className="font-medium">连接异常</div>
+                  <div className="mt-1 break-words text-red-100/80">{connectionIssueText}</div>
                 </div>
               </div>
             </div>
-            <div className="hidden text-xs text-zinc-500 sm:block">
-              WebSocket {connectionStatus}
-            </div>
-          </div>
-        </header>
+          ) : null}
 
-        <div className="relative min-h-0 flex-1">
           <div ref={scrollRef} className="h-full overflow-auto px-4 py-6">
             <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
               {items.length > 0 ? (
