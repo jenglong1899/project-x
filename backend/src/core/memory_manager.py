@@ -70,12 +70,12 @@ class MemoryForkedSubagentRunner:
             if not assistant_message.get("tool_calls"):
                 break
 
-            tool_execution = await execute_tool_calls(
+            tool_messages = await execute_tool_calls(
                 ai_msg_dict=assistant_message,
                 tools_by_name=tools_by_name,
                 on_tool_result=noop,
             )
-            forked_messages.extend(tool_execution.tool_messages)
+            forked_messages.extend(tool_messages)
 
         content = assistant_message.get("content")
         requested_reset_context = (

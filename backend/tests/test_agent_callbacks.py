@@ -113,7 +113,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
             ],
         }
 
-        outcome = await execute_tool_calls(
+        tool_messages = await execute_tool_calls(
             ai_msg_dict=ai_msg_dict,
             tools_by_name={"echo": self._echo_tool()},
             on_tool_result=lambda **kwargs: tool_results.append(kwargs),
@@ -128,7 +128,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
             },
         )
         self.assertEqual(
-            outcome.tool_messages,
+            tool_messages,
             [
                 {
                     "role": "tool",
@@ -155,15 +155,15 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
             ],
         }
 
-        outcome = await execute_tool_calls(
+        tool_messages = await execute_tool_calls(
             ai_msg_dict=ai_msg_dict,
             tools_by_name={},
             on_tool_result=lambda **kwargs: tool_results.append(kwargs),
         )
 
-        self.assertEqual(len(outcome.tool_messages), 1)
+        self.assertEqual(len(tool_messages), 1)
         self.assertEqual(len(tool_results), 1)
-        parsed = json.loads(outcome.tool_messages[0]["content"])
+        parsed = json.loads(tool_messages[0]["content"])
         self.assertEqual(parsed["tool"], "reset_context")
         self.assertEqual(parsed["stage"], "run")
         self.assertIn("未注册的工具", parsed["error"])
@@ -185,7 +185,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
             ],
         }
 
-        outcome = await execute_tool_calls(
+        tool_messages = await execute_tool_calls(
             ai_msg_dict=ai_msg_dict,
             tools_by_name={
                 "raw_text": ToolSpec(
@@ -205,7 +205,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
         )
 
         self.assertEqual(tool_results[0]["result_json_str"], "keep this")
-        self.assertEqual(outcome.tool_messages[0]["content"], "keep this")
+        self.assertEqual(tool_messages[0]["content"], "keep this")
 
     async def test_execute_tool_calls_returns_tool_error_when_arguments_invalid_json(self) -> None:
         tool_results: list[dict[str, object]] = []
@@ -224,14 +224,14 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
             ],
         }
 
-        outcome = await execute_tool_calls(
+        tool_messages = await execute_tool_calls(
             ai_msg_dict=ai_msg_dict,
             tools_by_name={"echo": self._echo_tool()},
             on_tool_result=lambda **kwargs: tool_results.append(kwargs),
         )
 
-        self.assertEqual(len(outcome.tool_messages), 1)
-        parsed = json.loads(outcome.tool_messages[0]["content"])
+        self.assertEqual(len(tool_messages), 1)
+        parsed = json.loads(tool_messages[0]["content"])
         self.assertEqual(parsed["tool"], "echo")
         self.assertEqual(parsed["stage"], "parse")
         self.assertIn("JSONDecodeError", parsed["error"])
@@ -254,7 +254,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
             ],
         }
 
-        outcome = await execute_tool_calls(
+        tool_messages = await execute_tool_calls(
             ai_msg_dict=ai_msg_dict,
             tools_by_name={
                 "boom": ToolSpec(
@@ -267,8 +267,8 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
             on_tool_result=lambda **kwargs: tool_results.append(kwargs),
         )
 
-        self.assertEqual(len(outcome.tool_messages), 1)
-        parsed = json.loads(outcome.tool_messages[0]["content"])
+        self.assertEqual(len(tool_messages), 1)
+        parsed = json.loads(tool_messages[0]["content"])
         self.assertEqual(parsed["tool"], "boom")
         self.assertEqual(parsed["stage"], "run")
         self.assertIn("RuntimeError", parsed["error"])

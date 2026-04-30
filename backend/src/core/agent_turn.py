@@ -277,11 +277,6 @@ async def stream(*, model_config: ModelConfig,
 
     return assistant_message
 
-@dataclass(frozen=True)
-class ToolExecutionOutcome:
-    tool_messages: list[dict[str, Any]]
-
-
 class OnToolResult(Protocol):
     def __call__(self, *,
                  tool_call_id: str | None,
@@ -306,7 +301,7 @@ def _stringify_tool_result(result: Any) -> str:
 
 async def execute_tool_calls(*, ai_msg_dict: dict[str, Any],
                              tools_by_name: Mapping[str, ToolSpec],
-                             on_tool_result: OnToolResult) -> ToolExecutionOutcome:
+                             on_tool_result: OnToolResult) -> list[dict[str, Any]]:
     tool_calls = ai_msg_dict.get("tool_calls", [])
     tool_messages: list[dict[str, Any]] = []
     for index, tool_call in enumerate(tool_calls):
@@ -378,4 +373,4 @@ async def execute_tool_calls(*, ai_msg_dict: dict[str, Any],
         tool_messages.append({"role": "tool", "content": result_json_str, "tool_call_id": tool_call_id})
         on_tool_result(tool_call_id=tool_call_id, result_json_str=result_json_str)
 
-    return ToolExecutionOutcome(tool_messages=tool_messages)
+    return tool_messages

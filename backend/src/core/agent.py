@@ -295,12 +295,12 @@ class Agent:
             if not ai_msg_dict.get("tool_calls"):
                 return ai_msg_dict
 
-            tool_execution = await execute_tool_calls(
+            tool_messages = await execute_tool_calls(
                 ai_msg_dict=ai_msg_dict,
                 tools_by_name=self._tools_by_name,
                 on_tool_result=self._on_tool_result,
             )
-            for tool_message in tool_execution.tool_messages:
+            for tool_message in tool_messages:
                 self._append_runtime_message(tool_message)
 
             await self._maybe_reset_context()
