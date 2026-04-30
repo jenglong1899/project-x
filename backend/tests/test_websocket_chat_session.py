@@ -4,6 +4,7 @@ from collections.abc import Callable
 from types import SimpleNamespace
 from unittest import mock
 
+from src.core.agent_base import AgentBase
 from src.core.agent_controller import AgentController
 from src.core.model_config import ModelConfig
 from src.websocket_chat_session import AgentCallbacks, WebSocketChatSession, create_default_agent
@@ -29,7 +30,7 @@ def make_noop_agent_callbacks() -> AgentCallbacks:
     )
 
 
-class FakeAgent:
+class FakeAgent(AgentBase):
     def __init__(
         self,
         *,

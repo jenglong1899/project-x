@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from src.commons import noop
 from src.conversation_store import ConversationStore
+from src.core.agent_base import AgentBase
 from src.core.agent_turn import (
     stream,
     execute_tool_calls,
@@ -41,7 +42,7 @@ class OnSwitchConversation(Protocol):
     def __call__(self, *, visible_messages: list[dict[str, Any]]) -> None: ...
 
 
-class Agent:
+class Agent(AgentBase):
 
     def __init__(self, *, name: str, model_config: ModelConfig,
                  system_instruction: str, user_instruction: str,

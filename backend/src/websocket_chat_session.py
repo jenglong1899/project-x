@@ -47,16 +47,6 @@ MODEL_CONFIGS: dict[str, ModelConfig] = {
 }
 
 
-class AgentLike(Protocol):
-    def start_conversation(self) -> None: ...
-
-    def enqueue_user_message(self, *, frontend_msg_id: str, user_message: str) -> None: ...
-
-    def has_pending_user_messages(self) -> bool: ...
-
-    async def run(self) -> dict[str, Any]: ...
-
-
 @dataclass(frozen=True)
 class AgentCallbacks:
     on_ai_content_delta: OnAiContentDelta

@@ -7,4 +7,4 @@
 """
 
 from src.core.agent_controller import AgentController as AgentRunner
-from src.core.agent_controller import AgentLike as RunnableAgent
+from src.core.agent_base import AgentBase as RunnableAgent

@@ -1,18 +1,8 @@
 import asyncio
 from collections.abc import Callable
-from typing import Any, Protocol
 
 from src.commons import noop
-
-
-class AgentLike(Protocol):
-    def start_conversation(self) -> None: ...
-
-    def enqueue_user_message(self, *, frontend_msg_id: str, user_message: str) -> None: ...
-
-    async def run(self) -> dict[str, Any]: ...
-
-    def has_pending_user_messages(self) -> bool: ...
+from src.core.agent_base import AgentBase
 
 
 class AgentController:
@@ -27,7 +17,7 @@ class AgentController:
     def __init__(
         self,
         *,
-        agent: AgentLike,
+        agent: AgentBase,
         is_closed: Callable[[], bool],
         on_agent_became_busy: Callable[[], None] | None = None,
         on_agent_became_idle: Callable[[], None] | None = None,
