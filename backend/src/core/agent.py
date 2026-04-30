@@ -16,7 +16,7 @@ from src.core.agent_turn import (
     OnToolResult,
     ToolSpec,
 )
-from src.core.memory_manager import MemoryForkedSubagentRunner, MemoryForkedSubagentRunnerLike
+from src.core.memory_manager import MemoryForkedSubagentRunner, MemoryForkedSubagentRunnerBase
 from src.core.model_config import ModelConfig
 from src.core.policies import strip_reasoning_content_if_needed
 from src.tools.reset_context import RESET_CONTEXT_AUTO_REMINDER
@@ -56,7 +56,7 @@ class Agent(AgentBase):
                  on_user_msg_enqueued: OnUserMsgEnqueued | None = None,
                  on_queued_user_msg_committed: OnQueuedUserMsgCommitted | None = None,
                  on_switch_conversation: OnSwitchConversation | None = None,
-                 memory_manager_runner: MemoryForkedSubagentRunnerLike | None = None,
+                 memory_manager_runner: MemoryForkedSubagentRunnerBase | None = None,
                  memory_manager_turn_interval: int = MEMORY_MANAGER_TURN_INTERVAL,
                  loaded_main_memory_content: str = "",
                  ) -> None:

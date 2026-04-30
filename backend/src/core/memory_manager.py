@@ -1,5 +1,6 @@
+from abc import ABC, abstractmethod
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import Any
 
 from src.commons import noop
 from src.core.agent_turn import ToolSpec, execute_tool_calls, stream
@@ -15,7 +16,8 @@ class MemoryManagerResult:
     requested_reset_context: bool
 
 
-class MemoryForkedSubagentRunnerLike(Protocol):
+class MemoryForkedSubagentRunnerBase(ABC):
+    @abstractmethod
     async def run(
         self,
         *,
@@ -27,7 +29,7 @@ class MemoryForkedSubagentRunnerLike(Protocol):
     ) -> MemoryManagerResult: ...
 
 
-class MemoryForkedSubagentRunner:
+class MemoryForkedSubagentRunner(MemoryForkedSubagentRunnerBase):
     async def run(
         self,
         *,
