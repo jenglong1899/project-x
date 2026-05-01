@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <title>文档流里的聊天输入框实验</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: system-ui, sans-serif;
+            line-height: 1.5;
+            background: #f4f4f5;
+            color: #18181b;
+        }
+
+        main {
+            max-width: 720px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+
+        .message {
+            margin: 12px 0;
+            padding: 12px 14px;
+            border: 1px solid #d4d4d8;
+            border-radius: 8px;
+            background: white;
+        }
+
+        .chat-form {
+            display: flex;
+            gap: 8px;
+            margin-top: 24px;
+            padding: 16px;
+            border: 1px solid #a1a1aa;
+            border-radius: 8px;
+            background: #fafafa;
+        }
+
+        .chat-form input {
+            flex: 1;
+            min-width: 0;
+            padding: 10px 12px;
+            border: 1px solid #a1a1aa;
+            border-radius: 6px;
+            font: inherit;
+        }
+
+        .chat-form button {
+            padding: 10px 14px;
+            border: 0;
+            border-radius: 6px;
+            background: #18181b;
+            color: white;
+            font: inherit;
+        }
+    </style>
+</head>
+<body>
+<main>
+    <h1>普通文档流里的“聊天页面”</h1>
+    <p>
+        这个页面故意不做固定底部输入框，也不做内部滚动容器。
+        下面很多条消息会把整个 document 撑高，最后的输入框也会被推到文档底部。
+    </p>
+
+    <section aria-label="聊天消息">
+        <div class="message">第 1 条消息：这是一条模拟聊天消息。</div>
+        <div class="message">第 2 条消息：这是一条模拟聊天消息。</div>
+        <div class="message">第 3 条消息：这是一条模拟聊天消息。</div>
+        <div class="message">第 4 条消息：这是一条模拟聊天消息。</div>
+        <div class="message">第 5 条消息：这是一条模拟聊天消息。</div>
+        <div class="message">第 6 条消息：这是一条模拟聊天消息。</div>
+        <div class="message">第 7 条消息：这是一条模拟聊天消息。</div>
+        <div class="message">第 8 条消息：这是一条模拟聊天消息。</div>
+        <div class="message">第 9 条消息：这是一条模拟聊天消息。</div>
+        <div class="message">第 10 条消息：这是一条模拟聊天消息。</div>
+        <div class="message">第 11 条消息：这是一条模拟聊天消息。</div>
+        <div class="message">第 12 条消息：这是一条模拟聊天消息。</div>
+        <div class="message">第 13 条消息：这是一条模拟聊天消息。</div>
+        <div class="message">第 14 条消息：这是一条模拟聊天消息。</div>
+        <div class="message">第 15 条消息：这是一条模拟聊天消息。</div>
+        <div class="message">第 16 条消息：这是一条模拟聊天消息。</div>
+        <div class="message">第 17 条消息：这是一条模拟聊天消息。</div>
+        <div class="message">第 18 条消息：这是一条模拟聊天消息。</div>
+        <div class="message">第 19 条消息：这是一条模拟聊天消息。</div>
+        <div class="message">第 20 条消息：这是一条模拟聊天消息。</div>
+        <div class="message">第 21 条消息：这是一条模拟聊天消息。</div>
+        <div class="message">第 22 条消息：这是一条模拟聊天消息。</div>
+        <div class="message">第 23 条消息：这是一条模拟聊天消息。</div>
+        <div class="message">第 24 条消息：这是一条模拟聊天消息。</div>
+        <div class="message">第 25 条消息：这是一条模拟聊天消息。</div>
+        <div class="message">第 26 条消息：这是一条模拟聊天消息。</div>
+        <div class="message">第 27 条消息：这是一条模拟聊天消息。</div>
+        <div class="message">第 28 条消息：这是一条模拟聊天消息。</div>
+        <div class="message">第 29 条消息：这是一条模拟聊天消息。</div>
+        <div class="message">第 30 条消息：这是一条模拟聊天消息。</div>
+    </section>
+
+    <form class="chat-form">
+        <input type="text" placeholder="这个输入框在普通文档流里，会被消息推到下面">
+        <button type="submit">发送</button>
+    </form>
+</main>
+</body>
+</html>
