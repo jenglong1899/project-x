@@ -198,7 +198,7 @@ function App() {
           ) : null}
 
           <div ref={scrollRef} className="h-full overflow-auto px-4 py-6">
-            <div className="mx-auto flex w-full max-w-3xl flex-col gap-6">
+            <div className="flex flex-col gap-6 mx-auto w-full max-w-3xl">
               {items.length > 0 ? (
                 <>
                   {items.map((item) => {
