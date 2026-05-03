@@ -116,17 +116,6 @@
 - 2026-04-29：`conversation.switched` 事件（初始恢复最新 conversation JSON、reset-context 切 segment 时统一 hydrate 前端）：`docs/zh/plans/2026-04-29-conversation-switched-event.md`
 
 ## 最近完成
-- 2026-05-03：新增 `docs/zh/code_explanations/teach_flex_min_h_0.md`，单独讲聊天页为什么需要 `min-h-0`。讲法从用户已理解的“`overflow-auto` 只有在盒子最终高度小于内容高度时才滚”出发，再用布局流水线解释：`flex-1` 先算目标高度，`min-height`/`max-height` 再做限制，`overflow` 最后处理溢出。核心点：默认 `min-height:auto` 可能把内容自然高度变成 flex item 的最小高度下限，导致 flex 算出的剩余高度落不下去；`min-h-0` 是拆掉这个默认下限，不是设置上限。`docs/zh/code_explanations/teach_frontend_layout_basics.md` 里的 `min-h-0` 小节已缩短为入口链接和主线图。
-- 2026-05-02：继续维护 `docs/zh/code_explanations/teach_frontend_layout_basics.md` 的 Flex 布局部分：补充 `footer：按输入框自己的内容高度占位` 的含义，说明输入区变高时 footer 跟着变高、聊天区变矮；同时澄清合理的聊天输入框通常是“先随多行内容自动增长，到最大高度后再内部滚动”。当前 `frontend/src/features/chat/components/chat-composer.tsx` 的 textarea 还没有自动增高逻辑，长内容大概率会在 textarea 内部滚动。
-- 2026-05-02：继续维护 `docs/zh/code_explanations/teach_frontend_layout_basics.md` 的“阅读 React 布局代码”：新增 `main` 和 `footer` 是什么的小节，说明它们是 HTML 原生语义标签而不是 React 特有命名；并区分小写 HTML 标签和大写 React 自定义组件。
-- 2026-05-02：继续维护 `docs/zh/code_explanations/teach_frontend_layout_basics.md` 的 `overflow` 部分：澄清 `overflow: visible` 不是“超出后看不到”，而是默认允许内容画到盒子外面；真正裁掉超出内容的是 `overflow: hidden`。同时把 `h-screen` 里的 overflow 对比句改成“内容可能画到盒子外面”以避免误解。
-- 2026-05-02：继续维护 `docs/zh/code_explanations/teach_frontend_layout_basics.md` 的“高度策略”：在 `h-screen` 前新增 `vh` 视口高度单位说明，明确 `vh` 是 `viewport height` 而不是 `vertical height`，并说明 `1vh = 视口高度的 1%`、`100vh = 视口高度的 100%`，Tailwind 的 `h-screen` 只是包装 `height: 100vh`。
-- 2026-05-02：根据新版 `structured-knowledge` skill 继续整理 `docs/zh/code_explanations/teach_frontend_layout_basics.md`：移除文末独立“问答”聚合，把“一屏高是否必要”放回“浏览器页面模型 / 页面滚动和内部滚动的选择”，把 `h-full` / `h-screen` / `min-h-screen` 对比放回“高度策略”，把“单 child 的 flex 是否有意义”放回 “Flex 布局”，把“删除外层 flex 的失败模式”放回“当前布局的替代写法”。后续维护该文档时，优先把新问题归入对应知识对象；只有比较/边界问题不适合并入对象时，才在最近共同父级下创建问答小节。
-- 2026-05-01：按新版 `structured-knowledge` skill 重组 `docs/zh/code_explanations/teach_frontend_layout_basics.md`：把原来偏时间线/问答式的章节改成“阅读 React 布局代码、当前聊天页布局、浏览器页面模型、高度策略、Flex 布局、overflow 分工、当前布局替代写法、问答、排查清单”等知识对象。后续维护该文档时，应把新问题放入对应概念或最近共同父级下的问答章节，不要继续按聊天时间追加。
-- 2026-05-01：继续补充 `docs/zh/code_explanations/teach_frontend_layout_basics.md` 的 3.3/3.4：围绕 `viewport`、`document`、`body/document` 页面滚动、内部滚动容器、`height: auto`、`min-h-screen` 首屏兜底、`h-full` 百分比高度链、多个 `height: 100%` child 不是平分父级空间、`flex` 才负责多 child 空间分配等概念做了教学化整理。用户已经理解：露出 `body` 背景可以是设计选择；`min-h-screen` 不是自然撑高而是首屏兜底；`h-full + overflow:auto` 与 `min-h-screen` 的关键差异是“盒子内部滚动” vs “页面整体滚动”。同时 `backend/demos/fake-blog.html` 被改成普通文档流里的聊天输入框实验，用于观察输入框被长消息推到文档底部。
-- 2026-05-01：新增前端布局教学文档 `docs/zh/code_explanations/teach_frontend_layout_basics.md`，用于持续讲解 `frontend/src/App.tsx` 的 JSX 布局、`h-full` 高度链、`#root`/`body`/`html` 父子关系、`flex-1` 对父级 flex 上下文的依赖、内部滚动容器与 `min-h-0`。后续用户继续追问前端布局基础时，优先在该文档对应小节修改/补充，而不是在文末追加流水账。
 - 2026-04-29：已实现 `conversation.switched { visibleMessages }` 作为 conversation segment 切换的唯一前端事件；payload 不暴露 `conversationFileName`。
 - 初始 WS 自动恢复最近 conversation JSON 时，`Agent.start_conversation()` 会通过 `on_switch_conversation` 把用户可见历史交给 `WebSocketChatSession`，前端用 `visibleMessages` 重建时间线。
 - reset-context / memory manager auto reminder 也走同一个 `conversation.switched` 事件，auto reminder 作为 `visibleMessages` 中的 user message 呈现。
-- 已补 `backend/tests/test_websocket_chat_session.py` 覆盖“WebSocketChatSession 初始化时转发 conversation.switched 历史内容”。
-- 验证记录：`backend/` 下 `uv run pytest -q tests/test_agent_callbacks.py tests/test_resume_conversation.py tests/test_websocket_chat_session.py` 通过（21 passed）；`frontend/` 下 `npm run build` 通过。
