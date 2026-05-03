@@ -28,5 +28,24 @@
 ## build_memory_forked_subagent_prompt 的 _build_diff
 将来要改成：如果 diff 比较小才显示 diff。如果 diff 比较大，那就显示新版记忆的内容就行
 
+# 指令
+
+一个场景是，比如我用 CodeX CLI ，我在工作过程中发现需要给他另外一个文件夹的写入权限，那么我会先退出，然后再重启，用那个什么命令重启。那codex需要知道这个，在codex一开始的指令中，它应该会写，他拥有对哪些文件夹的写权限，现在更新后你要告诉他，现在权限有什么变化。
+
+user level instruction
+```
+- 当前工作目录：{os.getcwd()}
+- 当前时间：{datetime.now().strftime("%Y-%m-%d %H:%M")}
+- 操作系统：{sys.platform}
+```
+
+**在用户输入了内容，系统准备把msg发送给ai之前**，检测：
+
+如果检测到当前工作目录和一开始build的user level instruction 里面的不一致，
+
+如果检测到当前时间和一开始build的user level instruction 里面的已经超过了半小时
+
+就说这是个被动的，不是主动的。就是agent没有什么事干，然后系统闲的没事干，跟他说，哎，时间改了。只有等他有任务过来的时候，你才要告诉他。这个任务可以说用户打的字，也可以说是系统定时任务（好像也没必要吧，因为这是定时任务自己的事，定时任务应该告诉他现在是什么时间）
+
 # 前端
 _active_assistant_message_id 在前端如何起作用还是没看懂
