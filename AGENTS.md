@@ -116,6 +116,7 @@
 - 2026-04-29：`conversation.switched` 事件（初始恢复最新 conversation JSON、reset-context 切 segment 时统一 hydrate 前端）：`docs/zh/plans/2026-04-29-conversation-switched-event.md`
 
 ## 最近完成
+- 2026-05-03：新增 `docs/zh/code_explanations/teach_flex_min_h_0.md`，单独讲聊天页为什么需要 `min-h-0`。讲法从用户已理解的“`overflow-auto` 只有在盒子最终高度小于内容高度时才滚”出发，再用布局流水线解释：`flex-1` 先算目标高度，`min-height`/`max-height` 再做限制，`overflow` 最后处理溢出。核心点：默认 `min-height:auto` 可能把内容自然高度变成 flex item 的最小高度下限，导致 flex 算出的剩余高度落不下去；`min-h-0` 是拆掉这个默认下限，不是设置上限。`docs/zh/code_explanations/teach_frontend_layout_basics.md` 里的 `min-h-0` 小节已缩短为入口链接和主线图。
 - 2026-05-02：继续维护 `docs/zh/code_explanations/teach_frontend_layout_basics.md` 的 Flex 布局部分：补充 `footer：按输入框自己的内容高度占位` 的含义，说明输入区变高时 footer 跟着变高、聊天区变矮；同时澄清合理的聊天输入框通常是“先随多行内容自动增长，到最大高度后再内部滚动”。当前 `frontend/src/features/chat/components/chat-composer.tsx` 的 textarea 还没有自动增高逻辑，长内容大概率会在 textarea 内部滚动。
 - 2026-05-02：继续维护 `docs/zh/code_explanations/teach_frontend_layout_basics.md` 的“阅读 React 布局代码”：新增 `main` 和 `footer` 是什么的小节，说明它们是 HTML 原生语义标签而不是 React 特有命名；并区分小写 HTML 标签和大写 React 自定义组件。
 - 2026-05-02：继续维护 `docs/zh/code_explanations/teach_frontend_layout_basics.md` 的 `overflow` 部分：澄清 `overflow: visible` 不是“超出后看不到”，而是默认允许内容画到盒子外面；真正裁掉超出内容的是 `overflow: hidden`。同时把 `h-screen` 里的 overflow 对比句改成“内容可能画到盒子外面”以避免误解。
