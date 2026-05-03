@@ -106,7 +106,7 @@
 ## 文档说明
 - `docs/zh/draft-plans/`：早期草案/想法，内容不保证与当前实现一致
 - `docs/zh/plans/`：实施时写下的更稳定计划文档（通常与当前实现更一致，但仍以代码为准）
-- `docs/zh/code_explanations/`：教学/讲义（例如 `teach_backend_asyncio_basics.md`、`teach_frontend_store_basics.md`、`teach_frontend_layout_basics.md`）
+- `docs/zh/code_explanations/`：教学/讲义（例如 `teach_backend_asyncio_basics.md`、`teach_frontend_store_basics.md`）
 - TODO.md 你不需要去阅读，通常这只会分散你的注意力。
 
 ## 计划索引
