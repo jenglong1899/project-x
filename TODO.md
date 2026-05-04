@@ -57,3 +57,7 @@ user level instruction
 # shell
 非技术用户看不懂shell，应该再提供一个参数，叫做 simple-explanation
 
+
+# ui/ux
+AI 输出的速度太快了，以至于人类跟不上。AI 应该暂停，直到我们读完了它的内容，就是你要根据那个滚轮。来决定要不要进行下一轮。
+
