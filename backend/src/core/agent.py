@@ -239,7 +239,7 @@ class Agent(AgentBase):
                             on_ai_tool_call_finished=on_ai_tool_call_finished)
 
     def _reset_context(self) -> None:
-        from src.prompts.builder import (
+        from src.core.prompts import (
             build_system_level_instruction_zh,
             build_user_level_instruction_zh,
             read_main_memory,

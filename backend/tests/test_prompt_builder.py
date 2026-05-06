@@ -2,13 +2,13 @@ import unittest
 from unittest import mock
 
 from src.commons import MEMORY_MAIN_MD
-from src.prompts import builder
+from src.core import prompts
 
 
 class MemoryForkedSubagentPromptTests(unittest.TestCase):
     def test_first_awaken_does_not_read_or_include_memory_diff(self) -> None:
-        with mock.patch("src.prompts.builder.read_main_memory") as read_main_memory:
-            prompt = builder.build_memory_forked_subagent_prompt(
+        with mock.patch("src.core.prompts.read_main_memory") as read_main_memory:
+            prompt = prompts.build_memory_forked_subagent_prompt(
                 is_first_time_awaken=True,
                 loaded_main_memory_content="context memory",
             )
@@ -19,10 +19,10 @@ class MemoryForkedSubagentPromptTests(unittest.TestCase):
 
     def test_not_first_awaken_includes_unified_main_memory_diff(self) -> None:
         with mock.patch(
-            "src.prompts.builder.read_main_memory",
+            "src.core.prompts.read_main_memory",
             return_value="line 1\nline 2 changed\nline 3",
         ):
-            prompt = builder.build_memory_forked_subagent_prompt(
+            prompt = prompts.build_memory_forked_subagent_prompt(
                 is_first_time_awaken=False,
                 loaded_main_memory_content="line 1\nline 2\nline 3",
             )
@@ -35,10 +35,10 @@ class MemoryForkedSubagentPromptTests(unittest.TestCase):
 
     def test_not_first_awaken_includes_no_difference_hint_when_memory_is_same(self) -> None:
         with mock.patch(
-            "src.prompts.builder.read_main_memory",
+            "src.core.prompts.read_main_memory",
             return_value="same memory",
         ):
-            prompt = builder.build_memory_forked_subagent_prompt(
+            prompt = prompts.build_memory_forked_subagent_prompt(
                 is_first_time_awaken=False,
                 loaded_main_memory_content="same memory",
             )

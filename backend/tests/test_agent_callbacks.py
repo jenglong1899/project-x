@@ -421,13 +421,13 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     "_safe_stream",
                     new=mock.AsyncMock(side_effect=[ai_msg_with_tool_call, final_ai_msg]),
                 ), mock.patch(
-                    "src.prompts.builder.build_system_level_instruction_zh",
+                    "src.core.prompts.build_system_level_instruction_zh",
                     return_value="system-2",
                 ), mock.patch(
-                    "src.prompts.builder.build_user_level_instruction_zh",
+                    "src.core.prompts.build_user_level_instruction_zh",
                     return_value="user-2",
                 ), mock.patch(
-                    "src.prompts.builder.read_main_memory",
+                    "src.core.prompts.read_main_memory",
                     return_value="memory after reset",
                 ):
                     agent.enqueue_user_message(frontend_msg_id="u1", user_message="hello")

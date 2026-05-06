@@ -5,7 +5,7 @@ from typing import Any
 from src.commons import noop
 from src.core.agent_turn import ToolSpec, execute_tool_calls, stream
 from src.core.model_config import ModelConfig
-from src.prompts.builder import build_memory_forked_subagent_prompt
+from src.core.prompts import build_memory_forked_subagent_prompt
 
 
 RESET_CONTEXT_MAGIC_WORD = "PROJECT-X-RESET-CONTEXT"

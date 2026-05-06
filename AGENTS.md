@@ -7,7 +7,7 @@
 - **`AgentController` 是驱动层**：`backend/src/core/agent_controller.py` 负责“提交消息 + 确保后台运行 + 防重入 + 跑到 idle”，适配层（如 WebSocket）只和它交互，避免直接操作 `Agent`。
 - **`WebSocketChatSession` 是适配层**：`backend/src/websocket_chat_session.py` 通过 `AgentController` 驱动 agent（busy/idle/turn 完成回调），并把回调投影成前端事件（assistant delta / tool card / committed 等）。
 - **`ConversationStore` 是持久化层**：`backend/src/conversation_store.py` 把对话落地到 `~/.project-x/memories/originals/*.json`，并负责追加消息与恢复历史 messages。
-- **system/user instruction 由 prompts 构建**：`backend/src/prompts/builder.py` 会读取/确保 `~/.project-x/memories/summaries/main.md`，`reset_context` 会触发“新会话 + 重新加载指令”的编排。
+- **system/user instruction 来源**：`backend/src/core/prompts.py` 会读取/确保 `~/.project-x/memories/summaries/main.md`，`reset_context` 会触发“新会话 + 重新加载指令”的编排。
 
 数据流（大致）：
 `frontend` → `/ws` → `WebSocketChatSession.submit_user_message()` → `Agent.enqueue_user_message()` → `await Agent.run()` → `await agent_turn.stream()` →（可选）`await execute_tool_calls()` → `ConversationStore.append_message()` → 事件经 `ChatEventProjector` 回前端  

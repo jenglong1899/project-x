@@ -26,7 +26,7 @@ from src.core.model_config import (
     QWEN35PLUS,
     ModelConfig,
 )
-from src.prompts.builder import (
+from src.core.prompts import (
     build_system_level_instruction_zh,
     build_user_level_instruction_zh,
     read_main_memory,
