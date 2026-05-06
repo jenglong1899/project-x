@@ -104,16 +104,16 @@
 - Codex CLI 沙盒内禁止创建 socket（例如 uvicorn 绑定端口），跑 e2e 需要允许非沙盒执行
 
 ## 文档说明
-- `docs/zh/draft-plans/`：早期草案/想法，内容不保证与当前实现一致
-- `docs/zh/plans/`：实施时写下的更稳定计划文档（通常与当前实现更一致，但仍以代码为准）
-- `docs/zh/code_explanations/`：教学/讲义（例如 `teach_backend_asyncio_basics.md`、`teach_frontend_store_basics.md`）
+- `docs/draft-plans/`：早期草案/想法，内容不保证与当前实现一致
+- `docs/plans/`：实施时写下的更稳定计划文档（通常与当前实现更一致，但仍以代码为准）
+- `docs/code_explanations/`：教学/讲义（例如 `teach_backend_asyncio_basics.md`、`teach_frontend_store_basics.md`）
 - TODO.md 你不需要去阅读，通常这只会分散你的注意力。
 
 ## 计划索引
-- 2026-03-31：把 Agent 改为 async（移除 WebSocket 层 to_thread）：`docs/zh/plans/2026-03-31-agent-async.md`
-- 2026-04-28：跨进程工具调用机制（用户预置脚本 → 本地 HTTP endpoint → `InterprocessToolRegistry`）：`docs/zh/plans/2026-04-28-interprocess-tool-call.md`
-- 2026-04-29：记忆管理与 MagicWord reset-context（memory manager fork、记忆 diff、reset_context tool 废弃路径）：`docs/zh/plans/2026-04-29-memory-forked-subagent.md`
-- 2026-04-29：`conversation.switched` 事件（初始恢复最新 conversation JSON、reset-context 切 segment 时统一 hydrate 前端）：`docs/zh/plans/2026-04-29-conversation-switched-event.md`
+- 2026-03-31：把 Agent 改为 async（移除 WebSocket 层 to_thread）：`docs/plans/2026-03-31-agent-async.md`
+- 2026-04-28：跨进程工具调用机制（用户预置脚本 → 本地 HTTP endpoint → `InterprocessToolRegistry`）：`docs/plans/2026-04-28-interprocess-tool-call.md`
+- 2026-04-29：记忆管理与 MagicWord reset-context（memory manager fork、记忆 diff、reset_context tool 废弃路径）：`docs/plans/2026-04-29-memory-forked-subagent.md`
+- 2026-04-29：`conversation.switched` 事件（初始恢复最新 conversation JSON、reset-context 切 segment 时统一 hydrate 前端）：`docs/plans/2026-04-29-conversation-switched-event.md`
 
 ## 最近完成
 - 2026-04-29：已实现 `conversation.switched { visibleMessages }` 作为 conversation segment 切换的唯一前端事件；payload 不暴露 `conversationFileName`。
