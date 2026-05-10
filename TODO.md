@@ -1,12 +1,3 @@
-# 1
-把前端代码弄懂
-
-加一个功能：用户可以主动唤起memory manager，让它去重置。就是得显示memory manager的工作过程
-我们希望 Worker 和 Memory Manager 尽可能分离，就是 Worker 尽量不要涉及去跟记忆相关的事情。所以是用户主动去跟 Memory Manager 谈，而不是说给 Worker 一个工具让他去唤醒 Memory Manager。
-
-# 前端
-_active_assistant_message_id 在前端如何起作用还是没看懂
-
 # memory
 
 ## 如果worker尝试去读最新版的记忆文件，要返回报错，告诉他不需要去读。到时候重置了，它会读到的。
@@ -61,3 +52,8 @@ user level instruction
 # ui/ux
 AI 输出的速度太快了，以至于人类跟不上。AI 应该暂停，直到我们读完了它的内容，就是你要根据那个滚轮。来决定要不要进行下一轮。
 
+# 1
+把前端代码弄懂
+
+# 前端
+_active_assistant_message_id 在前端如何起作用还是没看懂
