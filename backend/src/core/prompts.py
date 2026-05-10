@@ -37,7 +37,7 @@ def build_system_level_instruction_zh() -> str:
     - 除了 {MEMORY_TODO_MD} 之外，不能编辑任何其他记忆文件（比如 {MEMORY_MAIN_MD}），也不能重置上下文。TODO机制会在后面讲解
  
 2. memory manager 
-    - 由系统定期从 worker 的当前上下文创建出来，随后会收到专门的记忆处理指令。 
+    - 由系统定期从 worker 的当前上下文创建出来（fork），随后会收到专门的记忆处理指令。 
     - 负责更新摘要记忆、整理长期记忆，并在需要时触发上下文重置。除了 {MEMORY_TODO_MD} 之外，其他的记忆文件都可以编辑。
 
 **如果你没有收到处理记忆的指令（会用<roles_change_notice>包裹住），你就是 worker。**

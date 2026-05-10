@@ -184,7 +184,7 @@ class Agent(AgentBase):
             awaken_count=self._memory_manager_awaken_count,
         )
 
-    async def _maybe_reset_context(self) -> None:
+    async def _maybe_wake_memory_manager(self) -> None:
         self._worker_turns_since_memory_manager += 1
         if self._worker_turns_since_memory_manager < self._memory_manager_turn_interval:
             self._persist_memory_manager_state()
@@ -304,7 +304,7 @@ class Agent(AgentBase):
             for tool_message in tool_messages:
                 self._append_runtime_message(tool_message)
 
-            await self._maybe_reset_context()
+            await self._maybe_wake_memory_manager()
 
             # steer message 注入点。在执行完toolcall后注入最符合直觉
             # 另外注意，我们是在 memory manager reset-context 之后才注入，
