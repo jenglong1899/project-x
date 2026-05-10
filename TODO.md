@@ -19,6 +19,11 @@ mouse and keyboard
 # 7
 把记忆摘要、记忆整理、决定是否重置上下文拆分，一次只做一件事。
 
+# 8
+引入 tokenizer，read tool不按char限制，而是按上下文百分比限制，比如一个模型的上下文是1M，，max_token_percentage=5，一个文件如果全读进来是60K，那么就会截断
+
+另外还可以告诉memory manager相关信息
+
 # memory
 
 ## 如果worker尝试去读最新版的记忆文件，要返回报错，告诉他不需要去读。到时候重置了，它会读到的。
