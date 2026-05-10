@@ -1,12 +1,12 @@
 import asyncio
-import os
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any
 
 from pydantic import BaseModel, Field
 
-from src.core.agent_turn import ToolSpec
+from src.core.agent_turn import Tool
+from src.tools.cwd_state import CwdState
 
 
 class BashToolInput(BaseModel):
@@ -20,11 +20,11 @@ class BashToolOutput(BaseModel):
 
 
 class BashTool:
-    def __init__(self, *, initial_cwd: str | None = None) -> None:
-        self._cwd = Path(initial_cwd or os.getcwd()).expanduser().resolve()
+    def __init__(self, *, initial_cwd: str | None = None, cwd_state: CwdState | None = None) -> None:
+        self._cwd_state = cwd_state or CwdState(initial_cwd=initial_cwd)
 
-    def to_tool_spec(self) -> ToolSpec:
-        return ToolSpec(
+    def to_tool(self) -> Tool:
+        return Tool(
             name="bash",
             description="执行一条 bash 命令，并返回标准输出、标准错误和退出码。本工具能记住cwd。",
             parameters_json_schema=BashToolInput.model_json_schema(),
@@ -49,7 +49,7 @@ class BashTool:
                 "bash",
                 "-lc",
                 wrapped_command,
-                cwd=str(self._cwd),
+                cwd=str(self._cwd_state.cwd),
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
@@ -58,7 +58,7 @@ class BashTool:
                 state_path=state_path,
                 fallback_returncode=process.returncode or 0,
             )
-            self._cwd = cwd
+            self._cwd_state.cwd = cwd
         return BashToolOutput(
             stdout=(stdout_bytes or b"").decode(),
             stderr=(stderr_bytes or b"").decode(),
@@ -67,13 +67,13 @@ class BashTool:
 
     def _read_state_file(self, *, state_path: Path, fallback_returncode: int) -> tuple[int, Path]:
         if not state_path.exists():
-            return fallback_returncode, self._cwd
+            return fallback_returncode, self._cwd_state.cwd
 
         lines = state_path.read_text().splitlines()
         if len(lines) < 2:
-            return fallback_returncode, self._cwd
+            return fallback_returncode, self._cwd_state.cwd
         return int(lines[0]), Path(lines[1]).resolve()
 
 
-def create_bash_tool(*, initial_cwd: str | None = None) -> ToolSpec:
-    return BashTool(initial_cwd=initial_cwd).to_tool_spec()
+def create_bash_tool(*, initial_cwd: str | None = None, cwd_state: CwdState | None = None) -> Tool:
+    return BashTool(initial_cwd=initial_cwd, cwd_state=cwd_state).to_tool()

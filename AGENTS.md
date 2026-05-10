@@ -16,6 +16,7 @@
 ## 快速定位表（改功能先看这里）
 - 想改“对外能力/时序/回调/持久化规则”：`backend/src/core/agent.py`
 - 想改“模型流式/工具流式/工具执行规则（含 reset_context 特判）”：`backend/src/core/agent_turn.py`
+- 想改“内置工具/共享工具状态（bash cwd、read_file 等）”：`backend/src/tools/*`
 - 想改“会话文件格式/落盘时机”：`backend/src/conversation_store.py`
 - 想改“WebSocket 事件长什么样/事件边界/assistant ↔ tool 拆分/conversation.switched 行为”：`backend/src/websocket_chat_session.py`
 - 想改“HTTP API（会话列表/详情）或 WebSocket 路由”：`backend/src/web_app.py`
@@ -59,10 +60,12 @@
 ### 2) 回合引擎与工具系统（`backend/src/core/agent_turn.py`）
 - `stream()`：通过 `litellm.acompletion(..., stream=True)` 拉流（async），拼装最终 assistant message（OpenAI 风格 dict）
 - 工具流式：会把 `tool_calls` delta 按 `index` 合并，分别触发 started/arguments.delta/finished 回调
-- `execute_tool_calls()`：解析 JSON arguments → 分发到 `ToolSpec.handler` → 产出 `tool_messages`；并对 `reset_context` 做特判（不能与其他工具并发，且不会真正执行 handler）
+- `execute_tool_calls()`：解析 JSON arguments → 分发到 `Tool.handler` → 产出 `tool_messages`；并对 `reset_context` 做特判（不能与其他工具并发，且不会真正执行 handler）
 
 内置工具：
-- `backend/src/tools/bash.py`：`BASH_TOOL`（入参 pydantic 校验；`bash -lc` 执行；返回 stdout/stderr/returncode）
+- `backend/src/tools/bash.py`：`create_bash_tool()`（入参 pydantic 校验；`bash -lc` 执行；返回 stdout/stderr/returncode；会更新共享 cwd）
+- `backend/src/tools/read_file.py`：`create_read_file_tool()`（读取文件片段，默认显示 `nl -ba` 风格行号，按完整行应用 `max_chars` 截断）
+- `backend/src/tools/cwd_state.py`：`CwdState` 是 bash 与 read_file 共享 cwd 的小状态对象；默认 Agent 每次创建独立 `CwdState`，不能复用全局单例。
 - `backend/src/tools/reset_context.py`：`RESET_CONTEXT_TOOL`（真实编排在 `Agent._reset_context()`；首次调用只返回 hint）
 
 ### 3) 持久化（`backend/src/conversation_store.py`）
@@ -116,6 +119,8 @@
 - 2026-04-29：`conversation.switched` 事件（初始恢复最新 conversation JSON、reset-context 切 segment 时统一 hydrate 前端）：`docs/plans/2026-04-29-conversation-switched-event.md`
 
 ## 最近完成
+- 2026-05-10：修正 `read_file` 截断语义；`end` 现在表示实际返回内容的最后一行，若第一行就超过 `max_chars` 则返回 `end=null` 且 `truncated=true`，方便调用方从 `end + 1` 续读。
+- 2026-05-10：新增并接入 `read_file` 工具；默认 Agent 工具列表包含 `bash` 和 `read_file`，二者通过每个 Agent 独立的 `CwdState` 共享 cwd。相关提交：`91502b8 partial-feat: share cwd between bash and read_file`。
 - 2026-04-29：已实现 `conversation.switched { visibleMessages }` 作为 conversation segment 切换的唯一前端事件；payload 不暴露 `conversationFileName`。
 - 初始 WS 自动恢复最近 conversation JSON 时，`Agent.start_conversation()` 会通过 `on_switch_conversation` 把用户可见历史交给 `WebSocketChatSession`，前端用 `visibleMessages` 重建时间线。
 - reset-context / memory manager auto reminder 也走同一个 `conversation.switched` 事件，auto reminder 作为 `visibleMessages` 中的 user message 呈现。

@@ -8,7 +8,7 @@ from unittest import mock
 
 from src.conversation_store import ConversationStore
 from src.core.agent import Agent
-from src.core.agent_turn import ToolSpec, execute_tool_calls
+from src.core.agent_turn import Tool, execute_tool_calls
 from src.core.memory_manager import MemoryManagerResult
 from src.core.model_config import ModelConfig
 from src.tools.reset_context import RESET_CONTEXT_AUTO_REMINDER
@@ -52,8 +52,8 @@ def _patch_agent_conversation_store_without_history(temp_dir: str) -> Iterator[N
 class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
 
     @staticmethod
-    def _echo_tool() -> ToolSpec:
-        return ToolSpec(
+    def _echo_tool() -> Tool:
+        return Tool(
             name="echo",
             description="回显输入值",
             parameters_json_schema={
@@ -188,7 +188,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
         tool_messages = await execute_tool_calls(
             ai_msg_dict=ai_msg_dict,
             tools_by_name={
-                "raw_text": ToolSpec(
+                "raw_text": Tool(
                     name="raw_text",
                     description="返回纯文本",
                     parameters_json_schema={
@@ -257,7 +257,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
         tool_messages = await execute_tool_calls(
             ai_msg_dict=ai_msg_dict,
             tools_by_name={
-                "boom": ToolSpec(
+                "boom": Tool(
                     name="boom",
                     description="总是抛异常",
                     parameters_json_schema={"type": "object", "properties": {}},

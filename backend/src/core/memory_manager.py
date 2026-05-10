@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from src.commons import noop
-from src.core.agent_turn import ToolSpec, execute_tool_calls, stream
+from src.core.agent_turn import Tool, execute_tool_calls, stream
 from src.core.model_config import ModelConfig
 from src.core.prompts import build_memory_forked_subagent_prompt
 
@@ -23,7 +23,7 @@ class MemoryForkedSubagentRunnerBase(ABC):
         *,
         worker_messages: list[dict[str, Any]],
         model_config: ModelConfig,
-        tools: list[ToolSpec],
+        tools: list[Tool],
         is_first_time_awaken: bool,
         loaded_main_memory_content: str,
     ) -> MemoryManagerResult: ...
@@ -35,7 +35,7 @@ class MemoryForkedSubagentRunner(MemoryForkedSubagentRunnerBase):
         *,
         worker_messages: list[dict[str, Any]],
         model_config: ModelConfig,
-        tools: list[ToolSpec],
+        tools: list[Tool],
         is_first_time_awaken: bool,
         loaded_main_memory_content: str,
     ) -> MemoryManagerResult:

@@ -32,6 +32,8 @@ from src.core.prompts import (
     read_main_memory,
 )
 from src.tools.bash import create_bash_tool
+from src.tools.cwd_state import CwdState
+from src.tools.read_file import create_read_file_tool
 
 
 logger = logging.getLogger(__name__)
@@ -76,14 +78,18 @@ def resolve_model_config() -> ModelConfig:
 
 def create_default_agent(*, callbacks: AgentCallbacks) -> Agent:
     loaded_main_memory_content = read_main_memory()
+    cwd_state = CwdState()
     return Agent(
         name="project-x-web",
         model_config=resolve_model_config(),
         system_instruction=build_system_level_instruction_zh(),
         user_instruction=build_user_level_instruction_zh(),
         loaded_main_memory_content=loaded_main_memory_content,
-        # bash 工具会记住 cwd，所以这里必须给每个 Agent 创建独立实例，不能复用全局单例。
-        tools=[create_bash_tool()],
+        # bash 和 read_file 共享 cwd，所以这里必须给每个 Agent 创建独立状态，不能复用全局单例。
+        tools=[
+            create_bash_tool(cwd_state=cwd_state),
+            create_read_file_tool(cwd_provider=cwd_state),
+        ],
         on_ai_content_delta=callbacks.on_ai_content_delta,
         on_ai_reasoning_delta=callbacks.on_ai_reasoning_delta,
         on_ai_tool_call_started=callbacks.on_ai_tool_call_started,

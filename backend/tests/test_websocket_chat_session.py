@@ -97,8 +97,10 @@ def make_agent_controller_factory(
 
 
 class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
-    def test_create_default_agent_passes_main_memory_snapshot_and_only_bash_tool(self) -> None:
+    def test_create_default_agent_passes_main_memory_snapshot_and_default_tools(self) -> None:
+        fake_cwd_state = SimpleNamespace(cwd="/tmp")
         fake_bash_tool = SimpleNamespace(name="bash")
+        fake_read_file_tool = SimpleNamespace(name="read_file")
 
         with mock.patch(
             "src.websocket_chat_session.read_main_memory",
@@ -113,15 +115,24 @@ class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
             "src.websocket_chat_session.resolve_model_config",
             return_value=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
         ), mock.patch(
+            "src.websocket_chat_session.CwdState",
+            return_value=fake_cwd_state,
+        ), mock.patch(
             "src.websocket_chat_session.create_bash_tool",
             return_value=fake_bash_tool,
-        ), mock.patch("src.websocket_chat_session.Agent") as agent_cls:
+        ) as create_bash_tool, mock.patch(
+            "src.websocket_chat_session.create_read_file_tool",
+            return_value=fake_read_file_tool,
+        ) as create_read_file_tool, mock.patch("src.websocket_chat_session.Agent") as agent_cls:
             create_default_agent(callbacks=make_noop_agent_callbacks())
+
+        create_bash_tool.assert_called_once_with(cwd_state=fake_cwd_state)
+        create_read_file_tool.assert_called_once_with(cwd_provider=fake_cwd_state)
 
         read_main_memory.assert_called_once_with()
         agent_kwargs = agent_cls.call_args.kwargs
         self.assertEqual(agent_kwargs["loaded_main_memory_content"], "main memory snapshot")
-        self.assertEqual([tool.name for tool in agent_kwargs["tools"]], ["bash"])
+        self.assertEqual([tool.name for tool in agent_kwargs["tools"]], ["bash", "read_file"])
         self.assertNotIn("reset_context", [tool.name for tool in agent_kwargs["tools"]])
 
     async def _collect_events_until_generation_completed(

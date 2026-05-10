@@ -14,7 +14,7 @@ from src.core.agent_turn import (
     OnAiToolCallArgumentsDelta,
     OnAiToolCallFinished,
     OnToolResult,
-    ToolSpec,
+    Tool,
 )
 from src.core.memory_manager import MemoryForkedSubagentRunner, MemoryForkedSubagentRunnerBase
 from src.core.model_config import ModelConfig
@@ -46,7 +46,7 @@ class Agent(AgentBase):
 
     def __init__(self, *, name: str, model_config: ModelConfig,
                  system_instruction: str, user_instruction: str,
-                 tools: list[ToolSpec],
+                 tools: list[Tool],
                  on_ai_content_delta: OnAiContentDelta | None = None,
                  on_ai_reasoning_delta: OnAiReasoningDelta | None = None,
                  on_ai_tool_call_started: OnAiToolCallStarted | None = None,
@@ -214,7 +214,7 @@ class Agent(AgentBase):
     @staticmethod
     async def _safe_stream(*, model_config: ModelConfig,
                            messages: list[dict[str, Any]],
-                           tools: list[ToolSpec],
+                           tools: list[Tool],
                            on_ai_content_delta: OnAiContentDelta,
                            on_ai_reasoning_delta: OnAiReasoningDelta,
                            on_ai_tool_call_started: OnAiToolCallStarted,

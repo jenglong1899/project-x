@@ -54,7 +54,7 @@ class ToolHandler(Protocol):
 
 
 @dataclass(frozen=True)
-class ToolSpec:
+class Tool:
     name: str
     description: str
     parameters_json_schema: dict[str, Any]
@@ -158,7 +158,7 @@ def _maybe_emit_tool_call_started(*,
 
 async def stream(*, model_config: ModelConfig,
                  messages: list[dict[str, Any]],
-                 tools: list[ToolSpec],
+                 tools: list[Tool],
                  on_ai_content_delta: OnAiContentDelta,
                  on_ai_reasoning_delta: OnAiReasoningDelta,
                  on_ai_tool_call_started: OnAiToolCallStarted,
@@ -300,7 +300,7 @@ def _stringify_tool_result(result: Any) -> str:
 
 
 async def execute_tool_calls(*, ai_msg_dict: dict[str, Any],
-                             tools_by_name: Mapping[str, ToolSpec],
+                             tools_by_name: Mapping[str, Tool],
                              on_tool_result: OnToolResult) -> list[dict[str, Any]]:
     tool_calls = ai_msg_dict.get("tool_calls", [])
     tool_messages: list[dict[str, Any]] = []

@@ -5,6 +5,7 @@ from unittest import mock
 from pydantic import ValidationError
 
 from src.tools.bash import create_bash_tool
+from src.tools.cwd_state import CwdState
 
 
 class _FakeProcess:
@@ -53,6 +54,14 @@ class BashToolTests(unittest.IsolatedAsyncioTestCase):
             bash_tool.parameters_json_schema["properties"]["command"]["type"],
             "string",
         )
+
+    async def test_bash_tool_updates_shared_cwd_state(self) -> None:
+        cwd_state = CwdState(initial_cwd="/")
+        bash_tool = create_bash_tool(cwd_state=cwd_state)
+
+        await bash_tool.handler(arguments={"command": "cd /tmp"})
+
+        self.assertEqual(cwd_state.cwd, Path("/tmp"))
 
     @mock.patch("src.tools.bash.asyncio.create_subprocess_exec")
     async def test_bash_tool_expands_user_in_initial_cwd(self, mock_exec: mock.Mock) -> None:
