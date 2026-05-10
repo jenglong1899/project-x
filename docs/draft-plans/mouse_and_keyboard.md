@@ -1,3 +1,5 @@
+codex resume 019e1101-3a50-77a2-9e69-6affa38e4c08
+
 用鼠标和键盘操作文件
 
 给ai的prompt
