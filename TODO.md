@@ -1,11 +1,20 @@
-# 1
-~~mouse and keyboard~~ 这个之前没有试过，有风险，还是用传统的吧。
-
-# 2
-显示memory manager的工作过程，方便调试
-
 # 3
 做一个暂停功能，方便调试
+
+# 4
+把 memory manager 改成异步的
+memory manager 工作的时候，我们可以先暂停worker的，看完mm的工作过程，然后再继续运行worker
+
+# 5
+工具 create_memory_manager
+
+当worker调用了 create_memory_manager 的时候，系统做的轮次计数要重置
+
+# 6
+问题：
+异步的情况下，如果用户要求处理记忆，而系统自动唤起的memory manager还没工作完，要怎么办？
+要弄一个锁
+一次只能弄一个mm
 
 # 4
 用“翻译epub”的场景来验证记忆效果，如果效果不好的话，就要去做#7
