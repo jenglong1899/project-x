@@ -1,4 +1,5 @@
 import re
+import difflib
 from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
@@ -26,7 +27,7 @@ class ReplaceTextInput(BaseModel):
 
 
 class ReplaceTextOutput(BaseModel):
-    filepath: str
+    unified_diff: str
     replaced_count: int
 
 
@@ -54,6 +55,10 @@ class ReplaceTextTool:
                 "- repl_from_file：如果编辑失败了，系统会自动保存repl到一个文件中，下次编辑时你用这个参数来引用之前的repl，这样你就不用重新再输入一遍repl了。\n"
                 "repl和repl_from_file只能选一个\n"
                 "- allow_multiple_occurrences：是否允许匹配并替换多处；否则匹配多次会返回错误\n"
+                "\n"
+                "返回：\n"
+                "- unified_diff(hunks)\n"
+                "- replaced_count"
             ),
             parameters_json_schema=ReplaceTextInput.model_json_schema(),
             handler=self.run,
@@ -66,7 +71,7 @@ class ReplaceTextTool:
 
         try:
             original_content = filepath.read_text(encoding="utf-8")
-            updated_content, replaced_count = self._replace(
+            updated_content, _replaced_count = self._replace(
                 content=original_content,
                 needle=tool_input.needle,
                 repl=repl,
@@ -80,7 +85,30 @@ class ReplaceTextTool:
                 f"{exc}；已将 repl 保存到 {repl_file}，下次可用 repl_from_file 复用"
             ) from exc
 
-        return ReplaceTextOutput(filepath=str(filepath), replaced_count=replaced_count).model_dump()
+        unified_diff = self._build_unified_diff(
+            before=original_content,
+            after=updated_content,
+        )
+        return ReplaceTextOutput(
+            unified_diff=unified_diff,
+            replaced_count=_replaced_count,
+        ).model_dump()
+
+    @staticmethod
+    def _build_unified_diff(*, before: str, after: str) -> str:
+        diff_lines = list(
+            difflib.unified_diff(
+                before.splitlines(),
+                after.splitlines(),
+                fromfile="a/file",
+                tofile="b/file",
+                n=3,
+                lineterm="",
+            )
+        )
+        if not diff_lines:
+            return ""
+        return "\n".join(diff_lines) + "\n"
 
     def _resolve_filepath(self, filepath: str) -> Path:
         path = Path(filepath).expanduser()

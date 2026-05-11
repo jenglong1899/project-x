@@ -41,8 +41,10 @@ class ReplaceTextToolTests(unittest.IsolatedAsyncioTestCase):
                 }
             )
 
-            self.assertEqual(result["filepath"], str(path))
+            self.assertIn("unified_diff", result)
             self.assertEqual(result["replaced_count"], 1)
+            self.assertIn("-hello world", result["unified_diff"])
+            self.assertIn("+hello project-x", result["unified_diff"])
             self.assertEqual(path.read_text(encoding="utf-8"), "hello project-x\n")
 
     async def test_replace_text_tool_errors_when_multiple_occurrences_not_allowed(self) -> None:
@@ -105,6 +107,8 @@ class ReplaceTextToolTests(unittest.IsolatedAsyncioTestCase):
                 }
             )
 
+            self.assertIn("-a a a", result["unified_diff"])
+            self.assertIn("+b b b", result["unified_diff"])
             self.assertEqual(result["replaced_count"], 3)
             self.assertEqual(path.read_text(encoding="utf-8"), "b b b\n")
 
@@ -123,6 +127,8 @@ class ReplaceTextToolTests(unittest.IsolatedAsyncioTestCase):
                 }
             )
 
+            self.assertIn("-alpha=beta", result["unified_diff"])
+            self.assertIn("+beta=alpha", result["unified_diff"])
             self.assertEqual(result["replaced_count"], 1)
             self.assertEqual(path.read_text(encoding="utf-8"), "beta=alpha\n")
 
@@ -143,6 +149,8 @@ class ReplaceTextToolTests(unittest.IsolatedAsyncioTestCase):
                 }
             )
 
+            self.assertIn("-hello world", result["unified_diff"])
+            self.assertIn("+hello project-x", result["unified_diff"])
             self.assertEqual(result["replaced_count"], 1)
             self.assertEqual(path.read_text(encoding="utf-8"), "hello project-x\n")
 
