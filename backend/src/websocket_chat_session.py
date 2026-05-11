@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 from uuid import uuid4
 
-from src.core.agent import Agent, OnQueuedUserMsgCommitted, OnSwitchConversation
+from src.core.agent import Agent, OnPaused, OnPauseRequested, OnQueuedUserMsgCommitted, OnResumed, OnSwitchConversation
 from src.core.agent_controller import AgentController
 from src.core.agent_turn import (
     OnAiContentDelta,
@@ -61,6 +61,9 @@ class AgentCallbacks:
     on_tool_result: OnToolResult
     on_queued_user_msg_committed: OnQueuedUserMsgCommitted
     on_switch_conversation: OnSwitchConversation
+    on_pause_requested: OnPauseRequested
+    on_paused: OnPaused
+    on_resumed: OnResumed
 
 
 def resolve_model_config() -> ModelConfig:
@@ -102,6 +105,9 @@ def create_default_agent(*, callbacks: AgentCallbacks) -> Agent:
         on_tool_result=callbacks.on_tool_result,
         on_queued_user_msg_committed=callbacks.on_queued_user_msg_committed,
         on_switch_conversation=callbacks.on_switch_conversation,
+        on_pause_requested=callbacks.on_pause_requested,
+        on_paused=callbacks.on_paused,
+        on_resumed=callbacks.on_resumed,
     )
 
 
@@ -258,6 +264,15 @@ class ChatEventProjector:
             }
         )
 
+    def on_pause_requested(self) -> None:
+        self._emit({"type": "agent.pause.requested"})
+
+    def on_paused(self) -> None:
+        self._emit({"type": "agent.paused"})
+
+    def on_resumed(self) -> None:
+        self._emit({"type": "agent.resumed"})
+
     def _emit_assistant_delta(self, *, channel: str, delta: str) -> None:
         message_id = self._ensure_assistant_message_started()
         self._emit(
@@ -360,6 +375,9 @@ class WebSocketChatSession:
             on_tool_result=self._projector.on_tool_result,
             on_queued_user_msg_committed=self._on_queued_user_msg_committed,
             on_switch_conversation=self._on_switch_conversation,
+            on_pause_requested=self._projector.on_pause_requested,
+            on_paused=self._projector.on_paused,
+            on_resumed=self._projector.on_resumed,
         )
         if agent_controller_factory is None:
             self._agent_controller = create_agent_controller(
@@ -393,6 +411,18 @@ class WebSocketChatSession:
             frontend_msg_id=user_message_id,
             user_message=content,
         )
+
+    async def submit_pause_request(self) -> None:
+        if self._closed:
+            raise RuntimeError("session 已关闭")
+
+        self._agent_controller.request_pause()
+
+    async def submit_resume(self) -> None:
+        if self._closed:
+            raise RuntimeError("session 已关闭")
+
+        self._agent_controller.resume()
 
     async def close(self) -> None:
         if self._closed:

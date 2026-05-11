@@ -52,6 +52,19 @@ class AgentController:
         )
         self._ensure_running()
 
+    def request_pause(self) -> None:
+        self._agent.request_pause()
+
+    def resume(self) -> None:
+        self._agent.resume()
+        # resume 的语义是“解除暂停并尽可能继续推进状态机”。
+        # 是否需要调度 run() 由 agent.has_pending_work() 统一决定：
+        # - 有排队 user message：需要 drain + 继续跑
+        # - tool 执行后（或中断恢复）欠一轮 follow-up：需要继续跑
+        # - 会话还没真正开始（未持久化且无 user message）：不该跑
+        if self._agent.has_pending_work():
+            self._ensure_running()
+
     def _ensure_running(self) -> None:
         """
         确保后台 runner 已启动：
@@ -77,7 +90,12 @@ class AgentController:
 
                 if self._is_closed():
                     return
-                if not self._agent.has_pending_user_messages():
+                # 在调用 resume 之后，agent会把状态设置为 非paused
+                # paused 是一个硬边界：即使还有排队 user message，也必须停下，
+                # 否则 pause 在多消息场景下会“形同虚设”。
+                if self._agent.is_paused():
+                    return
+                if not self._agent.has_pending_work():
                     return
         except Exception as exc:
             self._on_error(exc)

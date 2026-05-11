@@ -40,7 +40,7 @@
 - `new_conversation()`：开始新对话（写入 system/user instruction；但**不会**立即创建 conversation 文件）
 - `resume_conversation(conversation_id=...)`：恢复历史对话（会用历史里的 system/user instruction 覆盖当前）
 - `enqueue_user_message(frontend_msg_id=..., user_message=...)`：排队一条 user message（`frontend_msg_id` 由前端生成，用于 committed 回传）
-- `has_pending_user_messages()`：是否还有排队消息
+- `has_pending_work()`：是否还有可推进的工作（controller 依据它决定是否继续调度 `run()`）
 - `run()`：异步生成循环：drain 队列 → 调模型（流式回调）→（可选）执行工具 → 持久化 → 再 drain → 直到没有 tool_calls
 
 关键不变量/约束：

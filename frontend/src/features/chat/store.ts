@@ -45,6 +45,8 @@ type ChatState = {
   items: ChatItem[]
   pendingUserMessages: PendingUserMessage[]
   isGenerating: boolean
+  pauseRequested: boolean
+  isPaused: boolean
 }
 
 type StageUserMessageInput = {
@@ -67,6 +69,8 @@ const initialChatState: ChatState = {
   items: [],
   pendingUserMessages: [],
   isGenerating: false,
+  pauseRequested: false,
+  isPaused: false,
 }
 
 function createAssistantItem(messageId: string): AssistantMessageItem {
@@ -255,6 +259,26 @@ function reduceServerEvent(state: ChatState, event: ServerEvent): Partial<ChatSt
     case 'agent.became.idle':
       return {
         isGenerating: false,
+        pauseRequested: false,
+      }
+
+    case 'agent.pause.requested':
+      return {
+        pauseRequested: true,
+        isPaused: false,
+      }
+
+    case 'agent.paused':
+      return {
+        pauseRequested: false,
+        isPaused: true,
+        isGenerating: false,
+      }
+
+    case 'agent.resumed':
+      return {
+        pauseRequested: false,
+        isPaused: false,
       }
 
     case 'conversation.switched':
@@ -262,6 +286,8 @@ function reduceServerEvent(state: ChatState, event: ServerEvent): Partial<ChatSt
         items: buildItemsFromVisibleMessages(event.visibleMessages),
         pendingUserMessages: [],
         errorMessage: null,
+        pauseRequested: false,
+        isPaused: false,
       }
 
     case 'user.message.committed':

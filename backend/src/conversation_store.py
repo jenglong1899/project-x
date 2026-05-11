@@ -11,6 +11,9 @@ from src.commons import ORIGINALS_DIR
 MEMORY_MANAGER_META_KEY = "memory-manager"
 MEMORY_MANAGER_TURNS_KEY = "turns-since-memory-manager"
 MEMORY_MANAGER_AWAKEN_COUNT_KEY = "awaken-count"
+PAUSE_META_KEY = "pause"
+PAUSE_REQUESTED_KEY = "requested"
+PAUSE_PAUSED_KEY = "paused"
 
 
 def build_conversation_file_name() -> str:
@@ -66,6 +69,8 @@ class ConversationStore:
         self._messages: list[dict[str, Any]] = []
         self._memory_manager_turns_since_memory_manager = 0
         self._memory_manager_awaken_count = 0
+        self._pause_requested = False
+        self._paused = False
 
     @property
     def file_path(self) -> Path | None:
@@ -86,6 +91,14 @@ class ConversationStore:
     def memory_manager_awaken_count(self) -> int:
         return self._memory_manager_awaken_count
 
+    @property
+    def pause_requested(self) -> bool:
+        return self._pause_requested
+
+    @property
+    def paused(self) -> bool:
+        return self._paused
+
     def update_memory_manager_state(
         self,
         *,
@@ -96,6 +109,12 @@ class ConversationStore:
             raise ValueError("memory manager 状态不能为负数")
         self._memory_manager_turns_since_memory_manager = turns_since_memory_manager
         self._memory_manager_awaken_count = awaken_count
+        if self.has_persisted_conversation():
+            self._write_json_atomically()
+
+    def update_pause_state(self, *, pause_requested: bool, paused: bool) -> None:
+        self._pause_requested = bool(pause_requested)
+        self._paused = bool(paused)
         if self.has_persisted_conversation():
             self._write_json_atomically()
 
@@ -159,6 +178,15 @@ class ConversationStore:
             if isinstance(awaken_count, int) and awaken_count >= 0:
                 store._memory_manager_awaken_count = awaken_count
 
+        pause_meta = meta.get(PAUSE_META_KEY)
+        if isinstance(pause_meta, dict):
+            pause_requested = pause_meta.get(PAUSE_REQUESTED_KEY)
+            paused = pause_meta.get(PAUSE_PAUSED_KEY)
+            if isinstance(pause_requested, bool):
+                store._pause_requested = pause_requested
+            if isinstance(paused, bool):
+                store._paused = paused
+
         # 继续旧对话时，system/user instruction 以历史为准（从 messages 的前两条恢复）。
         system_msg = messages[0]
         user_msg = messages[1] if len(messages) >= 2 else None
@@ -218,6 +246,10 @@ class ConversationStore:
                 MEMORY_MANAGER_META_KEY: {
                     MEMORY_MANAGER_TURNS_KEY: self._memory_manager_turns_since_memory_manager,
                     MEMORY_MANAGER_AWAKEN_COUNT_KEY: self._memory_manager_awaken_count,
+                },
+                PAUSE_META_KEY: {
+                    PAUSE_REQUESTED_KEY: self._pause_requested,
+                    PAUSE_PAUSED_KEY: self._paused,
                 },
             },
             "messages": self._messages,

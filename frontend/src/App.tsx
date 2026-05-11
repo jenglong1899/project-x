@@ -25,6 +25,8 @@ function App() {
   const items = useChatStore((state) => state.items)
   const pendingUserMessages = useChatStore((state) => state.pendingUserMessages)
   const isGenerating = useChatStore((state) => state.isGenerating)
+  const pauseRequested = useChatStore((state) => state.pauseRequested)
+  const isPaused = useChatStore((state) => state.isPaused)
 
   const feedbackText =
     composerError || '当 AI 用非常自信的语气回答的时候，也不代表其说的话是真的，请核查。'
@@ -279,9 +281,31 @@ function App() {
             <ChatComposer
               draft={draft}
               feedbackText={feedbackText}
+              isGenerating={isGenerating}
+              isPaused={isPaused}
               onDraftChange={setDraft}
+              onPauseToggle={() => {
+                if (pauseRequested) {
+                  return
+                }
+                if (!isGenerating && !isPaused) {
+                  return
+                }
+                if (isPaused) {
+                  chatClient.resume()
+                  return
+                }
+                chatClient.requestPause()
+              }}
+              pauseRequested={pauseRequested}
               onSubmit={handleSubmit}
             />
+
+            <div className="mt-2 flex items-center gap-3">
+              <div className="text-xs text-zinc-400">
+                {isPaused ? '已暂停：发送消息会自动恢复运行。' : pauseRequested ? '等待暂停生效…' : ''}
+              </div>
+            </div>
           </div>
         </footer>
       </main>

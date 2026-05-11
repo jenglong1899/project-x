@@ -17,6 +17,10 @@ def noop_callback(**_kwargs: object) -> None:
     return None
 
 
+def noop_event() -> None:
+    return None
+
+
 def make_noop_agent_callbacks() -> AgentCallbacks:
     return AgentCallbacks(
         on_ai_content_delta=noop_callback,
@@ -27,6 +31,9 @@ def make_noop_agent_callbacks() -> AgentCallbacks:
         on_tool_result=noop_callback,
         on_queued_user_msg_committed=noop_callback,
         on_switch_conversation=noop_callback,
+        on_pause_requested=noop_event,
+        on_paused=noop_event,
+        on_resumed=noop_event,
     )
 
 
@@ -42,6 +49,8 @@ class FakeAgent(AgentBase):
         self._scripted_runs = scripted_runs
         self._queued_messages: list[tuple[str, str]] = []
         self._start_visible_messages = start_visible_messages
+        self._pause_requested = False
+        self._paused = False
 
     def start_conversation(self) -> None:
         if self._start_visible_messages is not None:
@@ -53,7 +62,20 @@ class FakeAgent(AgentBase):
     def enqueue_user_message(self, *, frontend_msg_id: str, user_message: str) -> None:
         self._queued_messages.append((frontend_msg_id, user_message))
 
-    def has_pending_user_messages(self) -> bool:
+    def request_pause(self) -> None:
+        self._pause_requested = True
+
+    def resume(self) -> None:
+        self._pause_requested = False
+        self._paused = False
+
+    def is_paused(self) -> bool:
+        return self._paused
+
+    def is_pause_requested(self) -> bool:
+        return self._pause_requested
+
+    def has_pending_work(self) -> bool:
         return bool(self._queued_messages)
 
     async def run(self) -> dict[str, str]:

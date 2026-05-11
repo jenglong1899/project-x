@@ -156,6 +156,22 @@ export class ChatClient {
 
     socket.send(JSON.stringify(parseClientCommand({ type: 'ping' })))
   }
+
+  requestPause() {
+    const socket = this.socket
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return
+    }
+    socket.send(JSON.stringify(parseClientCommand({ type: 'request_pause' })))
+  }
+
+  resume() {
+    const socket = this.socket
+    if (!socket || socket.readyState !== WebSocket.OPEN) {
+      return
+    }
+    socket.send(JSON.stringify(parseClientCommand({ type: 'resume' })))
+  }
 }
 
 export const chatClient = new ChatClient()

@@ -11,7 +11,13 @@ from starlette.routing import Route, WebSocketRoute
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 from src.websocket_chat_session import WebSocketChatSession
-from src.web_protocol import PingCommand, SendUserMessageCommand, parse_client_command
+from src.web_protocol import (
+    PingCommand,
+    RequestPauseCommand,
+    ResumeCommand,
+    SendUserMessageCommand,
+    parse_client_command,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -85,6 +91,10 @@ async def websocket_endpoint(websocket: WebSocket) -> None:
                         user_message_id=user_message_id,
                         content=content,
                     )
+                case RequestPauseCommand():
+                    await session.submit_pause_request()
+                case ResumeCommand():
+                    await session.submit_resume()
 
     except WebSocketDisconnect:
         pass

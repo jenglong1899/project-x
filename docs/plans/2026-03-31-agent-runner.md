@@ -9,7 +9,7 @@
   - `agent.enqueue_user_message()`
   - 确保存在后台 `_runner_task`
   - 防止 `agent.run()` 重入
-  - 在同一次 generation 内循环调用 `agent.run()`，直到没有 pending user message（跑到 idle）
+  - 在同一次 generation 内循环调用 `agent.run()`，直到没有 pending work（跑到 idle）
 
 问题：
 - 这段“驱动 Agent 的通用编排”并不是 WebSocket 独有逻辑；未来如果出现其他适配层（例如 HTTP SSE、CLI、worker），会重复实现同一套 runner 逻辑。
@@ -40,7 +40,7 @@ WebSocketChatSession
 
 AgentRunner（新）
   - 防重入：同一时间最多一个 runner task 在跑
-  - 跑到 idle：循环 await agent.run()，直到 agent.has_pending_user_messages() 为 False
+  - 跑到 idle：循环 await agent.run()，直到 agent.has_pending_work() 为 False
   - generation 边界：提供 started/completed 钩子（由调用方决定具体投影）
   - 错误处理：捕获异常并回调 on_error（由调用方决定如何对外呈现）
   - close 语义：通过 is_closed 回调在合适的边界退出（不强制 cancel agent.run）
@@ -67,7 +67,7 @@ AgentRunner（新）
 最小 Agent 协议（runner 只关心 run 与 pending）：
 
 - `async def run(self) -> dict[str, Any]`
-- `def has_pending_user_messages(self) -> bool`
+- `def has_pending_work(self) -> bool`
 
 `AgentRunner` 构造参数：
 - `agent`: 满足最小协议的对象
@@ -95,7 +95,7 @@ async def _run_until_idle():
       await agent.run()
       on_agent_turn_completed()
       if is_closed(): return
-      if not agent.has_pending_user_messages(): return
+      if not agent.has_pending_work(): return
   except Exception as exc:
     on_error(exc)
   finally:

@@ -10,6 +10,18 @@ const agentBecameIdleEventSchema = z.object({
   type: z.literal('agent.became.idle'),
 })
 
+const agentPauseRequestedEventSchema = z.object({
+  type: z.literal('agent.pause.requested'),
+})
+
+const agentPausedEventSchema = z.object({
+  type: z.literal('agent.paused'),
+})
+
+const agentResumedEventSchema = z.object({
+  type: z.literal('agent.resumed'),
+})
+
 const visibleToolCallSchema = z
   .object({
     id: nonEmptyString.optional(),
@@ -97,6 +109,9 @@ const errorEventSchema = z.object({
 export const serverEventSchema = z.discriminatedUnion('type', [
   agentBecameBusyEventSchema,
   agentBecameIdleEventSchema,
+  agentPauseRequestedEventSchema,
+  agentPausedEventSchema,
+  agentResumedEventSchema,
   conversationSwitchedEventSchema,
   userMessageCommittedEventSchema,
   assistantMessageStartedEventSchema,
@@ -119,9 +134,19 @@ const pingCommandSchema = z.object({
   type: z.literal('ping'),
 })
 
+const requestPauseCommandSchema = z.object({
+  type: z.literal('request_pause'),
+})
+
+const resumeCommandSchema = z.object({
+  type: z.literal('resume'),
+})
+
 export const clientCommandSchema = z.discriminatedUnion('type', [
   sendUserMessageCommandSchema,
   pingCommandSchema,
+  requestPauseCommandSchema,
+  resumeCommandSchema,
 ])
 
 export type ServerEvent = z.infer<typeof serverEventSchema>

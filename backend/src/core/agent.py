@@ -42,6 +42,18 @@ class OnSwitchConversation(Protocol):
     def __call__(self, *, visible_messages: list[dict[str, Any]]) -> None: ...
 
 
+class OnPauseRequested(Protocol):
+    def __call__(self) -> None: ...
+
+
+class OnPaused(Protocol):
+    def __call__(self) -> None: ...
+
+
+class OnResumed(Protocol):
+    def __call__(self) -> None: ...
+
+
 class Agent(AgentBase):
 
     def __init__(self, *, name: str, model_config: ModelConfig,
@@ -56,6 +68,9 @@ class Agent(AgentBase):
                  on_user_msg_enqueued: OnUserMsgEnqueued | None = None,
                  on_queued_user_msg_committed: OnQueuedUserMsgCommitted | None = None,
                  on_switch_conversation: OnSwitchConversation | None = None,
+                 on_pause_requested: OnPauseRequested | None = None,
+                 on_paused: OnPaused | None = None,
+                 on_resumed: OnResumed | None = None,
                  memory_manager_runner: MemoryForkedSubagentRunnerBase | None = None,
                  memory_manager_turn_interval: int = MEMORY_MANAGER_TURN_INTERVAL,
                  loaded_main_memory_content: str = "",
@@ -84,6 +99,9 @@ class Agent(AgentBase):
         self._on_user_msg_enqueued = on_user_msg_enqueued or noop
         self._on_queued_user_msg_committed = on_queued_user_msg_committed or noop
         self._on_switch_conversation = on_switch_conversation or noop
+        self._on_pause_requested = on_pause_requested or noop
+        self._on_paused = on_paused or noop
+        self._on_resumed = on_resumed or noop
 
         self._user_msg_queue: deque[QueuedUserMessage] = deque()
         self._memory_manager_runner = memory_manager_runner or MemoryForkedSubagentRunner()
@@ -91,6 +109,8 @@ class Agent(AgentBase):
         self._worker_turns_since_memory_manager = 0
         self._memory_manager_awaken_count = 0
         self._loaded_main_memory_content = loaded_main_memory_content
+        self._pause_requested = False
+        self._paused = False
 
         # 调用Agent的必须先选择 conversation segment，
         # self._conversation_store 会在这两个函数中被初始化。
@@ -108,11 +128,14 @@ class Agent(AgentBase):
             {"role": "system", "content": self._system_instruction},
             {"role": "user", "content": self._user_instruction},
         ]
+        self._pause_requested = False
+        self._paused = False
         self._conversation_store = ConversationStore(
             system_instruction=self._system_instruction,
             user_instruction=self._user_instruction,
         )
         self._notify_switch_conversation(messages=self._messages)
+        self._on_resumed()
 
     def _load_conversation_from_file(self, *, conversation_file_name: str) -> None:
         if self._user_msg_queue:
@@ -135,10 +158,21 @@ class Agent(AgentBase):
         self._user_instruction = user_instruction_msg["content"]
         self._worker_turns_since_memory_manager = store.memory_manager_turns_since_memory_manager
         self._memory_manager_awaken_count = store.memory_manager_awaken_count
+        self._pause_requested = store.pause_requested
+        self._paused = store.paused
 
         self._messages = messages
         self._conversation_store = store
         self._notify_switch_conversation(messages=messages)
+        self._notify_pause_state_for_new_connection()
+
+    def _persist_pause_state(self) -> None:
+        if self._conversation_store is None:
+            raise ValueError("conversation store 还没有被初始化")
+        self._conversation_store.update_pause_state(
+            pause_requested=self._pause_requested,
+            paused=self._paused,
+        )
 
     @staticmethod
     def _visible_messages_from(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -147,17 +181,72 @@ class Agent(AgentBase):
     def _notify_switch_conversation(self, *, messages: list[dict[str, Any]]) -> None:
         self._on_switch_conversation(visible_messages=self._visible_messages_from(messages))
 
+    def _notify_pause_state_for_new_connection(self) -> None:
+        # 新连接恢复 conversation 时，需要把 pause 状态补发给前端，
+        # 否则 UI 会默认展示“未暂停”，与后端实际状态不一致。
+        if self._paused:
+            self._on_paused()
+            return
+        if self._pause_requested:
+            self._on_pause_requested()
+
     def _require_conversation_store(self) -> ConversationStore:
         if self._conversation_store is None:
             raise RuntimeError("conversation_store 未初始化，请先调用 start_conversation()")
         return self._conversation_store
 
     def enqueue_user_message(self, *, frontend_msg_id: str, user_message: str) -> None:
+        if self._paused or self._pause_requested:
+            self.resume()
         self._user_msg_queue.append(QueuedUserMessage(frontend_msg_id, user_message))
         self._on_user_msg_enqueued(frontend_msg_id=frontend_msg_id)
 
-    def has_pending_user_messages(self) -> bool:
-        return bool(self._user_msg_queue)
+    def request_pause(self) -> None:
+        if self._paused:
+            return
+        self._pause_requested = True
+        self._persist_pause_state()
+        self._on_pause_requested()
+
+    def resume(self) -> None:
+        was_paused = self._paused
+        was_pause_requested = self._pause_requested
+        self._pause_requested = False
+        self._paused = False
+        self._persist_pause_state()
+        if was_paused or was_pause_requested:
+            self._on_resumed()
+
+    def is_paused(self) -> bool:
+        return self._paused
+
+    def is_pause_requested(self) -> bool:
+        return self._pause_requested
+
+    def has_pending_work(self) -> bool:
+        # 约束：如果 conversation 还没持久化（也就是还没真正“开始”），
+        # 那么 run() 只有在有待处理的 user message 时才是可调用的（否则会抛错）。
+        if self._user_msg_queue:
+            return True
+
+        if self._conversation_store is None or not self._conversation_store.has_persisted_conversation():
+            return False
+
+        if not self._messages:
+            return False
+
+        last = self._messages[-1]
+        role = last.get("role")
+
+        # 1) assistant(tool_calls) 说明工具还没真正执行完（可能是中断后续跑）。
+        if role == "assistant" and last.get("tool_calls"):
+            return True
+
+        # 2) tool message 说明还欠一轮“工具结果后的 follow-up assistant”。
+        if role == "tool":
+            return True
+
+        return False
 
     def _safe_drain_user_message_queue(self) -> None:
         conversation_store = self._require_conversation_store()
@@ -253,6 +342,8 @@ class Agent(AgentBase):
         self._loaded_main_memory_content = read_main_memory()
         self._worker_turns_since_memory_manager = 0
         self._memory_manager_awaken_count = 0
+        self._pause_requested = False
+        self._paused = False
 
         self._messages = [
             {"role": "system", "content": self._system_instruction},
@@ -269,7 +360,9 @@ class Agent(AgentBase):
         )
         self._conversation_store = conversation_store
         self._messages = conversation_store.build_messages_from_history()
+        self._persist_pause_state()
         self._notify_switch_conversation(messages=self._messages)
+        self._on_resumed()
         # 接下来 run() 会继续 while 循环，直接以 auto_reminder 为最后一条 user message 进行下一轮模型调用。
 
     async def run(self) -> dict[str, Any]:
@@ -294,6 +387,14 @@ class Agent(AgentBase):
             if not self._messages or ai_msg_dict is not self._messages[-1]:
                 self._append_runtime_message(ai_msg_dict)
             if not ai_msg_dict.get("tool_calls"):
+                if self._pause_requested:
+                    # 为了让“暂停”在有pending user message的场景下也可靠生效：
+                    # 即使本轮没有 tool_calls，只要本轮模型调用已经结束，
+                    # 我们也要在回合边界暂停，阻止 controller 立刻进入下一轮模型调用。
+                    self._pause_requested = False
+                    self._paused = True
+                    self._persist_pause_state()
+                    self._on_paused()
                 return ai_msg_dict
 
             tool_messages = await execute_tool_calls(
@@ -305,6 +406,17 @@ class Agent(AgentBase):
                 self._append_runtime_message(tool_message)
 
             await self._maybe_wake_memory_manager()
+
+            if self._pause_requested:
+                # 用户点击暂停，可能是想看一会，然后恢复运行之前，还要输入一些内容，
+                # 所以暂停检查点应该在 drain user msg 之前。
+                # 同时必须在 tool_messages 已经 append/persist 且 memory manager 唤醒结束之后，
+                # 否则会造成“用户看到了工具结果，但 memory manager 状态没有同步”的错觉。
+                self._pause_requested = False
+                self._paused = True
+                self._persist_pause_state()
+                self._on_paused()
+                return ai_msg_dict
 
             # steer message 注入点。在执行完toolcall后注入最符合直觉
             # 另外注意，我们是在 memory manager reset-context 之后才注入，

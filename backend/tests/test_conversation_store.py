@@ -75,6 +75,26 @@ class ConversationStoreTests(unittest.TestCase):
             self.assertEqual(loaded_store.memory_manager_turns_since_memory_manager, 7)
             self.assertEqual(loaded_store.memory_manager_awaken_count, 2)
 
+    def test_pause_state_is_persisted_and_loaded(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            originals_dir = Path(temp_dir)
+            store = ConversationStore(
+                system_instruction="system",
+                user_instruction="memory",
+                originals_dir=originals_dir,
+            )
+
+            store.start_with_first_user_message(user_content="hello")
+            store.update_pause_state(pause_requested=True, paused=False)
+
+            loaded_store = ConversationStore.load_from_conversation_file_name(
+                conversation_file_name=store.conversation_file_name,
+                originals_dir=originals_dir,
+            )
+
+            self.assertTrue(loaded_store.pause_requested)
+            self.assertFalse(loaded_store.paused)
+
     def test_find_latest_conversation_file_name_returns_none_when_no_history_exists(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             self.assertIsNone(
