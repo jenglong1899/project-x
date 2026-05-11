@@ -8,9 +8,11 @@ allow_multiple_apperance:bool=False
 编辑失败的话，要把repl存到一个文件里面，然后再提供一个参数叫repl_from_file。这样编辑失败后，不用再重新把 repl 输出一遍。
 
 insert_text
-filepath:Path 支持相对路径或绝对路径。相对路径基于bash tool的cwd
+在needle的前面或后面插入text
+filepath:Path 相对路径或绝对路径。相对路径基于bash tool的cwd
 needle:str 必须唯一。不一定需要输入一整行的内容，只要保证唯一就行了。
 direction:Literal['before','after']
-text:str
+text:str|None 要插入的文本。
+text_from_file:Path|None 如果插入失败了，系统会自动保存...
 
 copy的话，让ai自己写代码，用正则表达式选中一大段文字，然后在选择粘贴到哪里去
