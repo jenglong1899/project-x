@@ -102,6 +102,7 @@ class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
         fake_bash_tool = SimpleNamespace(name="bash")
         fake_read_file_tool = SimpleNamespace(name="read_file")
         fake_replace_text_tool = SimpleNamespace(name="replace_text")
+        fake_insert_text_tool = SimpleNamespace(name="insert_text")
 
         with mock.patch(
             "src.websocket_chat_session.read_main_memory",
@@ -127,17 +128,24 @@ class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
         ) as create_read_file_tool, mock.patch(
             "src.websocket_chat_session.create_replace_text_tool",
             return_value=fake_replace_text_tool,
-        ) as create_replace_text_tool, mock.patch("src.websocket_chat_session.Agent") as agent_cls:
+        ) as create_replace_text_tool, mock.patch(
+            "src.websocket_chat_session.create_insert_text_tool",
+            return_value=fake_insert_text_tool,
+        ) as create_insert_text_tool, mock.patch("src.websocket_chat_session.Agent") as agent_cls:
             create_default_agent(callbacks=make_noop_agent_callbacks())
 
         create_bash_tool.assert_called_once_with(cwd_state=fake_cwd_state)
         create_read_file_tool.assert_called_once_with(cwd_provider=fake_cwd_state)
         create_replace_text_tool.assert_called_once_with(cwd_provider=fake_cwd_state)
+        create_insert_text_tool.assert_called_once_with(cwd_provider=fake_cwd_state)
 
         read_main_memory.assert_called_once_with()
         agent_kwargs = agent_cls.call_args.kwargs
         self.assertEqual(agent_kwargs["loaded_main_memory_content"], "main memory snapshot")
-        self.assertEqual([tool.name for tool in agent_kwargs["tools"]], ["bash", "read_file", "replace_text"])
+        self.assertEqual(
+            [tool.name for tool in agent_kwargs["tools"]],
+            ["bash", "read_file", "replace_text", "insert_text"],
+        )
         self.assertNotIn("reset_context", [tool.name for tool in agent_kwargs["tools"]])
 
     async def _collect_events_until_generation_completed(
