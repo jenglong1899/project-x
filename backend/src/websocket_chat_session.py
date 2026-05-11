@@ -34,6 +34,7 @@ from src.core.prompts import (
 from src.tools.bash import create_bash_tool
 from src.tools.cwd_state import CwdState
 from src.tools.read_file import create_read_file_tool
+from src.tools.replace_text import create_replace_text_tool
 
 
 logger = logging.getLogger(__name__)
@@ -89,6 +90,7 @@ def create_default_agent(*, callbacks: AgentCallbacks) -> Agent:
         tools=[
             create_bash_tool(cwd_state=cwd_state),
             create_read_file_tool(cwd_provider=cwd_state),
+            create_replace_text_tool(cwd_provider=cwd_state),
         ],
         on_ai_content_delta=callbacks.on_ai_content_delta,
         on_ai_reasoning_delta=callbacks.on_ai_reasoning_delta,

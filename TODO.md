@@ -1,5 +1,5 @@
 # 1
-mouse and keyboard
+~~mouse and keyboard~~ 这个之前没有试过，有风险，还是用传统的吧。
 
 # 2
 显示memory manager的工作过程，方便调试
