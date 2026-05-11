@@ -11,8 +11,8 @@ DEFAULT_MAX_CHARS = 30_000
 
 
 class ReadFileInput(BaseModel):
-    filepath: str = Field(min_length=1, description="要读取的文件路径，支持相对路径或绝对路径")
-    line_range_start: int = Field(default=1, ge=1, description="起始行号，最小值为 1")
+    filepath: str = Field(min_length=1, description="支持相对路径或绝对路径")
+    line_range_start: int = Field(default=1, ge=1, description="起始行号，闭区间，最小值为 1")
     line_range_end: int | None = Field(default=None, description="结束行号，闭区间；不传则读到文件末尾或 max_chars 上限")
     show_line_numbers: bool = Field(default=True, description="是否显示行号")
     max_chars: int = Field(default=DEFAULT_MAX_CHARS, gt=0, description="最大输出字符数。超过限制则按完整行截断输出。")
