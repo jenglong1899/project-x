@@ -7,7 +7,7 @@ from typing import Any, Protocol
 from uuid import uuid4
 
 from src.core.agent import Agent, OnPaused, OnPauseRequested, OnQueuedUserMsgCommitted, OnResumed, OnSwitchConversation
-from src.core.agent_controller import AgentController
+from src.core.agent_runner import AgentRunner
 from src.core.agent_turn import (
     OnAiContentDelta,
     OnAiReasoningDelta,
@@ -121,7 +121,7 @@ class AgentControllerFactory(Protocol):
         on_agent_turn_completed: Callable[[], None],
         on_agent_became_idle: Callable[[], None],
         on_error: Callable[[Exception], None],
-    ) -> AgentController: ...
+    ) -> AgentRunner: ...
 
 
 def create_agent_controller(
@@ -132,11 +132,11 @@ def create_agent_controller(
     on_agent_turn_completed: Callable[[], None],
     on_agent_became_idle: Callable[[], None],
     on_error: Callable[[Exception], None],
-) -> AgentController:
+) -> AgentRunner:
     # 产品形态上不再暴露“会话列表/切换/显式恢复某个会话文件”给前端：
     # WebSocket 连接建立时永远走“自动恢复最近的 conversation segment”，
     # 如果本地还没有任何对话文件，则退化为 new_conversation。
-    controller = AgentController(
+    controller = AgentRunner(
         agent=create_default_agent(callbacks=callbacks),
         is_closed=is_closed,
         on_agent_became_busy=on_agent_became_busy,

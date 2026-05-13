@@ -1,8 +1,8 @@
 import asyncio
 import unittest
 
-from src.core.agent_base import AgentBase
-from src.core.agent_controller import AgentController
+from src.core.agent_base import AgentBase, DriveDecision, DriveReason
+from src.core.agent_runner import AgentRunner
 
 
 class _FakeAgentPausedToolTurn(AgentBase):
@@ -38,8 +38,18 @@ class _FakeAgentPausedToolTurn(AgentBase):
     def is_pause_requested(self) -> bool:
         return self._pause_requested
 
-    def has_pending_work(self) -> bool:
+    def _has_backlog(self) -> bool:
         return bool(self._queued_user_messages) or self._pending_follow_up
+
+    def drive_decision(self) -> DriveDecision:
+        if self._paused:
+            reason = DriveReason.paused_with_backlog if self._has_backlog() else DriveReason.paused_no_backlog
+            return DriveDecision(should_drive=False, reason=reason)
+        if self._queued_user_messages:
+            return DriveDecision(should_drive=True, reason=DriveReason.backlog_user_msg)
+        if self._pending_follow_up:
+            return DriveDecision(should_drive=True, reason=DriveReason.backlog_tool_followup)
+        return DriveDecision(should_drive=False, reason=DriveReason.no_backlog)
 
     async def run(self) -> dict[str, object]:
         self.run_calls += 1
@@ -88,8 +98,16 @@ class _FakeAgentPauseWithQueuedMessages(AgentBase):
     def is_pause_requested(self) -> bool:
         return self._pause_requested
 
-    def has_pending_work(self) -> bool:
+    def _has_backlog(self) -> bool:
         return bool(self._queued_user_messages)
+
+    def drive_decision(self) -> DriveDecision:
+        if self._paused:
+            reason = DriveReason.paused_with_backlog if self._has_backlog() else DriveReason.paused_no_backlog
+            return DriveDecision(should_drive=False, reason=reason)
+        if self._has_backlog():
+            return DriveDecision(should_drive=True, reason=DriveReason.backlog_user_msg)
+        return DriveDecision(should_drive=False, reason=DriveReason.no_backlog)
 
     async def run(self) -> dict[str, object]:
         self.run_calls += 1
@@ -108,7 +126,7 @@ class AgentControllerPauseResumeTests(unittest.IsolatedAsyncioTestCase):
     async def test_resume_paused_tool_turn_restarts_without_new_user_message(self) -> None:
         agent = _FakeAgentPausedToolTurn()
         idle_events: asyncio.Queue[None] = asyncio.Queue()
-        controller = AgentController(
+        controller = AgentRunner(
             agent=agent,
             is_closed=lambda: False,
             on_agent_became_busy=lambda: None,
@@ -122,18 +140,18 @@ class AgentControllerPauseResumeTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.wait_for(idle_events.get(), timeout=1)
         self.assertEqual(agent.run_calls, 1)
         self.assertTrue(agent.is_paused())
-        self.assertTrue(agent.has_pending_work())
+        self.assertEqual(agent.drive_decision().reason, DriveReason.paused_with_backlog)
 
         controller.resume()
         await asyncio.wait_for(idle_events.get(), timeout=1)
         self.assertEqual(agent.run_calls, 2)
         self.assertFalse(agent.is_paused())
-        self.assertFalse(agent.has_pending_work())
+        self.assertEqual(agent.drive_decision().reason, DriveReason.no_backlog)
 
     async def test_pause_stops_controller_loop_even_with_queued_messages(self) -> None:
         agent = _FakeAgentPauseWithQueuedMessages()
         idle_events: asyncio.Queue[None] = asyncio.Queue()
-        controller = AgentController(
+        controller = AgentRunner(
             agent=agent,
             is_closed=lambda: False,
             on_agent_became_busy=lambda: None,
@@ -150,10 +168,10 @@ class AgentControllerPauseResumeTests(unittest.IsolatedAsyncioTestCase):
         await asyncio.wait_for(idle_events.get(), timeout=1)
         self.assertEqual(agent.run_calls, 1)
         self.assertTrue(agent.is_paused())
-        self.assertTrue(agent.has_pending_work())
+        self.assertEqual(agent.drive_decision().reason, DriveReason.paused_with_backlog)
 
         controller.resume()
         await asyncio.wait_for(idle_events.get(), timeout=1)
         self.assertEqual(agent.run_calls, 2)
         self.assertFalse(agent.is_paused())
-        self.assertFalse(agent.has_pending_work())
+        self.assertEqual(agent.drive_decision().reason, DriveReason.no_backlog)

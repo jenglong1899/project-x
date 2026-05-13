@@ -5,9 +5,9 @@ from src.commons import noop
 from src.core.agent_base import AgentBase
 
 
-class AgentController:
+class AgentRunner:
     """
-    AgentController 负责“确保 agent 在后台运行、避免重入、并持续运行直到 idle”。
+    AgentRunner 负责“确保 agent 在运行（比如刚要结束运行，但是有刚有steer message进来的时候）、避免重入（发送多个steer message不会导致重入）、并持续运行直到 idle”。
 
     说明：
     - 这里不把 asyncio task 生命周期塞进 Agent 本体（保持 Agent 为“状态机 + 回调”）
@@ -19,6 +19,9 @@ class AgentController:
         *,
         agent: AgentBase,
         is_closed: Callable[[], bool],
+        # 考虑到防止重入性，或者说，AgentRunner才知道Agent的真正的running状态，
+        # 因此下面这三个回调只能在 agent runner里面去触发，
+        # 而不适合在 agent 里面去触发
         on_agent_became_busy: Callable[[], None] | None = None,
         on_agent_became_idle: Callable[[], None] | None = None,
         on_agent_turn_completed: Callable[[], None] | None = None,
@@ -58,12 +61,8 @@ class AgentController:
     def resume(self) -> None:
         self._agent.resume()
         # resume 的语义是“解除暂停并尽可能继续推进状态机”。
-        # 是否需要调度 run() 由 agent.has_pending_work() 统一决定：
-        # - 有排队 user message：需要 drain + 继续跑
-        # - tool 执行后（或中断恢复）欠一轮 follow-up：需要继续跑
-        # - 会话还没真正开始（未持久化且无 user message）：不该跑
-        if self._agent.has_pending_work():
-            self._ensure_running()
+        # 是否需要调度 run() 由 agent.drive_decision() 统一决定。
+        self._ensure_running()
 
     def _ensure_running(self) -> None:
         """
@@ -71,6 +70,8 @@ class AgentController:
         - 如果当前没有 task，或 task 已结束，则启动新的 task
         - 如果 task 正在运行，则不做任何事（防重入）
         """
+        if not self._agent.drive_decision().should_drive:
+            return
         if self._task is not None and not self._task.done():
             return
         self._task = asyncio.create_task(self._run_until_idle())
@@ -90,12 +91,7 @@ class AgentController:
 
                 if self._is_closed():
                     return
-                # 在调用 resume 之后，agent会把状态设置为 非paused
-                # paused 是一个硬边界：即使还有排队 user message，也必须停下，
-                # 否则 pause 在多消息场景下会“形同虚设”。
-                if self._agent.is_paused():
-                    return
-                if not self._agent.has_pending_work():
+                if not self._agent.drive_decision().should_drive:
                     return
         except Exception as exc:
             self._on_error(exc)

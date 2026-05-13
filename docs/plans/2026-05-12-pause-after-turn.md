@@ -9,7 +9,7 @@
 - 需要 UI 按钮：暂停 / 恢复；并能展示“已请求暂停但尚未生效”的状态。
 
 为什么“无 tool_calls 也要能暂停”？
-- `AgentController` 会在 `Agent.run()` 返回后检查 `has_pending_work()`；如果队列里还有消息（用户连发、或前端短时间发了多条），即使本轮没 tool_calls，controller 也会立刻进入下一轮模型调用。
+- `AgentController` 会在 `Agent.run()` 返回后检查 `drive_decision()`；如果队列里还有消息（用户连发、或前端短时间发了多条），即使本轮没 tool_calls，controller 也会立刻进入下一轮模型调用。
 - 因此暂停必须能在“无工具的回合边界”生效，否则多消息场景下暂停会失效。
 - 这点必须写进 `backend/src/core/agent.py` 的中文注释，避免未来误删/误改。
 

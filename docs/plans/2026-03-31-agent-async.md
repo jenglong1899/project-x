@@ -68,7 +68,7 @@ WebSocketChatSession.submit_user_message()
 ```
 
 ### 对外接口与约束（保持最小惊讶）
-- `Agent.new_conversation()` / `resume_conversation()` / `enqueue_user_message()` / `has_pending_work()` 保持同步。
+- `Agent.new_conversation()` / `resume_conversation()` / `enqueue_user_message()` 保持同步。
 - 仅把 `Agent.run()` 改为 `async def run(...)`。
 - `WebSocketChatSession` 仍然在“生成期间”循环跑 Agent，直到没有 pending work。
 

@@ -1,5 +1,23 @@
 from abc import ABC, abstractmethod
+from dataclasses import dataclass
+from enum import StrEnum
 from typing import Any
+
+
+class DriveReason(StrEnum):
+    backlog_user_msg = "backlog_user_msg"
+    backlog_tool_execution = "backlog_tool_execution"
+    backlog_tool_followup = "backlog_tool_followup"
+    not_started = "not_started"
+    no_backlog = "no_backlog"
+    paused_no_backlog = "paused_no_backlog"
+    paused_with_backlog = "paused_with_backlog"
+
+
+@dataclass(frozen=True)
+class DriveDecision:
+    should_drive: bool
+    reason: DriveReason
 
 
 class AgentBase(ABC):
@@ -32,11 +50,12 @@ class AgentBase(ABC):
         raise NotImplementedError
 
     @abstractmethod
-    def has_pending_work(self) -> bool:
+    def drive_decision(self) -> DriveDecision:
         """
-        controller 用它来决定是否需要继续调度 run()。
+        runner 用它来决定“是否应该自动调用 run()”。
 
-        语义：只要调用 run() 能推进任何状态（包括执行未完成的 tool、tool 后续 assistant、
-        或 drain 排队的 user message），就应该返回 True。
+        说明：
+        - drive_decision() 会把 pause gate / not_started 等 runner 约束编码进 reason
+        - “backlog” 的判断也应该在这里完成，避免 runner 额外拼条件
         """
         raise NotImplementedError

@@ -4,8 +4,8 @@ from collections.abc import Callable
 from types import SimpleNamespace
 from unittest import mock
 
-from src.core.agent_base import AgentBase
-from src.core.agent_controller import AgentController
+from src.core.agent_base import AgentBase, DriveDecision, DriveReason
+from src.core.agent_runner import AgentRunner
 from src.core.model_config import ModelConfig
 from src.websocket_chat_session import AgentCallbacks, WebSocketChatSession, create_default_agent
 
@@ -75,8 +75,16 @@ class FakeAgent(AgentBase):
     def is_pause_requested(self) -> bool:
         return self._pause_requested
 
-    def has_pending_work(self) -> bool:
+    def _has_backlog(self) -> bool:
         return bool(self._queued_messages)
+
+    def drive_decision(self) -> DriveDecision:
+        if self._paused:
+            reason = DriveReason.paused_with_backlog if self._has_backlog() else DriveReason.paused_no_backlog
+            return DriveDecision(should_drive=False, reason=reason)
+        if self._has_backlog():
+            return DriveDecision(should_drive=True, reason=DriveReason.backlog_user_msg)
+        return DriveDecision(should_drive=False, reason=DriveReason.no_backlog)
 
     async def run(self) -> dict[str, str]:
         user_message_id, user_message = self._queued_messages.pop(0)
@@ -99,8 +107,8 @@ def make_agent_controller_factory(
         on_agent_turn_completed: Callable[[], None],
         on_agent_became_idle: Callable[[], None],
         on_error: Callable[[Exception], None],
-    ) -> AgentController:
-        controller = AgentController(
+    ) -> AgentRunner:
+        controller = AgentRunner(
             agent=FakeAgent(
                 callbacks=callbacks,
                 scripted_runs=list(scripted_runs),

@@ -40,7 +40,7 @@ WebSocketChatSession
 
 AgentRunner（新）
   - 防重入：同一时间最多一个 runner task 在跑
-  - 跑到 idle：循环 await agent.run()，直到 agent.has_pending_work() 为 False
+  - 跑到 idle：循环 await agent.run()，直到 agent.drive_decision().should_drive 为 False
   - generation 边界：提供 started/completed 钩子（由调用方决定具体投影）
   - 错误处理：捕获异常并回调 on_error（由调用方决定如何对外呈现）
   - close 语义：通过 is_closed 回调在合适的边界退出（不强制 cancel agent.run）
@@ -67,7 +67,7 @@ AgentRunner（新）
 最小 Agent 协议（runner 只关心 run 与 pending）：
 
 - `async def run(self) -> dict[str, Any]`
-- `def has_pending_work(self) -> bool`
+- `def drive_decision(self) -> DriveDecision`
 
 `AgentRunner` 构造参数：
 - `agent`: 满足最小协议的对象
@@ -95,7 +95,7 @@ async def _run_until_idle():
       await agent.run()
       on_agent_turn_completed()
       if is_closed(): return
-      if not agent.has_pending_work(): return
+      if not agent.drive_decision().should_drive: return
   except Exception as exc:
     on_error(exc)
   finally:

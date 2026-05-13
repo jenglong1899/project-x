@@ -40,8 +40,8 @@
 - `new_conversation()`：开始新对话（写入 system/user instruction；但**不会**立即创建 conversation 文件）
 - `resume_conversation(conversation_id=...)`：恢复历史对话（会用历史里的 system/user instruction 覆盖当前）
 - `enqueue_user_message(frontend_msg_id=..., user_message=...)`：排队一条 user message（`frontend_msg_id` 由前端生成，用于 committed 回传）
-- `has_pending_work()`：是否还有可推进的工作（controller 依据它决定是否继续调度 `run()`）
 - `run()`：异步生成循环：drain 队列 → 调模型（流式回调）→（可选）执行工具 → 持久化 → 再 drain → 直到没有 tool_calls
+- `drive_decision()`：runner 是否应该自动继续调用 `run()`（把 pause gate / not_started / backlog 统一封装）
 
 关键不变量/约束：
 - 调用者必须先 `new_conversation()` / `resume_conversation()`，再 `enqueue_user_message()` / `run()`
@@ -124,3 +124,14 @@
 - 2026-04-29：已实现 `conversation.switched { visibleMessages }` 作为 conversation segment 切换的唯一前端事件；payload 不暴露 `conversationFileName`。
 - 初始 WS 自动恢复最近 conversation JSON 时，`Agent.start_conversation()` 会通过 `on_switch_conversation` 把用户可见历史交给 `WebSocketChatSession`，前端用 `visibleMessages` 重建时间线。
 - reset-context / memory manager auto reminder 也走同一个 `conversation.switched` 事件，auto reminder 作为 `visibleMessages` 中的 user message 呈现。
+
+## 刚才完成的任务
+- 2026-05-13：计划重构暂停/驱动可读性（涉及 `backend/src/core/agent_controller.py` 与 `backend/src/core/agent.py`）：
+  - 将 “paused” 定义为：**Runner 不会自动调用 `Agent.run()`**（它是一个 gate，而不是 backlog 的一部分）。
+  - 将 “backlog” 定义为：不考虑 pause 时，调用 `run()` 是否能推进状态机（排队 user msg / assistant(tool_calls) 需执行工具 / tool message 欠 follow-up assistant）。
+  - 将 Runner 的继续运行条件收敛为单一入口：`Agent.drive_decision() -> (should_drive: bool, reason: DriveReason)`，避免 Runner 在外部同时拼 pause gate + backlog 条件。
+  - 保留 `not_started`（conversation 未开始且无队列，解释为何不该跑，避免隐式约束）。
+  - 将 `AgentController` 改名为 `AgentRunner`/`AgentDriver`（职责是后台循环驱动与防重入，不是传统 controller）。
+  - `DriveReason`（讨论版命名）：
+    - `should_drive=True`：`backlog_user_msg` / `backlog_tool_execution` / `backlog_tool_followup`
+    - `should_drive=False`：`not_started` / `no_backlog` / `paused_no_backlog` / `paused_with_backlog`

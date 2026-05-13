@@ -4,7 +4,7 @@ from dataclasses import dataclass
 
 from src.commons import noop
 from src.conversation_store import ConversationStore
-from src.core.agent_base import AgentBase
+from src.core.agent_base import AgentBase, DriveDecision, DriveReason
 from src.core.agent_turn import (
     stream,
     execute_tool_calls,
@@ -223,30 +223,47 @@ class Agent(AgentBase):
     def is_pause_requested(self) -> bool:
         return self._pause_requested
 
-    def has_pending_work(self) -> bool:
-        # 约束：如果 conversation 还没持久化（也就是还没真正“开始”），
-        # 那么 run() 只有在有待处理的 user message 时才是可调用的（否则会抛错）。
+    def drive_decision(self) -> DriveDecision:
+        backlog_reason = self._backlog_reason()
+
+        # paused 是一个硬边界：一旦进入 paused，runner 必须停下，等待显式 resume。
+        if self._paused:
+            if backlog_reason is None:
+                return DriveDecision(should_drive=False, reason=DriveReason.paused_no_backlog)
+            return DriveDecision(should_drive=False, reason=DriveReason.paused_with_backlog)
+
+        if backlog_reason is not None:
+            return DriveDecision(should_drive=True, reason=backlog_reason)
+
+        # 无 backlog，但也要区分“未开始”与“正常 idle”，方便上层做更可读的判断/埋点。
+        if self._conversation_store is None or not self._conversation_store.has_persisted_conversation():
+            return DriveDecision(should_drive=False, reason=DriveReason.not_started)
+
+        return DriveDecision(should_drive=False, reason=DriveReason.no_backlog)
+
+    def _backlog_reason(self) -> DriveReason | None:
         if self._user_msg_queue:
-            return True
+            return DriveReason.backlog_user_msg
 
         if self._conversation_store is None or not self._conversation_store.has_persisted_conversation():
-            return False
+            return None
 
         if not self._messages:
-            return False
+            return None
 
         last = self._messages[-1]
         role = last.get("role")
 
         # 1) assistant(tool_calls) 说明工具还没真正执行完（可能是中断后续跑）。
         if role == "assistant" and last.get("tool_calls"):
-            return True
+            return DriveReason.backlog_tool_execution
 
         # 2) tool message 说明还欠一轮“工具结果后的 follow-up assistant”。
+        # （可能是被中断了导致的）
         if role == "tool":
-            return True
+            return DriveReason.backlog_tool_followup
 
-        return False
+        return None
 
     def _safe_drain_user_message_queue(self) -> None:
         conversation_store = self._require_conversation_store()
