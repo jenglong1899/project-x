@@ -1,6 +1,3 @@
-# 3
-做一个暂停功能，方便调试
-
 # 4
 把 memory manager 改成异步的
 memory manager 工作的时候，我们可以先暂停worker的，看完mm的工作过程，然后再继续运行worker
