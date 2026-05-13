@@ -127,7 +127,7 @@ def make_agent_controller_factory(
 
 
 class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
-    def test_create_default_agent_passes_main_memory_snapshot_and_default_tools(self) -> None:
+    def test_create_default_agent_passes_default_tools(self) -> None:
         fake_cwd_state = SimpleNamespace(cwd="/tmp")
         fake_bash_tool = SimpleNamespace(name="bash")
         fake_read_file_tool = SimpleNamespace(name="read_file")
@@ -135,9 +135,6 @@ class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
         fake_insert_text_tool = SimpleNamespace(name="insert_text")
 
         with mock.patch(
-            "src.websocket_chat_session.read_main_memory",
-            return_value="main memory snapshot",
-        ) as read_main_memory, mock.patch(
             "src.websocket_chat_session.build_system_level_instruction_zh",
             return_value="system",
         ), mock.patch(
@@ -169,9 +166,7 @@ class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
         create_replace_text_tool.assert_called_once_with(cwd_provider=fake_cwd_state)
         create_insert_text_tool.assert_called_once_with(cwd_provider=fake_cwd_state)
 
-        read_main_memory.assert_called_once_with()
         agent_kwargs = agent_cls.call_args.kwargs
-        self.assertEqual(agent_kwargs["loaded_main_memory_content"], "main memory snapshot")
         self.assertEqual(
             [tool.name for tool in agent_kwargs["tools"]],
             ["bash", "read_file", "replace_text", "insert_text"],

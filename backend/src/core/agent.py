@@ -73,7 +73,6 @@ class Agent(AgentBase):
                  on_resumed: OnResumed | None = None,
                  memory_manager_runner: MemoryForkedSubagentRunnerBase | None = None,
                  memory_manager_turn_interval: int = MEMORY_MANAGER_TURN_INTERVAL,
-                 loaded_main_memory_content: str = "",
                  ) -> None:
         if memory_manager_turn_interval <= 0:
             raise ValueError("memory_manager_turn_interval 必须大于 0")
@@ -108,7 +107,6 @@ class Agent(AgentBase):
         self._memory_manager_turn_interval = memory_manager_turn_interval
         self._worker_turns_since_memory_manager = 0
         self._memory_manager_awaken_count = 0
-        self._loaded_main_memory_content = loaded_main_memory_content
         self._pause_requested = False
         self._paused = False
 
@@ -303,7 +301,6 @@ class Agent(AgentBase):
             model_config=self._model_config,
             tools=self._tools,
             is_first_time_awaken=self._memory_manager_awaken_count == 0,
-            loaded_main_memory_content=self._loaded_main_memory_content,
         )
         self._memory_manager_awaken_count += 1
         self._persist_memory_manager_state()
@@ -345,10 +342,9 @@ class Agent(AgentBase):
                             on_ai_tool_call_finished=on_ai_tool_call_finished)
 
     def _reset_context(self) -> None:
-        from src.core.prompts import (
+        from src.core.init_prompts import (
             build_system_level_instruction_zh,
             build_user_level_instruction_zh,
-            read_main_memory,
         )
 
         if self._conversation_store is None:
@@ -356,7 +352,6 @@ class Agent(AgentBase):
 
         self._system_instruction = build_system_level_instruction_zh()
         self._user_instruction = build_user_level_instruction_zh()
-        self._loaded_main_memory_content = read_main_memory()
         self._worker_turns_since_memory_manager = 0
         self._memory_manager_awaken_count = 0
         self._pause_requested = False

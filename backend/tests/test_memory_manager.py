@@ -21,7 +21,6 @@ class MemoryForkedSubagentRunnerTests(unittest.IsolatedAsyncioTestCase):
                 model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
                 tools=[],
                 is_first_time_awaken=True,
-                loaded_main_memory_content="memory",
             )
 
         return result.requested_reset_context

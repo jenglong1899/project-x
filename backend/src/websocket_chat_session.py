@@ -26,10 +26,9 @@ from src.core.model_config import (
     QWEN35PLUS,
     ModelConfig,
 )
-from src.core.prompts import (
+from src.core.init_prompts import (
     build_system_level_instruction_zh,
     build_user_level_instruction_zh,
-    read_main_memory,
 )
 from src.tools.bash import create_bash_tool
 from src.tools.cwd_state import CwdState
@@ -82,14 +81,12 @@ def resolve_model_config() -> ModelConfig:
 
 
 def create_default_agent(*, callbacks: AgentCallbacks) -> Agent:
-    loaded_main_memory_content = read_main_memory()
     cwd_state = CwdState()
     return Agent(
         name="project-x-web",
         model_config=resolve_model_config(),
         system_instruction=build_system_level_instruction_zh(),
         user_instruction=build_user_level_instruction_zh(),
-        loaded_main_memory_content=loaded_main_memory_content,
         # bash 和 read_file 共享 cwd，所以这里必须给每个 Agent 创建独立状态，不能复用全局单例。
         tools=[
             create_bash_tool(cwd_state=cwd_state),

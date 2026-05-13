@@ -399,7 +399,6 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     on_switch_conversation=lambda *, visible_messages: switch_events.append(visible_messages),
                     memory_manager_runner=runner,
                     memory_manager_turn_interval=1,
-                    loaded_main_memory_content="memory before reset",
                 )
                 agent.start_conversation()
 
@@ -421,14 +420,11 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     "_safe_stream",
                     new=mock.AsyncMock(side_effect=[ai_msg_with_tool_call, final_ai_msg]),
                 ), mock.patch(
-                    "src.core.prompts.build_system_level_instruction_zh",
+                    "src.core.init_prompts.build_system_level_instruction_zh",
                     return_value="system-2",
                 ), mock.patch(
-                    "src.core.prompts.build_user_level_instruction_zh",
+                    "src.core.init_prompts.build_user_level_instruction_zh",
                     return_value="user-2",
-                ), mock.patch(
-                    "src.core.prompts.read_main_memory",
-                    return_value="memory after reset",
                 ):
                     agent.enqueue_user_message(frontend_msg_id="u1", user_message="hello")
                     result = await agent.run()
@@ -447,7 +443,6 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(agent._messages[2], {"role": "user", "content": RESET_CONTEXT_AUTO_REMINDER})
         self.assertEqual(agent._worker_turns_since_memory_manager, 0)
         self.assertEqual(agent._memory_manager_awaken_count, 0)
-        self.assertEqual(agent._loaded_main_memory_content, "memory after reset")
 
     async def test_memory_manager_does_not_awaken_before_tool_turn_interval(self) -> None:
         runner = _StaticMemoryManagerRunner(requested_reset_context=False)
@@ -504,7 +499,6 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     tools=[self._echo_tool()],
                     memory_manager_runner=runner,
                     memory_manager_turn_interval=2,
-                    loaded_main_memory_content="main memory snapshot",
                 )
                 agent.start_conversation()
 
@@ -535,7 +529,6 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, final_ai_msg)
         self.assertEqual(len(runner.calls), 1)
         self.assertTrue(runner.calls[0]["is_first_time_awaken"])
-        self.assertEqual(runner.calls[0]["loaded_main_memory_content"], "main memory snapshot")
         self.assertEqual(agent._worker_turns_since_memory_manager, 0)
         self.assertEqual(agent._memory_manager_awaken_count, 1)
 

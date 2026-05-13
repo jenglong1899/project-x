@@ -7,7 +7,6 @@
 
 # memory 是最重要的，所以memory一开始的讲解是放在system prompt的开头。记忆文件的内容放在 user prompt 的末尾。（AI对开头和结尾记得最牢）
 
-import difflib
 import os
 import sys
 from datetime import datetime
@@ -65,6 +64,7 @@ def build_system_level_instruction_zh() -> str:
 </system_level_instruction>
 
 """
+
 
 # 目录设计成 memories/summaries/，是考虑到以后AI可能会为某一些记忆创建一个文件夹，
 # 如果是只有 memories/，那目录就会变成：
@@ -136,20 +136,15 @@ def build_user_level_instruction_zh() -> str:
 """
     return _user_level_instruction
 
-
 def build_memory_forked_subagent_prompt(
-    *,
-    is_first_time_awaken: bool,
-    loaded_main_memory_content: str,
+        *,
+        is_first_time_awaken: bool,
 ) -> str:
     if is_first_time_awaken:
         memory_operation_history_prompt = f"这是你第一次在当前会话中被唤醒，“磁盘中的{MEMORY_MAIN_MD}”和“上下文中的{MEMORY_MAIN_MD}”是一致的，没有被之前的你修改过"
     else:
         memory_operation_history_prompt = f"""
-这不是你第一次在当前会话中被唤醒，你之前已经更改过记忆文档。这是“磁盘中的{MEMORY_MAIN_MD}”和“上下文中的{MEMORY_MAIN_MD}”的diff：
-<memory_diff>
-{_build_diff(loaded_main_memory_content=loaded_main_memory_content)}
-</memory_diff>
+这不是你第一次在当前会话中被唤醒，你之前已经更改过记忆文档。
 """
 
     return f"""
@@ -199,19 +194,3 @@ def build_memory_forked_subagent_prompt(
 
 </roles_change_notice>
 """
-
-
-def _build_diff(*, loaded_main_memory_content: str) -> str:
-    disk_main_memory_content = read_main_memory()
-    diff_lines = list(
-        difflib.unified_diff(
-            loaded_main_memory_content.splitlines(),
-            disk_main_memory_content.splitlines(),
-            fromfile=f"context-{MEMORY_MAIN_MD}",
-            tofile=f"disk-{MEMORY_MAIN_MD}",
-            lineterm="",
-        )
-    )
-    if not diff_lines:
-        return "(project-x-hint: no difference)"
-    return "\n".join(diff_lines)
