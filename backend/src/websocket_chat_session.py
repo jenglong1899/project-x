@@ -17,11 +17,7 @@ from src.core.agent_turn import (
     OnToolResult,
 )
 from src.core.model_config import (
-    DEEPSEEK,
-    GEMINI,
-    GEMINI_OPENROUTER,
-    MINIMAX_MAINLAND,
-    MINIMAX_OVERSEA,
+    DEEPSEEKV4FLASH,
     MOCK,
     QWEN35PLUS,
     ModelConfig,
@@ -41,11 +37,7 @@ logger = logging.getLogger(__name__)
 
 MODEL_CONFIGS: dict[str, ModelConfig] = {
     "qwen35plus": QWEN35PLUS,
-    "deepseek": DEEPSEEK,
-    "gemini": GEMINI,
-    "gemini_openrouter": GEMINI_OPENROUTER,
-    "minimax_mainland": MINIMAX_MAINLAND,
-    "minimax_oversea": MINIMAX_OVERSEA,
+    "deepseek": DEEPSEEKV4FLASH,
     "mock": MOCK,
 }
 
