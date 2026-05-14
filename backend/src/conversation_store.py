@@ -9,8 +9,8 @@ import coolname
 from src.commons import ORIGINALS_DIR
 
 MEMORY_MANAGER_META_KEY = "memory-manager"
-MEMORY_MANAGER_TURNS_KEY = "turns-since-memory-manager"
 MEMORY_MANAGER_AWAKEN_COUNT_KEY = "awaken-count"
+MEMORY_MANAGER_LAST_CHECKPOINT_TOKENS_KEY = "last-checkpoint-tokens"
 PAUSE_META_KEY = "pause"
 PAUSE_REQUESTED_KEY = "requested"
 PAUSE_PAUSED_KEY = "paused"
@@ -67,8 +67,8 @@ class ConversationStore:
         self._file_path: Path | None = None
         self._conversation_file_name = ""
         self._messages: list[dict[str, Any]] = []
-        self._memory_manager_turns_since_memory_manager = 0
         self._memory_manager_awaken_count = 0
+        self._memory_manager_last_checkpoint_tokens = 0
         self._pause_requested = False
         self._paused = False
 
@@ -84,12 +84,12 @@ class ConversationStore:
         return self._file_path is not None
 
     @property
-    def memory_manager_turns_since_memory_manager(self) -> int:
-        return self._memory_manager_turns_since_memory_manager
-
-    @property
     def memory_manager_awaken_count(self) -> int:
         return self._memory_manager_awaken_count
+
+    @property
+    def memory_manager_last_checkpoint_tokens(self) -> int:
+        return self._memory_manager_last_checkpoint_tokens
 
     @property
     def pause_requested(self) -> bool:
@@ -99,16 +99,17 @@ class ConversationStore:
     def paused(self) -> bool:
         return self._paused
 
-    def update_memory_manager_state(
-        self,
-        *,
-        turns_since_memory_manager: int,
-        awaken_count: int,
-    ) -> None:
-        if turns_since_memory_manager < 0 or awaken_count < 0:
+    def update_memory_manager_state(self, *, awaken_count: int) -> None:
+        if awaken_count < 0:
             raise ValueError("memory manager 状态不能为负数")
-        self._memory_manager_turns_since_memory_manager = turns_since_memory_manager
         self._memory_manager_awaken_count = awaken_count
+        if self.has_persisted_conversation():
+            self._write_json_atomically()
+
+    def update_memory_manager_checkpoint_tokens(self, *, last_checkpoint_tokens: int) -> None:
+        if last_checkpoint_tokens < 0:
+            raise ValueError("last_checkpoint_tokens 不能为负数")
+        self._memory_manager_last_checkpoint_tokens = last_checkpoint_tokens
         if self.has_persisted_conversation():
             self._write_json_atomically()
 
@@ -192,12 +193,12 @@ class ConversationStore:
         store._messages = messages
         memory_manager_meta = meta.get(MEMORY_MANAGER_META_KEY)
         if isinstance(memory_manager_meta, dict):
-            turns_since_memory_manager = memory_manager_meta.get(MEMORY_MANAGER_TURNS_KEY)
             awaken_count = memory_manager_meta.get(MEMORY_MANAGER_AWAKEN_COUNT_KEY)
-            if isinstance(turns_since_memory_manager, int) and turns_since_memory_manager >= 0:
-                store._memory_manager_turns_since_memory_manager = turns_since_memory_manager
+            last_checkpoint_tokens = memory_manager_meta.get(MEMORY_MANAGER_LAST_CHECKPOINT_TOKENS_KEY)
             if isinstance(awaken_count, int) and awaken_count >= 0:
                 store._memory_manager_awaken_count = awaken_count
+            if isinstance(last_checkpoint_tokens, int) and last_checkpoint_tokens >= 0:
+                store._memory_manager_last_checkpoint_tokens = last_checkpoint_tokens
 
         pause_meta = meta.get(PAUSE_META_KEY)
         if isinstance(pause_meta, dict):
@@ -265,8 +266,8 @@ class ConversationStore:
         payload = {
             "meta": {
                 MEMORY_MANAGER_META_KEY: {
-                    MEMORY_MANAGER_TURNS_KEY: self._memory_manager_turns_since_memory_manager,
                     MEMORY_MANAGER_AWAKEN_COUNT_KEY: self._memory_manager_awaken_count,
+                    MEMORY_MANAGER_LAST_CHECKPOINT_TOKENS_KEY: self._memory_manager_last_checkpoint_tokens,
                 },
                 PAUSE_META_KEY: {
                     PAUSE_REQUESTED_KEY: self._pause_requested,

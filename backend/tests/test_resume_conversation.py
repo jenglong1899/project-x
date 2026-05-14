@@ -90,9 +90,9 @@ class StartConversationTests(unittest.TestCase):
             )
             store.start_with_first_user_message(user_content="hello")
             store.update_memory_manager_state(
-                turns_since_memory_manager=7,
                 awaken_count=2,
             )
+            store.update_memory_manager_checkpoint_tokens(last_checkpoint_tokens=123)
 
             agent = Agent(
                 name="demo",
@@ -105,8 +105,8 @@ class StartConversationTests(unittest.TestCase):
             with mock.patch("src.conversation_store.ORIGINALS_DIR", originals_dir):
                 agent.start_conversation()
 
-        self.assertEqual(agent._worker_turns_since_memory_manager, 7)
         self.assertEqual(agent._memory_manager_awaken_count, 2)
+        self.assertEqual(agent._conversation_store.memory_manager_last_checkpoint_tokens, 123)  # type: ignore[union-attr]
 
 
 if __name__ == "__main__":

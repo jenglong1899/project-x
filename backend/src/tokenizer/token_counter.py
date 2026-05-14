@@ -61,6 +61,8 @@ MODEL_SPECS: dict[str, ModelSpec] = {
     ),
 }
 
+DEFAULT_CONTEXT_WINDOW = 128_000
+
 _ALLOWED_MESSAGE_KEYS = {"role", "content", "name", "tool_calls", "tool_call_id"}
 
 
@@ -99,6 +101,18 @@ class TokenizerRegistry:
 class TokenCounter:
     def __init__(self, registry: TokenizerRegistry | None = None) -> None:
         self._registry = registry or TokenizerRegistry()
+
+    def context_window(self, model: str) -> int:
+        """
+        用于“按上下文窗口比例”做阈值判断时的上下文上限。
+
+        - 已知模型：返回精确值
+        - 未知模型：返回一个保守默认值（避免上层直接放弃逻辑）
+        """
+        spec = MODEL_SPECS.get(model)
+        if spec is not None:
+            return spec.context_window
+        return DEFAULT_CONTEXT_WINDOW
 
     def count_text_tokens(self, model: str, text: str) -> tuple[int, bool]:
         try:

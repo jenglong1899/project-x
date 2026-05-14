@@ -1,6 +1,6 @@
 import unittest
 
-from src.tokenizer.token_counter import TokenCounter, TokenCounterError, TokenizerRegistry
+from src.tokenizer.token_counter import DEFAULT_CONTEXT_WINDOW, TokenCounter, TokenCounterError, TokenizerRegistry
 
 
 class _FailingRegistry(TokenizerRegistry):
@@ -46,6 +46,11 @@ class TokenCounterTests(unittest.TestCase):
 
         self.assertTrue(is_estimate)
         self.assertGreaterEqual(percentage, 1)
+
+    def test_context_window_falls_back_for_unknown_model(self) -> None:
+        counter = TokenCounter(registry=_FailingRegistry())
+
+        self.assertEqual(counter.context_window("mock"), DEFAULT_CONTEXT_WINDOW)
 
 
 if __name__ == "__main__":

@@ -25,8 +25,9 @@ from src.core.memory_manager import (
 )
 from src.core.model_config import ModelConfig
 from src.core.policies import strip_reasoning_content_if_needed
+from src.tokenizer.token_counter import TokenCounter
 
-MEMORY_MANAGER_TURN_INTERVAL = 20
+MEMORY_MANAGER_CONTEXT_GROWTH_THRESHOLD = 0.03
 
 logger = logging.getLogger(__name__)
 
@@ -78,11 +79,8 @@ class Agent(AgentBase):
                  on_pause_requested: OnPauseRequested | None = None,
                  on_paused: OnPaused | None = None,
                  on_resumed: OnResumed | None = None,
-                 memory_manager_turn_interval: int = MEMORY_MANAGER_TURN_INTERVAL,
+                 token_counter: TokenCounter | None = None,
                  ) -> None:
-        if memory_manager_turn_interval <= 0:
-            raise ValueError("memory_manager_turn_interval 必须大于 0")
-
         self.name = name
         self._model_config = model_config
         self._messages: list[dict[str, Any]] = []
@@ -113,9 +111,8 @@ class Agent(AgentBase):
         self._memory_manager_judge_runner = MemoryManagerJudgeResetContextRunner()
         self._memory_manager_summary_task: asyncio.Task[None] | None = None
         self._memory_manager_judge_task: asyncio.Task[bool] | None = None
-        self._memory_manager_turn_interval = memory_manager_turn_interval
-        self._worker_turns_since_memory_manager = 0
         self._memory_manager_awaken_count = 0
+        self._token_counter = token_counter or TokenCounter()
         self._pause_requested = False
         self._paused = False
 
@@ -163,7 +160,6 @@ class Agent(AgentBase):
         # 继续旧对话时，system/user instruction 以历史为准。
         self._system_instruction = system_msg["content"]
         self._user_instruction = user_instruction_msg["content"]
-        self._worker_turns_since_memory_manager = store.memory_manager_turns_since_memory_manager
         self._memory_manager_awaken_count = store.memory_manager_awaken_count
         self._pause_requested = store.pause_requested
         self._paused = store.paused
@@ -293,7 +289,6 @@ class Agent(AgentBase):
         if self._conversation_store is None:
             return
         self._conversation_store.update_memory_manager_state(
-            turns_since_memory_manager=self._worker_turns_since_memory_manager,
             awaken_count=self._memory_manager_awaken_count,
         )
 
@@ -323,13 +318,20 @@ class Agent(AgentBase):
 
 
     async def _maybe_wake_memory_manager(self) -> None:
-        self._worker_turns_since_memory_manager += 1
-        if self._worker_turns_since_memory_manager < self._memory_manager_turn_interval:
-            self._persist_memory_manager_state()
+        conversation_store = self._require_conversation_store()
+        context_limit = self._token_counter.context_window(self._model_config.model)
+        current_tokens, _is_estimate = self._token_counter.count_messages_tokens(self._model_config.model, self._messages)
+        last_checkpoint_tokens = conversation_store.memory_manager_last_checkpoint_tokens
+
+        if last_checkpoint_tokens <= 0 or current_tokens <= last_checkpoint_tokens:
+            conversation_store.update_memory_manager_checkpoint_tokens(last_checkpoint_tokens=current_tokens)
             return
 
-        self._worker_turns_since_memory_manager = 0
-        self._persist_memory_manager_state()
+        growth_ratio = (current_tokens - last_checkpoint_tokens) / context_limit
+        if growth_ratio < MEMORY_MANAGER_CONTEXT_GROWTH_THRESHOLD:
+            return
+
+        conversation_store.update_memory_manager_checkpoint_tokens(last_checkpoint_tokens=current_tokens)
 
         summary_task = self._memory_manager_summary_task
         if summary_task is None or summary_task.done():
@@ -439,7 +441,6 @@ class Agent(AgentBase):
 
         self._system_instruction = build_system_level_instruction_zh()
         self._user_instruction = build_user_level_instruction_zh()
-        self._worker_turns_since_memory_manager = 0
         self._memory_manager_awaken_count = 0
         self._pause_requested = False
         self._paused = False

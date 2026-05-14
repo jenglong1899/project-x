@@ -6,6 +6,18 @@ from src.core.agent import Agent
 from src.core.model_config import ModelConfig
 
 
+class _FakeTokenCounter:
+    def __init__(self, *, context_window: int = 100, token_per_message: int = 10) -> None:
+        self._context_window = context_window
+        self._token_per_message = token_per_message
+
+    def context_window(self, model: str) -> int:  # noqa: ARG002
+        return self._context_window
+
+    def count_messages_tokens(self, model: str, messages: list[dict[str, object]]) -> tuple[int, bool]:  # noqa: ARG002
+        return len(messages) * self._token_per_message, True
+
+
 class AgentMemoryManagerBackgroundTaskTests(unittest.IsolatedAsyncioTestCase):
     async def test_summary_task_exception_is_observed_and_logged(self) -> None:
         agent = Agent(
@@ -14,11 +26,12 @@ class AgentMemoryManagerBackgroundTaskTests(unittest.IsolatedAsyncioTestCase):
             system_instruction="system",
             user_instruction="user instruction",
             tools=[],
-            memory_manager_turn_interval=1,
+            token_counter=_FakeTokenCounter(),
         )
         agent.start_conversation()
         agent.enqueue_user_message(frontend_msg_id="1", user_message="hi")
         agent._safe_drain_user_message_queue()
+        agent._require_conversation_store().update_memory_manager_checkpoint_tokens(last_checkpoint_tokens=1)
 
         agent._memory_manager_summary_runner.run = mock.AsyncMock(side_effect=RuntimeError("boom"))  # type: ignore[method-assign]
         agent._memory_manager_judge_runner.run = mock.AsyncMock(return_value=False)  # type: ignore[method-assign]
