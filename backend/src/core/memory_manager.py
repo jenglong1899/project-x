@@ -146,19 +146,18 @@ def build_memory_manager_judge_whether_reset_context_prompt(messages:dict[str,An
 
 一个例子是，当前上下文中有大量的中间过程，而我们只需要最后的结果，那通常就应该重置。
 
-可能对你有帮助的信息：当前上下文中，各类消息token占上下文窗口的比例数据：
+如果判断出要重置上下文，你就输出 {RESET_CONTEXT_MAGIC_WORD} ，系统检测到后，就会重置
 
-{_build_context_token_detail(messages)}
 </roles_change_notice>
 """
+# todo 不要提供无用的信息？还是尽可能提供信息？
+# AI似乎可以自己估算出来个大概（至少gpt5是这样），所以先不用 _build_context_token_detail ？
 
 def _build_context_token_detail(messages:dict[str,Any])->str:
-    # - user msg 占据多少百分比的上下文窗口
-    # - AI msg 占据多少百分比，且其内部还会再细分：
-        # - reasoning占据多少
-        # - content占据多少
-    # - tool call占据多少，且其内部还会再细分：
-    #       - 各个工具的占比（大于一定比例才显示，小于一定比例的，通通归为“其他工具”）
-    # - tool result 占据多少百分比，且其内部还会再细分：
-        # - 各个工具的tool result的占比（大于一定比例才显示，小于一定比例的，通通归为“其他工具”）
+    # 打印以下消息占据的上下文百分比窗口
+    # - user msg
+    # - AI reasoning 占据多少百分比
+    # - AI content占据多少
+    # - AI tool call，且其内部还会再细分各个工具的占比（大于一定比例才显示，小于一定比例的，通通归为“其他工具”）
+    # - tool result 占据多少百分比，且其内部还会再细分各个工具的tool result的占比（大于一定比例才显示，小于一定比例的，通通归为“其他工具”）
     raise NotImplementedError
