@@ -1,29 +1,28 @@
 import unittest
 from unittest import mock
 
-from src.core.memory_manager import MemoryForkedSubagentRunner, RESET_CONTEXT_MAGIC_WORD
+from src.core.memory_manager import MemoryManagerJudgeResetContextRunner, RESET_CONTEXT_MAGIC_WORD
 from src.core.model_config import ModelConfig
 
 
-class MemoryForkedSubagentRunnerTests(unittest.IsolatedAsyncioTestCase):
+class MemoryManagerJudgeRunnerTests(unittest.IsolatedAsyncioTestCase):
     async def _run_with_final_content(self, content: object) -> bool:
-        runner = MemoryForkedSubagentRunner()
+        runner = MemoryManagerJudgeResetContextRunner()
 
         with mock.patch(
             "src.core.memory_manager.stream",
             new=mock.AsyncMock(return_value={"role": "assistant", "content": content}),
         ):
-            result = await runner.run(
+            requested = await runner.run(
                 worker_messages=[
                     {"role": "system", "content": "system"},
                     {"role": "user", "content": "user instruction"},
                 ],
                 model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
                 tools=[],
-                is_first_time_awaken=True,
             )
 
-        return result.requested_reset_context
+        return requested
 
     async def test_magic_word_on_independent_line_requests_reset_context(self) -> None:
         requested = await self._run_with_final_content(

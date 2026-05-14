@@ -7,7 +7,8 @@
 - **`AgentController` 是驱动层**：`backend/src/core/agent_controller.py` 负责“提交消息 + 确保后台运行 + 防重入 + 跑到 idle”，适配层（如 WebSocket）只和它交互，避免直接操作 `Agent`。
 - **`WebSocketChatSession` 是适配层**：`backend/src/websocket_chat_session.py` 通过 `AgentController` 驱动 agent（busy/idle/turn 完成回调），并把回调投影成前端事件（assistant delta / tool card / committed 等）。
 - **`ConversationStore` 是持久化层**：`backend/src/conversation_store.py` 把对话落地到 `~/.project-x/memories/originals/*.json`，并负责追加消息与恢复历史 messages。
-- **system/user instruction 来源**：`backend/src/core/prompts.py` 会读取/确保 `~/.project-x/memories/summaries/main.md`，`reset_context` 会触发“新会话 + 重新加载指令”的编排。
+- **Memory Manager 是双 runner**：触发点在 `Agent._maybe_wake_memory_manager()`；`summary runner` 维护 `~/.project-x/memories/summaries/main.md` 等记忆文档，`judge runner` 只判断是否 reset-context（两者实现见 `backend/src/core/memory_manager.py`）。
+- **reset-context 的关键约束**：当 judge 判定 reset 时必须先等待 in-flight summary 结束；reset 后会尽量保留 worker 最近 10 条消息且第一条必须是 `assistant`（落盘通过 `ConversationStore.start_with_messages()`）。
 
 数据流（大致）：
 `frontend` → `/ws` → `WebSocketChatSession.submit_user_message()` → `Agent.enqueue_user_message()` → `await Agent.run()` → `await agent_turn.stream()` →（可选）`await execute_tool_calls()` → `ConversationStore.append_message()` → 事件经 `ChatEventProjector` 回前端  
@@ -48,7 +49,7 @@
 - conversation 文件创建时机：**首条 committed 的 user message 被 drain 进 `_messages` 时才落地**（避免“空会话文件”）
 - `run()` 会显式拒绝“新会话尚未开始（未持久化首条 user message）就进入生成”的误用
 - provider 兼容：deepseek 需要在发送下一条 user message 前去掉 `reasoning_content`（`backend/src/core/policies.py`）
-- `reset_context`：工具执行阶段可能返回 `ResetContextDirective`，触发 `Agent._reset_context()` 新建会话并回调 `on_reset_context`
+- `reset_context`：工具执行阶段可能返回重置指令（见 `backend/src/tools/reset_context.py` 与 `backend/src/core/agent_turn.py` 的特判）；真正的 reset 会在 Agent 内部重建会话并触发 `conversation.switched`
 
 回调（适配层用来投影前端事件）：
 - AI 流式：`on_ai_content_delta` / `on_ai_reasoning_delta`
@@ -66,7 +67,7 @@
 - `backend/src/tools/bash.py`：`create_bash_tool()`（入参 pydantic 校验；`bash -lc` 执行；返回 stdout/stderr/returncode；会更新共享 cwd）
 - `backend/src/tools/read_file.py`：`create_read_file_tool()`（读取文件片段，默认显示 `nl -ba` 风格行号，按完整行应用 `max_chars` 截断）
 - `backend/src/tools/cwd_state.py`：`CwdState` 是 bash 与 read_file 共享 cwd 的小状态对象；默认 Agent 每次创建独立 `CwdState`，不能复用全局单例。
-- `backend/src/tools/reset_context.py`：`RESET_CONTEXT_TOOL`（真实编排在 `Agent._reset_context()`；首次调用只返回 hint）
+- `backend/src/tools/reset_context.py`：`RESET_CONTEXT_TOOL`（工具本身只返回 hint；真正的 reset 编排由 Agent 内部的 reset 流程完成）
 
 ### 3) 持久化（`backend/src/conversation_store.py`）
 - 落地目录：`~/.project-x/memories/originals/`（可用 `PROJECT_X_MEMORIES_ROOT` 覆盖根目录，见 `backend/src/commons.py`）

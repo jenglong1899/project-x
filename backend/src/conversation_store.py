@@ -132,6 +132,27 @@ class ConversationStore:
         self._file_path = self._originals_dir / self._conversation_file_name
         self._write_json_atomically()
 
+    def start_with_messages(self, *, messages: list[dict[str, Any]]) -> None:
+        """
+        用于 reset-context 等场景：希望直接把一段已有对话片段落到新会话中。
+
+        约束：
+        - 不要求 messages 的第一条必须是 user；可以是 assistant/tool。
+        - 调用方需自行保证 messages 不包含 system/user instruction（这里只会自动补前两条指令）。
+        """
+        if self.has_persisted_conversation():
+            raise RuntimeError("conversation 已开始，不能重复创建")
+
+        self._conversation_file_name = build_conversation_file_name()
+        self._messages = [
+            {"role": "system", "content": self._system_instruction},
+            {"role": "user", "content": self._user_instruction},
+            *[dict(m) for m in messages],
+        ]
+        self._originals_dir.mkdir(parents=True, exist_ok=True)
+        self._file_path = self._originals_dir / self._conversation_file_name
+        self._write_json_atomically()
+
     @classmethod
     def load_from_conversation_file_name(
         cls,

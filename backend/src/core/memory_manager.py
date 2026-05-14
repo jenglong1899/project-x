@@ -8,46 +8,24 @@ from src.core.init_prompts import read_main_memory
 from src.commons import noop
 from src.core.agent_turn import Tool, execute_tool_calls, stream
 from src.core.model_config import ModelConfig
-from src.core.init_prompts import build_memory_forked_subagent_prompt
-
 
 RESET_CONTEXT_MAGIC_WORD = "PROJECT-X-RESET-CONTEXT"
 
 
-@dataclass(frozen=True)
-class MemoryManagerResult:
-    requested_reset_context: bool
-
-
-class MemoryForkedSubagentRunnerBase(ABC):
-    @abstractmethod
+class MemoryManagerSummaryRunner:
     async def run(
-        self,
-        *,
-        worker_messages: list[dict[str, Any]],
-        model_config: ModelConfig,
-        tools: list[Tool],
-        is_first_time_awaken: bool,
-    ) -> MemoryManagerResult: ...
-
-
-class MemoryForkedSubagentRunner(MemoryForkedSubagentRunnerBase):
-    async def run(
-        self,
-        *,
-        worker_messages: list[dict[str, Any]],
-        model_config: ModelConfig,
-        tools: list[Tool],
-        is_first_time_awaken: bool,
-    ) -> MemoryManagerResult:
-        forked_messages = [
-            dict(message)
-            for message in worker_messages
-        ]
+            self,
+            *,
+            worker_messages: list[dict[str, Any]],
+            model_config: ModelConfig,
+            tools: list[Tool],
+            is_first_time_awaken: bool,
+    ) -> None:
+        forked_messages = [dict(message) for message in worker_messages]
         forked_messages.append(
             {
                 "role": "user",
-                "content": build_memory_forked_subagent_prompt(
+                "content": build_memory_manager_summary_prompt(
                     is_first_time_awaken=is_first_time_awaken,
                 ),
             }
@@ -79,14 +57,62 @@ class MemoryForkedSubagentRunner(MemoryForkedSubagentRunnerBase):
             )
             forked_messages.extend(tool_messages)
 
+        return None
+
+
+class MemoryManagerJudgeResetContextRunner:
+    async def run(
+            self,
+            *,
+            worker_messages: list[dict[str, Any]],
+            model_config: ModelConfig,
+            tools: list[Tool],
+    ) -> bool:
+        forked_messages = [dict(message) for message in worker_messages]
+        forked_messages.append(
+            {
+                "role": "user",
+                "content": build_memory_manager_judge_whether_reset_context_prompt(
+                    messages=worker_messages
+                ),
+            }
+        )
+
+        while True:
+            assistant_message = await stream(
+                model_config=model_config,
+                messages=forked_messages,
+                tools=tools,
+                on_ai_content_delta=noop,
+                on_ai_reasoning_delta=noop,
+                on_ai_tool_call_started=noop,
+                on_ai_tool_call_arguments_delta=noop,
+                on_ai_tool_call_finished=noop,
+            )
+            forked_messages.append(assistant_message)
+            tool_calls = assistant_message.get("tool_calls")
+            if not tool_calls:
+                break
+
+            # judge runner 只判断是否 reset-context，不允许真正执行工具。
+            # 但为了不破坏 provider 的“工具缓存”，我们依然把 tools 透传给 stream，
+            # 并对 tool_calls 统一回一个不可执行的 tool result，让对话继续走到结束。
+            tool_messages: list[dict[str, Any]] = []
+            for call in tool_calls:
+                tool_call_id = call.get("id")
+                if not isinstance(tool_call_id, str) or not tool_call_id:
+                    continue
+                tool_messages.append(
+                    {
+                        "role": "tool",
+                        "tool_call_id": tool_call_id,
+                        "content": "判断是否需要重置上下文，不需要工具调用",
+                    }
+                )
+            forked_messages.extend(tool_messages)
+
         content = assistant_message.get("content")
-        requested_reset_context = (
-            isinstance(content, str)
-            and RESET_CONTEXT_MAGIC_WORD in content.splitlines()
-        )
-        return MemoryManagerResult(
-            requested_reset_context=requested_reset_context,
-        )
+        return isinstance(content, str) and RESET_CONTEXT_MAGIC_WORD in content.splitlines()
 
 
 def build_memory_manager_summary_prompt(is_first_time_awaken: bool) -> str:
@@ -129,10 +155,12 @@ def build_memory_manager_summary_prompt(is_first_time_awaken: bool) -> str:
 
 </roles_change_notice>
 """
-# todo 注意这个FLAG，不要在系统唤起memory manager之前注入，不然到时候memory manager的上下文倒数第二新的那条消息就是那个FLAG，然而这个 flag 之前的消息并没有被摘要过。
-#  所以这个flag要在memory manager工作完成之后再插入。
 
-def build_memory_manager_judge_whether_reset_context_prompt(messages:dict[str,Any])->str:
+
+# todo 注意这个FLAG，不要在系统唤起memory manager之前注入，不然到时候memory manager的上下文倒数第二新的那条消息就是那个FLAG，然而这个 flag 之前的消息并没有被摘要过。
+#  所以这个flag要在summary唤起之后再插入。
+
+def build_memory_manager_judge_whether_reset_context_prompt(messages: list[dict[str, Any]]) -> str:
     return f"""
 <roles_change_notice>
 
@@ -146,14 +174,20 @@ def build_memory_manager_judge_whether_reset_context_prompt(messages:dict[str,An
 
 一个例子是，当前上下文中有大量的中间过程，而我们只需要最后的结果，那通常就应该重置。
 
+例外情况：如果预估worker还有几轮就可以完成任务，而这时刚好大约有50%的内容是不重要的，那么这个时候一般不建议重置。
+
 如果判断出要重置上下文，你就输出 {RESET_CONTEXT_MAGIC_WORD} ，系统检测到后，就会重置
+
+你会在上下文中看到 {WAKE_MEMORY_MANAGER_FLAG}，你不需要去管这个
 
 </roles_change_notice>
 """
+
+
 # todo 不要提供无用的信息？还是尽可能提供信息？
 # AI似乎可以自己估算出来个大概（至少gpt5是这样），所以先不用 _build_context_token_detail ？
 
-def _build_context_token_detail(messages:dict[str,Any])->str:
+def _build_context_token_detail(messages: dict[str, Any]) -> str:
     # 打印以下消息占据的上下文百分比窗口
     # - user msg
     # - AI reasoning 占据多少百分比

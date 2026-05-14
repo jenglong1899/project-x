@@ -16,7 +16,8 @@ TODO_MEMORY_FILEPATH = MEMORIES_ROOT / MEMORY_TODO_MD
 
 ORIGINALS_DIR = MEMORIES_ROOT / "originals"
 
-WAKE_MEMORY_MANAGER_FLAG="<flag>WAKE_MEMORY_MANAGER_FLAG_POINT\n（worker不需要关注这条消息，这只是系统用来辅助的消息）</flag>"
+WAKE_MEMORY_MANAGER_FLAG="<flag>WAKE_MEMORY_MANAGER_FLAG_POINT\n（worker一般不需要关注这条消息，这只是系统用来辅助的消息）</flag>"
+# RESET_CONTEXT_DECISION_MADE_FLAG="<flag>RESET_CONTEXT_DECISION_MADE_POINT</flag>"
 
 def noop(*args: Any, **kwargs: Any) -> None:
     return None

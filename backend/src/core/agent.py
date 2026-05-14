@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from collections import deque
 from typing import Any, Protocol
 from dataclasses import dataclass
@@ -16,12 +18,17 @@ from src.core.agent_turn import (
     OnToolResult,
     Tool,
 )
-from src.core.memory_manager import MemoryForkedSubagentRunner, MemoryForkedSubagentRunnerBase
+from src.commons import WAKE_MEMORY_MANAGER_FLAG
+from src.core.memory_manager import (
+    MemoryManagerJudgeResetContextRunner,
+    MemoryManagerSummaryRunner,
+)
 from src.core.model_config import ModelConfig
 from src.core.policies import strip_reasoning_content_if_needed
-from src.tools.reset_context import RESET_CONTEXT_AUTO_REMINDER
 
 MEMORY_MANAGER_TURN_INTERVAL = 20
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -71,7 +78,6 @@ class Agent(AgentBase):
                  on_pause_requested: OnPauseRequested | None = None,
                  on_paused: OnPaused | None = None,
                  on_resumed: OnResumed | None = None,
-                 memory_manager_runner: MemoryForkedSubagentRunnerBase | None = None,
                  memory_manager_turn_interval: int = MEMORY_MANAGER_TURN_INTERVAL,
                  ) -> None:
         if memory_manager_turn_interval <= 0:
@@ -103,7 +109,10 @@ class Agent(AgentBase):
         self._on_resumed = on_resumed or noop
 
         self._user_msg_queue: deque[QueuedUserMessage] = deque()
-        self._memory_manager_runner = memory_manager_runner or MemoryForkedSubagentRunner()
+        self._memory_manager_summary_runner = MemoryManagerSummaryRunner()
+        self._memory_manager_judge_runner = MemoryManagerJudgeResetContextRunner()
+        self._memory_manager_summary_task: asyncio.Task[None] | None = None
+        self._memory_manager_judge_task: asyncio.Task[bool] | None = None
         self._memory_manager_turn_interval = memory_manager_turn_interval
         self._worker_turns_since_memory_manager = 0
         self._memory_manager_awaken_count = 0
@@ -288,6 +297,31 @@ class Agent(AgentBase):
             awaken_count=self._memory_manager_awaken_count,
         )
 
+    @staticmethod
+    def _observe_background_task_exceptions(*, task: asyncio.Task[Any], task_name: str, agent_name: str) -> None:
+        """
+        目的：确保后台 task 的异常一定会被观察到，否则 asyncio 会报：
+        "Task exception was never retrieved"
+
+        这里用 done callback 主动调用 task.exception() 完成“异常领取”，并打日志。
+        """
+
+        def _on_done(done_task: asyncio.Task[Any]) -> None:
+            try:
+                exc = done_task.exception()
+            except asyncio.CancelledError:
+                logger.info("Agent[%s] 后台任务 %s 被取消", agent_name, task_name)
+                return
+            except Exception:
+                logger.exception("Agent[%s] 读取后台任务 %s 的异常时失败", agent_name, task_name)
+                return
+
+            if exc is not None:
+                logger.error("Agent[%s] 后台任务 %s 异常退出", agent_name, task_name, exc_info=exc)
+
+        task.add_done_callback(_on_done)
+
+
     async def _maybe_wake_memory_manager(self) -> None:
         self._worker_turns_since_memory_manager += 1
         if self._worker_turns_since_memory_manager < self._memory_manager_turn_interval:
@@ -296,17 +330,54 @@ class Agent(AgentBase):
 
         self._worker_turns_since_memory_manager = 0
         self._persist_memory_manager_state()
-        result = await self._memory_manager_runner.run(
-            worker_messages=self._messages,
-            model_config=self._model_config,
-            tools=self._tools,
-            is_first_time_awaken=self._memory_manager_awaken_count == 0,
-        )
-        self._memory_manager_awaken_count += 1
-        self._persist_memory_manager_state()
 
-        if result.requested_reset_context:
-            self._reset_context()
+        summary_task = self._memory_manager_summary_task
+        if summary_task is None or summary_task.done():
+            worker_messages_snapshot = [dict(message) for message in self._messages]
+            summary_task = asyncio.create_task(
+                self._memory_manager_summary_runner.run(
+                    worker_messages=worker_messages_snapshot,
+                    model_config=self._model_config,
+                    tools=self._tools,
+                    is_first_time_awaken=self._memory_manager_awaken_count == 0,
+                )
+            )
+            self._observe_background_task_exceptions(
+                task=summary_task,
+                task_name="memory_manager_summary_task",
+                agent_name=self.name,
+            )
+            self._memory_manager_summary_task = summary_task
+            self._append_runtime_message({"role": "user", "content": WAKE_MEMORY_MANAGER_FLAG})
+            self._memory_manager_awaken_count += 1
+            self._persist_memory_manager_state()
+
+        judge_task = self._memory_manager_judge_task
+        if judge_task is None or judge_task.done():
+            worker_messages_snapshot = [dict(message) for message in self._messages]
+            self._memory_manager_judge_task = asyncio.create_task(
+                self._memory_manager_judge_runner.run(
+                    worker_messages=worker_messages_snapshot,
+                    model_config=self._model_config,
+                    tools=self._tools,
+                )
+            )
+            judge_task = self._memory_manager_judge_task
+        if judge_task is None:
+            logger.warning("memory manager judge task 未初始化，本次跳过 judge")
+            return
+        should_reset_context = await judge_task
+        if should_reset_context:
+            summary_task = self._memory_manager_summary_task
+            if summary_task is not None and not summary_task.done():
+                try:
+                    await summary_task
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    logger.exception("Agent[%s] 等待 memory_manager_summary_task 时失败，仍继续 reset_context", self.name)
+            self._reset_context_keep_last_worker_messages(keep_last_n=10)
+
 
     def _append_runtime_message(self, message: dict[str, Any]) -> None:
         # 这个函数被用的地方都是在 run 函数的后方，
@@ -341,7 +412,7 @@ class Agent(AgentBase):
                             on_ai_tool_call_arguments_delta=on_ai_tool_call_arguments_delta,
                             on_ai_tool_call_finished=on_ai_tool_call_finished)
 
-    def _reset_context(self) -> None:
+    def _reset_context_keep_last_worker_messages(self, *, keep_last_n: int) -> None:
         from src.core.init_prompts import (
             build_system_level_instruction_zh,
             build_user_level_instruction_zh,
@@ -350,6 +421,22 @@ class Agent(AgentBase):
         if self._conversation_store is None:
             raise RuntimeError("conversation_store 未初始化，无法 reset_context")
 
+        if keep_last_n < 0:
+            raise ValueError("keep_last_n 不能为负数")
+        worker_messages = [dict(m) for m in self._messages[2:]]
+        max_to_keep = min(len(worker_messages), keep_last_n)
+        kept_messages = []
+        for take_n in range(max_to_keep, -1, -1):
+            candidate = worker_messages[-take_n:] if take_n else []
+            if not candidate:
+                kept_messages = []
+                break
+            if candidate[0].get("role") == "assistant":
+                kept_messages = candidate
+                break
+        if keep_last_n and not kept_messages and worker_messages:
+            logger.warning("reset-context 无法保留末尾 %s 条且以 assistant 开头，改为不保留", keep_last_n)
+
         self._system_instruction = build_system_level_instruction_zh()
         self._user_instruction = build_user_level_instruction_zh()
         self._worker_turns_since_memory_manager = 0
@@ -357,25 +444,16 @@ class Agent(AgentBase):
         self._pause_requested = False
         self._paused = False
 
-        self._messages = [
-            {"role": "system", "content": self._system_instruction},
-            {"role": "user", "content": self._user_instruction},
-        ]
         conversation_store = ConversationStore(
             system_instruction=self._system_instruction,
             user_instruction=self._user_instruction,
         )
-        # 用 auto_reminder 作为新会话的第一条 user message，
-        # 这样 conversation 文件会立刻创建且模型也能看到 reminder。
-        conversation_store.start_with_first_user_message(
-            user_content=RESET_CONTEXT_AUTO_REMINDER
-        )
         self._conversation_store = conversation_store
+        conversation_store.start_with_messages(messages=kept_messages)
         self._messages = conversation_store.build_messages_from_history()
         self._persist_pause_state()
         self._notify_switch_conversation(messages=self._messages)
         self._on_resumed()
-        # 接下来 run() 会继续 while 循环，直接以 auto_reminder 为最后一条 user message 进行下一轮模型调用。
 
     async def run(self) -> dict[str, Any]:
         conversation_store = self._require_conversation_store()
@@ -417,6 +495,8 @@ class Agent(AgentBase):
             for tool_message in tool_messages:
                 self._append_runtime_message(tool_message)
 
+            # 在这里maybe wake memory manager，当前msg是tool result msg
+            # 这个格式是合法的。
             await self._maybe_wake_memory_manager()
 
             if self._pause_requested:
