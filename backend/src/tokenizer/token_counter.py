@@ -38,24 +38,24 @@ class ModelSpec:
 MODEL_SPECS: dict[str, ModelSpec] = {
     # DeepSeek 官方 OpenAI 兼容接口的 usage.prompt_tokens 也会把 assistant 空消息闭合（+eos）。
     "openai/deepseek-v4-flash": ModelSpec(
-        context_window=128_000,
+        context_window=1_000_000,
         tokenizer_id="deepseek-ai/DeepSeek-V3",
         close_generation_prompt_with_eos=True,
     ),
     "openai/deepseek-v4-pro": ModelSpec(
-        context_window=128_000,
+        context_window=1_000_000,
         tokenizer_id="deepseek-ai/DeepSeek-V3",
         close_generation_prompt_with_eos=True,
     ),
     # DashScope 的 OpenAI 兼容接口返回的 usage.prompt_tokens 口径会把 assistant 的空消息也“闭合”掉，
     # 等价于在 generation prompt 末尾额外追加一个 <|im_end|>（即 tokenizer.eos_token_id）。
     "openai/qwen3.5-flash": ModelSpec(
-        context_window=128_000,
+        context_window=256_000,
         tokenizer_id="Qwen/Qwen2.5-72B-Instruct",
         close_generation_prompt_with_eos=True,
     ),
     "openai/qwen3.5-plus": ModelSpec(
-        context_window=128_000,
+        context_window=256_000,
         tokenizer_id="Qwen/Qwen2.5-72B-Instruct",
         close_generation_prompt_with_eos=True,
     ),
