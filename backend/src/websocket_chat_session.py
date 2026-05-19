@@ -347,7 +347,7 @@ class WebSocketChatSession:
         agent_controller_factory: AgentControllerFactory | None = None,
     ) -> None:
         """
-        WebSocket 连接的会话编排器：桥接 Agent（agent.py）和 WebSocket。
+        WebSocket 连接的会话编排器：桥接 AgentRunner(agent_runner.py) 和 WebSocket。
         :param agent_controller_factory: 用于测试注入
         """
         self._outgoing_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
