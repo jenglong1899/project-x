@@ -7,12 +7,6 @@ memory manager 工作的时候，我们可以先暂停worker的，看完mm的工
 
 当worker调用了 create_memory_manager 的时候，系统做的轮次计数要重置
 
-# 6
-问题：
-异步的情况下，如果用户要求处理记忆，而系统自动唤起的memory manager还没工作完，要怎么办？
-要弄一个锁
-一次只能弄一个mm
-
 # 4
 用“翻译epub”的场景来验证记忆效果，如果效果不好的话，就要去做#7
 
@@ -52,11 +46,8 @@ memory manager 工作的时候，我们可以先暂停worker的，看完mm的工
 如果你要编辑json、html、excel等文件，通常建议你用python脚本+对应的库来编辑，这样会更容易
 </file_operation>
 
-## build_memory_forked_subagent_prompt 的 _build_diff
-将来要改成：如果 diff 比较小才显示 diff。如果 diff 比较大，那就显示新版记忆的内容就行
-
 ## MEMORY_MAIN.md
-如果检测到长度超过多少，编辑之后返回提示“检测到长度超过。。。，你看看是不是有些地方还可以优化的，比如有部分内容是不是可以挪到其他文档中”
+如果检测到长度超过多少，要在memory manager编辑之后返回提示“检测到长度超过。。。，你看看是不是有些地方还可以优化的，比如有部分内容是不是可以挪到其他文档中”
 
 # 信息更新通知
 
@@ -80,12 +71,5 @@ user level instruction
 # shell
 非技术用户看不懂shell，应该再提供一个参数，叫做 simple-explanation
 
-
 # ui/ux
 AI 输出的速度太快了，以至于人类跟不上。AI 应该暂停，直到我们读完了它的内容，就是你要根据那个滚轮。来决定要不要进行下一轮。
-
-# 1
-把前端代码弄懂
-
-# 前端
-_active_assistant_message_id 在前端如何起作用还是没看懂
