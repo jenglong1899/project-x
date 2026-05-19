@@ -113,20 +113,12 @@
 - `docs/code_explanations/`：教学/讲义（例如 `teach_backend_asyncio_basics.md`、`teach_frontend_store_basics.md`）
 - TODO.md 你不需要去阅读，通常这只会分散你的注意力。
 
-## 计划索引
-- 2026-03-31：把 Agent 改为 async（移除 WebSocket 层 to_thread）：`docs/plans/2026-03-31-agent-async.md`
-- 2026-04-28：跨进程工具调用机制（用户预置脚本 → 本地 HTTP endpoint → `InterprocessToolRegistry`）：`docs/plans/2026-04-28-interprocess-tool-call.md`
-- 2026-04-29：记忆管理与 MagicWord reset-context（memory manager fork、记忆 diff、reset_context tool 废弃路径）：`docs/plans/2026-04-29-memory-forked-subagent.md`
-- 2026-04-29：`conversation.switched` 事件（初始恢复最新 conversation JSON、reset-context 切 segment 时统一 hydrate 前端）：`docs/plans/2026-04-29-conversation-switched-event.md`
-
 ## 最近完成
 - 2026-05-10：修正 `read_file` 截断语义；`end` 现在表示实际返回内容的最后一行，若第一行就超过 `max_chars` 则返回 `end=null` 且 `truncated=true`，方便调用方从 `end + 1` 续读。
-- 2026-05-10：新增并接入 `read_file` 工具；默认 Agent 工具列表包含 `bash` 和 `read_file`，二者通过每个 Agent 独立的 `CwdState` 共享 cwd。相关提交：`91502b8 partial-feat: share cwd between bash and read_file`。
+- 2026-05-10：新增并接入 `read_file` 工具；默认 Agent 工具列表包含 `bash` 和 `read_file`，二者通过每个 Agent 独立的 `CwdState` 共享 cwd。
 - 2026-04-29：已实现 `conversation.switched { visibleMessages }` 作为 conversation segment 切换的唯一前端事件；payload 不暴露 `conversationFileName`。
 - 初始 WS 自动恢复最近 conversation JSON 时，`Agent.start_conversation()` 会通过 `on_switch_conversation` 把用户可见历史交给 `WebSocketChatSession`，前端用 `visibleMessages` 重建时间线。
 - reset-context / memory manager auto reminder 也走同一个 `conversation.switched` 事件，auto reminder 作为 `visibleMessages` 中的 user message 呈现。
-
-## 刚才完成的任务
 - 2026-05-13：计划重构暂停/驱动可读性（涉及 `backend/src/core/agent_controller.py` 与 `backend/src/core/agent.py`）：
   - 将 “paused” 定义为：**Runner 不会自动调用 `Agent.run()`**（它是一个 gate，而不是 backlog 的一部分）。
   - 将 “backlog” 定义为：不考虑 pause 时，调用 `run()` 是否能推进状态机（排队 user msg / assistant(tool_calls) 需执行工具 / tool message 欠 follow-up assistant）。
