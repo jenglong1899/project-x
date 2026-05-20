@@ -1,14 +1,32 @@
-# 4
-把 memory manager 改成异步的
-memory manager 工作的时候，我们可以先暂停worker的，看完mm的工作过程，然后再继续运行worker
+# 1
+
+还是不要清空tab了。然后我们要给tab单独弄一个名字，这样就不会重复。
+
+名字就是 conversation-id + summary和judge被唤起时的次数（第一次在当前上下文中被唤起就是1，第二次就是2）。不过当前的 conversation id其实有点问题，他是cool-name+时间戳+.json，json名字也带进去了，估计还得派一个subagent去改一下这个
+
+# 2
+
+```
+tools_by_name = {tool.name: tool for tool in tools}
+            if len(tools_by_name) != len(tools):
+                raise ValueError("tools 里存在重复的 name")
+
+            tool_messages = await execute_tool_calls(
+                ai_msg_dict=assistant_message,
+                tools_by_name=tools_by_name,
+                on_tool_result=noop,
+            )
+```
+我感觉这种写法有点太多余了，不应该是调用者去整理出tools_by_name，应该是execute_tool_calls自己整理出来
+
+# 3
+
+conversation.switched 和 paused 好像没有关联吧？你都能切换对话了，那肯定是在运行中啊。
 
 # 5
 工具 create_memory_manager
 
 当worker调用了 create_memory_manager 的时候，系统做的轮次计数要重置
-
-# 4
-用“翻译epub”的场景来验证记忆效果，如果效果不好的话，就要去做#7
 
 # 5
 接入定时任务
@@ -16,8 +34,6 @@ memory manager 工作的时候，我们可以先暂停worker的，看完mm的工
 # 6
 接入飞书
 
-# 7
-把记忆摘要、记忆整理、决定是否重置上下文拆分，一次只做一件事。
 
 # 8
 引入 tokenizer，read tool不按char限制，而是按上下文百分比限制，比如一个模型的上下文是1M，，max_token_percentage=5，一个文件如果全读进来是60K，那么就会截断

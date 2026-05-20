@@ -4,7 +4,7 @@
 - 暂停（等本轮工具调用结束后暂停），现在AI的输出速度太快了，得加这个功能，方便调试
 
 # 建议阅读顺序：
-1. src/core/init_prompts.py 大致了解记忆功能。工作过程、记忆总结和记忆重置决策要分离，减轻AI的注意力负担，这三者看似不能被分离，其实是可以的，具体见指令。
+1. src/core/init_prompts.py 大致了解记忆功能。工作过程、记忆总结和记忆重置决策要分离，减轻AI的注意力负担，这三者看似不能被分离，但其实是可以的，具体见指令。上下文要每增长一定程度就要总结一次，而不是等到最后重置的时候再总结，不然模型会有遗漏
 2. src/core/agent.py，这里面是 agent 提供的接口。
 3. src/core/agent_runner.py：主要是为了照顾steer conversation功能，保证agent在有多条steer msg进来的时候，只运行一个agent，防止重入。 
 4. src/web_app.py

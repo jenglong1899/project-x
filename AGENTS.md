@@ -111,7 +111,7 @@
 - `docs/draft-plans/`：早期草案/想法，内容不保证与当前实现一致
 - `docs/plans/`：实施时写下的更稳定计划文档（通常与当前实现更一致，但仍以代码为准）
 - `docs/code_explanations/`：教学/讲义（例如 `teach_backend_asyncio_basics.md`、`teach_frontend_store_basics.md`）
-- TODO.md 你不需要去阅读，通常这只会分散你的注意力。
+- TODO.md 和 README.md 你不需要去阅读，通常这只会分散你的注意力。
 
 ## 最近完成
 - 2026-05-10：修正 `read_file` 截断语义；`end` 现在表示实际返回内容的最后一行，若第一行就超过 `max_chars` 则返回 `end=null` 且 `truncated=true`，方便调用方从 `end + 1` 续读。
