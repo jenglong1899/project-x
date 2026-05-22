@@ -17,10 +17,12 @@ from src.core.agent_turn import (
     OnToolResult,
 )
 from src.core.model_config import (
-    DEEPSEEKV4FLASH,
-    MOCK,
-    QWEN35PLUS,
     ModelConfig,
+    DEEPSEEKV4FLASH,
+    DEEPSEEKV4PRO,
+    QWEN35FLASH,
+    QWEN35PLUS,
+    MOCK,
 )
 from src.core.init_prompts import (
     build_system_level_instruction_zh,
@@ -36,8 +38,10 @@ from src.tools.replace_text import create_replace_text_tool
 logger = logging.getLogger(__name__)
 
 MODEL_CONFIGS: dict[str, ModelConfig] = {
-    "qwen35plus": QWEN35PLUS,
-    "deepseek": DEEPSEEKV4FLASH,
+    "qwen3.5-flash": QWEN35FLASH,
+    "qwen3.5-plus": QWEN35PLUS,
+    "deepseek-v4-flash": DEEPSEEKV4FLASH,
+    "deepseek-v4-pro":DEEPSEEKV4PRO,
     "mock": MOCK,
 }
 
@@ -58,7 +62,7 @@ class AgentCallbacks:
 
 
 def resolve_model_config() -> ModelConfig:
-    model_key = os.getenv("PROJECT_X_MODEL_CONFIG", "qwen35plus")
+    model_key = os.getenv("PROJECT_X_MODEL_CONFIG", "deepseek-v4-pro")
     model_config = MODEL_CONFIGS.get(model_key)
     if model_config is None:
         supported = ", ".join(sorted(MODEL_CONFIGS))
