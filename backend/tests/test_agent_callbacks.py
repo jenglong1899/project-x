@@ -483,7 +483,8 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(agent._messages[0], {"role": "system", "content": "system-2"})
         self.assertEqual(agent._messages[1], {"role": "user", "content": "user-2"})
-        self.assertEqual(agent._memory_manager_awaken_count, 0)
+        self.assertEqual(agent._memory_manager_summary_awaken_count, 0)
+        self.assertEqual(agent._memory_manager_judge_awaken_count, 0)
 
     async def test_memory_manager_does_not_awaken_below_context_growth_threshold(self) -> None:
         summary_runner = _StaticSummaryRunner()
@@ -512,7 +513,8 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(summary_runner.calls, [])
         self.assertEqual(judge_runner.calls, [])
-        self.assertEqual(agent._memory_manager_awaken_count, 0)
+        self.assertEqual(agent._memory_manager_summary_awaken_count, 0)
+        self.assertEqual(agent._memory_manager_judge_awaken_count, 0)
 
     async def test_memory_manager_awakes_when_context_growth_threshold_is_reached(self) -> None:
         summary_runner = _StaticSummaryRunner()
@@ -561,7 +563,8 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(summary_runner.calls), 1)
         self.assertTrue(summary_runner.calls[0]["is_first_time_awaken"])
         self.assertEqual(len(judge_runner.calls), 1)
-        self.assertEqual(agent._memory_manager_awaken_count, 1)
+        self.assertEqual(agent._memory_manager_summary_awaken_count, 1)
+        self.assertEqual(agent._memory_manager_judge_awaken_count, 1)
 
     async def test_judge_reset_waits_for_summary_before_switching_conversation(self) -> None:
         switch_events: list[list[dict[str, object]]] = []
@@ -671,7 +674,8 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result, final_ai_msg)
         self.assertEqual(len(summary_runner.calls), 1)
         self.assertEqual(len(judge_runner.calls), 2)
-        self.assertEqual(agent._memory_manager_awaken_count, 1)
+        self.assertEqual(agent._memory_manager_summary_awaken_count, 1)
+        self.assertEqual(agent._memory_manager_judge_awaken_count, 2)
         self.assertEqual(
             sum(1 for m in agent._messages if m.get("role") == "user" and m.get("content") == WAKE_MEMORY_MANAGER_FLAG),
             1,

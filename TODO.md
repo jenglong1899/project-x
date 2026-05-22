@@ -1,3 +1,8 @@
+#
+
+弄一个日志来记录memory manager的工作过程，summary和judge分别单独记录。日志名字是conversation file-name的前6位+{summary/judge}+{第几轮唤起}。
+记录 user msg, ai msg, tool msg 就行
+
 # 1
 
 还是不要清空tab了。然后我们要给tab单独弄一个名字，这样就不会重复。

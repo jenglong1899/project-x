@@ -7,6 +7,7 @@ from src.core.init_prompts import read_main_memory
 
 from src.commons import noop
 from src.core.agent_turn import Tool, execute_tool_calls, stream
+from src.core.memory_manager_run_logger import MemoryManagerRunLogger
 from src.core.model_config import ModelConfig
 
 RESET_CONTEXT_MAGIC_WORD = "PROJECT-X-RESET-CONTEXT"
@@ -20,16 +21,27 @@ class MemoryManagerSummaryRunner:
             model_config: ModelConfig,
             tools: list[Tool],
             is_first_time_awaken: bool,
+            conversation_file_name: str,
+            awaken_round: int,
     ) -> None:
         forked_messages = [dict(message) for message in worker_messages]
+        logger = MemoryManagerRunLogger(
+            conversation_file_name=conversation_file_name,
+            runner_kind="summary",
+            awaken_round=awaken_round,
+        )
+        user_prompt = {
+            "role": "user",
+            "content": build_memory_manager_summary_prompt(
+                is_first_time_awaken=is_first_time_awaken,
+            ),
+        }
         forked_messages.append(
             {
-                "role": "user",
-                "content": build_memory_manager_summary_prompt(
-                    is_first_time_awaken=is_first_time_awaken,
-                ),
+                **user_prompt,
             }
         )
+        logger.append_event(user_prompt)
 
         tools_by_name = {tool.name: tool for tool in tools}
         if len(tools_by_name) != len(tools):
@@ -47,6 +59,15 @@ class MemoryManagerSummaryRunner:
                 on_ai_tool_call_finished=noop,
             )
             forked_messages.append(assistant_message)
+            logger.append_event(
+                {
+                    "role": "assistant",
+                    "content": "\n".join(
+                        s for s in [assistant_message.get("reasoning_content"), assistant_message.get("content")] if isinstance(s, str) and s
+                    ),
+                    "tool_calls": assistant_message.get("tool_calls") or [],
+                }
+            )
             if not assistant_message.get("tool_calls"):
                 break
 
@@ -56,6 +77,14 @@ class MemoryManagerSummaryRunner:
                 on_tool_result=noop,
             )
             forked_messages.extend(tool_messages)
+            for tool_message in tool_messages:
+                logger.append_event(
+                    {
+                        "role": "tool",
+                        "content": tool_message.get("content"),
+                        "tool_call_id": tool_message.get("tool_call_id"),
+                    }
+                )
 
         return None
 
@@ -67,16 +96,27 @@ class MemoryManagerJudgeResetContextRunner:
             worker_messages: list[dict[str, Any]],
             model_config: ModelConfig,
             tools: list[Tool],
+            conversation_file_name: str,
+            awaken_round: int,
     ) -> bool:
         forked_messages = [dict(message) for message in worker_messages]
+        logger = MemoryManagerRunLogger(
+            conversation_file_name=conversation_file_name,
+            runner_kind="judge",
+            awaken_round=awaken_round,
+        )
+        user_prompt = {
+            "role": "user",
+            "content": build_memory_manager_judge_whether_reset_context_prompt(
+                messages=worker_messages
+            ),
+        }
         forked_messages.append(
             {
-                "role": "user",
-                "content": build_memory_manager_judge_whether_reset_context_prompt(
-                    messages=worker_messages
-                ),
+                **user_prompt,
             }
         )
+        logger.append_event(user_prompt)
 
         while True:
             assistant_message = await stream(
@@ -90,6 +130,15 @@ class MemoryManagerJudgeResetContextRunner:
                 on_ai_tool_call_finished=noop,
             )
             forked_messages.append(assistant_message)
+            logger.append_event(
+                {
+                    "role": "assistant",
+                    "content": "\n".join(
+                        s for s in [assistant_message.get("reasoning_content"), assistant_message.get("content")] if isinstance(s, str) and s
+                    ),
+                    "tool_calls": assistant_message.get("tool_calls") or [],
+                }
+            )
             tool_calls = assistant_message.get("tool_calls")
             if not tool_calls:
                 break
@@ -102,11 +151,17 @@ class MemoryManagerJudgeResetContextRunner:
                 tool_call_id = call.get("id")
                 if not isinstance(tool_call_id, str) or not tool_call_id:
                     continue
-                tool_messages.append(
+                tool_message = {
+                    "role": "tool",
+                    "tool_call_id": tool_call_id,
+                    "content": "判断是否需要重置上下文，不需要工具调用",
+                }
+                tool_messages.append(tool_message)
+                logger.append_event(
                     {
                         "role": "tool",
+                        "content": tool_message["content"],
                         "tool_call_id": tool_call_id,
-                        "content": "判断是否需要重置上下文，不需要工具调用",
                     }
                 )
             forked_messages.extend(tool_messages)

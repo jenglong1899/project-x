@@ -20,6 +20,8 @@ class MemoryManagerJudgeRunnerTests(unittest.IsolatedAsyncioTestCase):
                 ],
                 model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
                 tools=[],
+                conversation_file_name="calm-river-20260429T120000000000Z.json",
+                awaken_round=1,
             )
 
         return requested

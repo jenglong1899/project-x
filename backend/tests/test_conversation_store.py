@@ -63,7 +63,8 @@ class ConversationStoreTests(unittest.TestCase):
 
             store.start_with_first_user_message(user_content="hello")
             store.update_memory_manager_state(
-                awaken_count=2,
+                summary_awaken_count=2,
+                judge_awaken_count=3,
             )
             store.update_memory_manager_checkpoint_tokens(last_checkpoint_tokens=123)
 
@@ -72,7 +73,8 @@ class ConversationStoreTests(unittest.TestCase):
                 originals_dir=originals_dir,
             )
 
-            self.assertEqual(loaded_store.memory_manager_awaken_count, 2)
+            self.assertEqual(loaded_store.memory_manager_summary_awaken_count, 2)
+            self.assertEqual(loaded_store.memory_manager_judge_awaken_count, 3)
             self.assertEqual(loaded_store.memory_manager_last_checkpoint_tokens, 123)
 
     def test_pause_state_is_persisted_and_loaded(self) -> None:

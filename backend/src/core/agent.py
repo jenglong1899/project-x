@@ -110,7 +110,8 @@ class Agent(AgentBase):
         self._memory_manager_judge_runner = MemoryManagerJudgeResetContextRunner()
         self._memory_manager_summary_task: asyncio.Task[None] | None = None
         self._memory_manager_judge_task: asyncio.Task[bool] | None = None
-        self._memory_manager_awaken_count = 0
+        self._memory_manager_summary_awaken_count = 0
+        self._memory_manager_judge_awaken_count = 0
         self._token_counter = token_counter or TokenCounter()
         self._pause_requested = False
         self._paused = False
@@ -158,7 +159,8 @@ class Agent(AgentBase):
         # 继续旧对话时，system/user instruction 以历史为准。
         self._system_instruction = system_msg["content"]
         self._user_instruction = user_instruction_msg["content"]
-        self._memory_manager_awaken_count = store.memory_manager_awaken_count
+        self._memory_manager_summary_awaken_count = store.memory_manager_summary_awaken_count
+        self._memory_manager_judge_awaken_count = store.memory_manager_judge_awaken_count
         self._pause_requested = store.pause_requested
         self._paused = store.paused
 
@@ -286,7 +288,8 @@ class Agent(AgentBase):
         if self._conversation_store is None:
             return
         self._conversation_store.update_memory_manager_state(
-            awaken_count=self._memory_manager_awaken_count,
+            summary_awaken_count=self._memory_manager_summary_awaken_count,
+            judge_awaken_count=self._memory_manager_judge_awaken_count,
         )
 
     @staticmethod
@@ -332,13 +335,16 @@ class Agent(AgentBase):
 
         summary_task = self._memory_manager_summary_task
         if summary_task is None or summary_task.done():
+            summary_round = self._memory_manager_summary_awaken_count + 1
             worker_messages_snapshot = [dict(message) for message in self._messages]
             summary_task = asyncio.create_task(
                 self._memory_manager_summary_runner.run(
                     worker_messages=worker_messages_snapshot,
                     model_config=self._model_config,
                     tools=self._tools,
-                    is_first_time_awaken=self._memory_manager_awaken_count == 0,
+                    is_first_time_awaken=self._memory_manager_summary_awaken_count == 0,
+                    conversation_file_name=conversation_store.conversation_file_name,
+                    awaken_round=summary_round,
                 )
             )
             self._observe_background_task_exceptions(
@@ -348,20 +354,25 @@ class Agent(AgentBase):
             )
             self._memory_manager_summary_task = summary_task
             self._append_runtime_message({"role": "user", "content": WAKE_MEMORY_MANAGER_FLAG})
-            self._memory_manager_awaken_count += 1
+            self._memory_manager_summary_awaken_count = summary_round
             self._persist_memory_manager_state()
 
         judge_task = self._memory_manager_judge_task
         if judge_task is None or judge_task.done():
+            judge_round = self._memory_manager_judge_awaken_count + 1
             worker_messages_snapshot = [dict(message) for message in self._messages]
             self._memory_manager_judge_task = asyncio.create_task(
                 self._memory_manager_judge_runner.run(
                     worker_messages=worker_messages_snapshot,
                     model_config=self._model_config,
                     tools=self._tools,
+                    conversation_file_name=conversation_store.conversation_file_name,
+                    awaken_round=judge_round,
                 )
             )
             judge_task = self._memory_manager_judge_task
+            self._memory_manager_judge_awaken_count = judge_round
+            self._persist_memory_manager_state()
         if judge_task is None:
             logger.warning("memory manager judge task 未初始化，本次跳过 judge")
             return
@@ -438,7 +449,8 @@ class Agent(AgentBase):
 
         self._system_instruction = build_system_level_instruction_zh()
         self._user_instruction = build_user_level_instruction_zh()
-        self._memory_manager_awaken_count = 0
+        self._memory_manager_summary_awaken_count = 0
+        self._memory_manager_judge_awaken_count = 0
         self._pause_requested = False
         self._paused = False
 
