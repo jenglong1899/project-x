@@ -131,43 +131,22 @@ class TokenCounter:
         return DEFAULT_CONTEXT_WINDOW
 
     def count_text_tokens(self, model: str, text: str) -> tuple[int, bool]:
-        try:
-            tokenizer = self._registry.get_tokenizer(self._spec(model).tokenizer_id)
-            return len(tokenizer.encode(text)), False
-        except Exception:
-            return ceil(len(text.encode("utf-8")) / 4), True
+        # 临时策略：不调用任何 tokenizer，统一走估算口径。
+        # 目的：避免本地/CI 里因为 transformers 依赖、HF 缓存、联网下载等不确定因素导致阻塞或失败。
+        _ = model
+        return ceil(len(text.encode("utf-8")) / 4), True
 
     def count_messages_tokens(self, model: str, messages: list[dict[str, Any]]) -> tuple[int, bool]:
+        # 临时策略：不调用任何 tokenizer，统一走估算口径。
+        # 注意：仍然保留 message 字段校验与 reasoning_content 折叠逻辑，避免上游把异常字段悄悄吞掉。
         self._validate_messages(messages)
-        try:
-            spec = self._spec(model)
-            tokenizer = self._registry.get_tokenizer(spec.tokenizer_id)
-            if not hasattr(tokenizer, "apply_chat_template"):
-                raise TokenCounterError(f"{model} 对应 tokenizer 不支持 apply_chat_template，无法精确统计")
-            template = spec.chat_template
-            if template is not None:
-                tokenizer.chat_template = template
-            encoded = tokenizer.apply_chat_template(
-                self._sanitize_messages_for_chat_template(model=model, messages=messages),
-                tokenize=True,
-                add_generation_prompt=True,
-                return_dict=True,
-            )
-            input_ids = self._extract_input_ids(encoded)
-            if spec.close_generation_prompt_with_eos:
-                eos_token_id = getattr(tokenizer, "eos_token_id", None)
-                if eos_token_id is None:
-                    raise TokenCounterError(f"{model} 的 tokenizer 未提供 eos_token_id，无法闭合 generation prompt")
-                if not input_ids or input_ids[-1] != eos_token_id:
-                    input_ids = [*input_ids, eos_token_id]
-            return len(input_ids), False
-        except Exception:
-            return self.estimate_messages_tokens_by_chars(model, messages), True
+        _ = model
+        return self.estimate_messages_tokens_by_chars(model, messages), True
 
     def token_percentage(self, model: str, messages: list[dict[str, Any]]) -> tuple[int, bool]:
-        spec = self._spec(model)
         tokens, is_estimate = self.count_messages_tokens(model, messages)
-        return ceil(tokens * 100 / spec.context_window), is_estimate
+        context_window = self.context_window(model)
+        return ceil(tokens * 100 / context_window), is_estimate
 
     def estimate_messages_tokens_by_chars(self, model: str, messages: list[dict[str, Any]]) -> int:
         self._validate_messages(messages)
