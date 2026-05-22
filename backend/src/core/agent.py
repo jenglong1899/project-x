@@ -24,7 +24,6 @@ from src.core.memory_manager import (
     MemoryManagerSummaryRunner,
 )
 from src.core.model_config import ModelConfig
-from src.core.policies import strip_reasoning_content_if_needed
 from src.tokenizer.token_counter import TokenCounter
 
 MEMORY_MANAGER_CONTEXT_GROWTH_THRESHOLD = 0.03
@@ -271,7 +270,6 @@ class Agent(AgentBase):
         conversation_store = self._require_conversation_store()
         while self._user_msg_queue:
             item = self._user_msg_queue.popleft()
-            strip_reasoning_content_if_needed(model=self._model_config.model, messages=self._messages)
             user_message = {"role": "user", "content": item.content}
             self._messages.append(user_message)
             # 只有等到用户发送了一个消息 之后，才创建对话文件。

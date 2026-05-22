@@ -6,7 +6,6 @@ import os
 from pathlib import Path
 from typing import Any, cast
 
-
 try:
     from transformers import AutoTokenizer  # type: ignore
 except Exception:  # pragma: no cover
@@ -51,19 +50,36 @@ MODEL_SPECS: dict[str, ModelSpec] = {
     # 等价于在 generation prompt 末尾额外追加一个 <|im_end|>（即 tokenizer.eos_token_id）。
     "openai/qwen3.5-flash": ModelSpec(
         context_window=256_000,
-        tokenizer_id="Qwen/Qwen2.5-72B-Instruct",
+        tokenizer_id="Qwen/Qwen3.5-35B-A3B",
         close_generation_prompt_with_eos=True,
     ),
     "openai/qwen3.5-plus": ModelSpec(
         context_window=256_000,
-        tokenizer_id="Qwen/Qwen2.5-72B-Instruct",
+        tokenizer_id="Qwen/Qwen3.5-35B-A3B",
         close_generation_prompt_with_eos=True,
     ),
 }
 
 DEFAULT_CONTEXT_WINDOW = 128_000
 
-_ALLOWED_MESSAGE_KEYS = {"role", "content", "name", "tool_calls", "tool_call_id"}
+# 注意：部分 OpenAI 兼容 provider 会在 assistant message 上返回 `reasoning_content`。
+# 这些字段在“是否会被下一轮模型调用当作上下文”上，各家口径并不一致：
+# - 有的 provider 会把它当作上下文的一部分；
+# - 有的 provider 可能不接受该字段，需要在发起下一轮请求前剔除（历史原因：deepseek-v3.2 曾有此约束）。
+#
+# 这里的 token 统计目标是“尽量贴近真实 prompt token”，用于 memory manager 的阈值判断：
+# - 校验时允许该字段存在，避免 token 统计阶段直接失败；
+# - 统计时不把它作为独立字段喂给 tokenizer（部分 tokenizer/chat_template 会对未知字段报错）；
+# - 统一口径：把推理折叠进 `content` 再统计。
+
+_ALLOWED_MESSAGE_KEYS = {
+    "role",
+    "content",
+    "name",
+    "tool_calls",
+    "tool_call_id",
+    "reasoning_content",
+}
 
 
 class TokenizerRegistry:
@@ -132,7 +148,7 @@ class TokenCounter:
             if template is not None:
                 tokenizer.chat_template = template
             encoded = tokenizer.apply_chat_template(
-                messages,
+                self._sanitize_messages_for_chat_template(model=model, messages=messages),
                 tokenize=True,
                 add_generation_prompt=True,
                 return_dict=True,
@@ -146,16 +162,19 @@ class TokenCounter:
                     input_ids = [*input_ids, eos_token_id]
             return len(input_ids), False
         except Exception:
-            return self.estimate_messages_tokens_by_chars(messages), True
+            return self.estimate_messages_tokens_by_chars(model, messages), True
 
     def token_percentage(self, model: str, messages: list[dict[str, Any]]) -> tuple[int, bool]:
         spec = self._spec(model)
         tokens, is_estimate = self.count_messages_tokens(model, messages)
         return ceil(tokens * 100 / spec.context_window), is_estimate
 
-    def estimate_messages_tokens_by_chars(self, messages: list[dict[str, Any]]) -> int:
+    def estimate_messages_tokens_by_chars(self, model: str, messages: list[dict[str, Any]]) -> int:
         self._validate_messages(messages)
-        packed = "\n".join(self._pack_message_as_text(m) for m in messages)
+        packed = "\n".join(
+            self._pack_message_as_text(m)
+            for m in self._sanitize_messages_for_chat_template(model=model, messages=messages)
+        )
         return ceil(len(packed.encode("utf-8")) / 4)
 
     @staticmethod
@@ -172,6 +191,36 @@ class TokenCounter:
             f"tool_calls={tool_calls}\n"
             f"content={content}"
         )
+
+    @staticmethod
+    def _sanitize_messages_for_chat_template(*, model: str, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """
+        统一 apply_chat_template 与估算口径：只保留 chat template 需要/支持的字段。
+
+        - 统计时不能把 `reasoning_content` 作为独立字段传给 tokenizer（部分 tokenizer 会报错）
+        - 但如果 provider 会把它计入上下文，则需要把它计入 token（折叠进 content）
+        """
+        sanitized: list[dict[str, Any]] = []
+        for msg in messages:
+            role = msg.get("role")
+            content = msg.get("content")
+
+            if role == "assistant":
+                reasoning_text = msg.get("reasoning_content")
+                if reasoning_text:
+                    if content:
+                        content = f"{reasoning_text}\n{content}"
+                    else:
+                        content = str(reasoning_text)
+
+            packed: dict[str, Any] = {}
+            for k in ("role", "name", "tool_calls", "tool_call_id"):
+                if k in msg:
+                    packed[k] = msg[k]
+            if content is not None:
+                packed["content"] = content
+            sanitized.append(packed)
+        return sanitized
 
     @staticmethod
     def _extract_input_ids(encoded: Any) -> list[int]:

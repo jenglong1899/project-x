@@ -35,6 +35,7 @@ messages(list[role, content])
 - tokenizer 加载做缓存（避免每次算 token 都 init 一遍）。
 - `messages` 必须按我们实际在 runtime 里传给 LLM 的结构来算（否则就不叫“真实统计”）：
   - `role/content`（文本）
+  - `reasoning_content`/`reasoning`（如果存在，按折叠进 content 的口径计入）
   - `name`（如果 upstream 会传，就必须计入；不允许静默忽略）
   - `tool_calls`（assistant 发起工具调用的结构化内容，必须按模板打包后计入）
   - `tool_call_id`（tool 消息关联字段，如果 upstream 会传，就必须计入）
@@ -44,7 +45,7 @@ messages(list[role, content])
 
 ### 兜底（仅用于“估算”，不承诺对齐计费）
 当 tokenizer 初始化失败 / chat template 缺失 / 运行时异常时，允许提供一个**显式标注为 estimate** 的退化路径：
-- `estimate_messages_tokens_by_chars(messages) -> int`
+- `estimate_messages_tokens_by_chars(model, messages) -> int`
 - 计算方式：把 messages 按同样的“打包规则”拼成纯文本（至少包含 role + content；如果有 tool_calls/tool_call_id/name 也拼进去），再用“字符/字节 → token”的启发式估算。
 - 估算口径：`ceil(utf8_bytes / 4)`。
 - 注意：这个值只能用于 UI 提示/防爆（例如“接近窗口上限”预警）；不用于需要严格对齐 usage 的逻辑。
