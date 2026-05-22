@@ -2,7 +2,9 @@
 
 还是不要清空tab了。然后我们要给tab单独弄一个名字，这样就不会重复。
 
-名字就是 conversation-id + summary和judge被唤起时的次数（第一次在当前上下文中被唤起就是1，第二次就是2）。不过当前的 conversation id其实有点问题，他是cool-name+时间戳+.json，json名字也带进去了，估计还得派一个subagent去改一下这个
+名字就是 conversation-id + summary和judge被唤起时的次数（第一次在当前上下文中被唤起就是1，第二次就是2）。
+
+你觉得这样怎么样
 
 # 2
 
