@@ -116,8 +116,7 @@ class Agent(AgentBase):
         self._pause_requested = False
         self._paused = False
 
-        # 调用Agent的必须先选择 conversation segment，
-        # self._conversation_store 会在这两个函数中被初始化。
+        # self._conversation_store 会在start_conversation()中被初始化。
         self._conversation_store: ConversationStore | None = None
 
     def start_conversation(self) -> None:
@@ -475,7 +474,10 @@ class Agent(AgentBase):
                                                   on_ai_tool_call_arguments_delta=self._on_ai_tool_call_arguments_delta,
                                                   on_ai_tool_call_finished=self._on_ai_tool_call_finished,
                                                   )
-            if not self._messages or ai_msg_dict is not self._messages[-1]:
+            # 这个判断条件对应 _safe_stream 中的：“agent被突然中断
+            # 导致 message 数组最后一个可能是 AI message with tool call”
+            # todo 这个_safe_stream应该能设计得更好一点？比如改成 _safe_steam_and_append?
+            if ai_msg_dict is not self._messages[-1]:
                 self._append_runtime_message(ai_msg_dict)
             if not ai_msg_dict.get("tool_calls"):
                 if self._pause_requested:
