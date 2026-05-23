@@ -32,9 +32,28 @@ export class ChatClient {
   private readonly options: ChatClientOptions
   private readonly intentionallyClosedSockets = new WeakSet<WebSocket>()
   private connectionAttempt = 0
+  private reconnectTimeoutId: number | null = null
+  private pingIntervalId: number | null = null
+  private reconnectDelayMs = 500
 
   constructor(options: ChatClientOptions = {}) {
     this.options = options
+  }
+
+  private clearReconnectTimer() {
+    if (this.reconnectTimeoutId === null) {
+      return
+    }
+    window.clearTimeout(this.reconnectTimeoutId)
+    this.reconnectTimeoutId = null
+  }
+
+  private clearPingTimer() {
+    if (this.pingIntervalId === null) {
+      return
+    }
+    window.clearInterval(this.pingIntervalId)
+    this.pingIntervalId = null
   }
 
   connect(options: ChatClientOptions = {}) {
@@ -51,6 +70,8 @@ export class ChatClient {
       errorMessage: null,
     })
 
+    this.clearReconnectTimer()
+
     const socket = new WebSocket(resolveWebSocketUrl({ ...this.options, ...options }))
     const connectionAttempt = ++this.connectionAttempt
     this.socket = socket
@@ -62,6 +83,12 @@ export class ChatClient {
         return
       }
       useChatStore.getState().setConnectionStatus('open')
+      this.reconnectDelayMs = 500
+
+      this.clearPingTimer()
+      // 这里的 ping 不是为了“服务端回包”，而是为了在开发环境（代理/网关）下避免长时间空闲导致连接被动断开。
+      // 断点会把后端事件循环卡住，无法保证不断连；但 keepalive + 自动重连能显著降低调试成本。
+      this.pingIntervalId = window.setInterval(() => this.ping(), 15_000)
     })
 
     socket.addEventListener('message', (event) => {
@@ -101,6 +128,7 @@ export class ChatClient {
       }
 
       this.socket = null
+      this.clearPingTimer()
       if (isIntentionalClose) {
         return
       }
@@ -109,10 +137,22 @@ export class ChatClient {
       if (currentStatus !== 'error') {
         useChatStore.getState().setConnectionStatus('closed')
       }
+
+      this.clearReconnectTimer()
+      const delay = this.reconnectDelayMs
+      this.reconnectDelayMs = Math.min(this.reconnectDelayMs * 2, 10_000)
+      this.reconnectTimeoutId = window.setTimeout(() => {
+        if (this.socket) {
+          return
+        }
+        this.connect(options)
+      }, delay)
     })
   }
 
   disconnect() {
+    this.clearReconnectTimer()
+    this.clearPingTimer()
     const socket = this.socket
     this.socket = null
     if (socket) {
