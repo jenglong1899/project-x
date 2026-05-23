@@ -2,10 +2,15 @@
 
 本文档是对代码库的一种摘要，目的是为了帮助 Agent 建立对代码库的理解，并不代表 Agent 不需要去阅读摘要所对应的代码文件，因为 Agent 有可能不知道“自己不知道”，比如 Agent 在实现某个功能的时候，做了某个兜底，但是由于没有看全代码，不知道原本的代码中已经有兜底了（不知道自己不知道），导致代码重复。
 
-## 核心心智模型（先看这个）
+## 核心心智模型
+
+本 Agent 系统的重点是记忆机制，有 worker 和 memory manager 两个角色，任务执行和记忆分离，从而减轻 AI 的注意力负担，达到更好的工作效果和记忆效果。
+
+上下文每增长 3%，系统就从 worker 中 fork 两个 memory manager 出来异步工作，一个负责总结，一个负责决定是否要重置上下文。（等模型决定重置后再统一总结会导致遗漏）
+
 - **核心抽象是 `Agent`**：`backend/src/core/agent.py` 对外暴露一个最小接口（排队 user message → `async run()` 生成 → 工具调用 → 持久化）；其他模块基本都在为它服务。
-- **`AgentController` 是驱动层**：`backend/src/core/agent_controller.py` 负责“提交消息 + 确保后台运行 + 防重入 + 跑到 idle”，适配层（如 WebSocket）只和它交互，避免直接操作 `Agent`。
-- **`WebSocketChatSession` 是适配层**：`backend/src/websocket_chat_session.py` 通过 `AgentController` 驱动 agent（busy/idle/turn 完成回调），并把回调投影成前端事件（assistant delta / tool card / committed 等）。
+- **`AgentRunner` 是驱动层**：`backend/src/core/agent_controller.py` 负责“提交消息 + 确保后台运行 + 防重入 + 跑到 idle”，适配层（如 WebSocket）只和它交互，避免直接操作 `Agent`。
+- **`WebSocketChatSession` 是适配层**：`backend/src/websocket_chat_session.py` 通过 `AgentRunner` 驱动 agent（busy/idle/turn 完成回调），并把回调投影成前端事件（assistant delta / tool card / committed 等）。
 - **`ConversationStore` 是持久化层**：`backend/src/conversation_store.py` 把对话落地到 `~/.project-x/memories/originals/*.json`，并负责追加消息与恢复历史 messages。
 - **Memory Manager 是双 runner**：触发点在 `Agent._maybe_wake_memory_manager()`；`summary runner` 维护 `~/.project-x/memories/summaries/main.md` 等记忆文档，`judge runner` 只判断是否 reset-context（两者实现见 `backend/src/core/memory_manager.py`）。
 - **reset-context 的关键约束**：当 judge 判定 reset 时必须先等待 in-flight summary 结束；reset 后会尽量保留 worker 最近 10 条消息且第一条必须是 `assistant`（落盘通过 `ConversationStore.start_with_messages()`）。
@@ -119,12 +124,12 @@
 - 2026-04-29：已实现 `conversation.switched { visibleMessages }` 作为 conversation segment 切换的唯一前端事件；payload 不暴露 `conversationFileName`。
 - 初始 WS 自动恢复最近 conversation JSON 时，`Agent.start_conversation()` 会通过 `on_switch_conversation` 把用户可见历史交给 `WebSocketChatSession`，前端用 `visibleMessages` 重建时间线。
 - reset-context / memory manager auto reminder 也走同一个 `conversation.switched` 事件，auto reminder 作为 `visibleMessages` 中的 user message 呈现。
-- 2026-05-13：计划重构暂停/驱动可读性（涉及 `backend/src/core/agent_controller.py` 与 `backend/src/core/agent.py`）：
+- 2026-05-13：计划重构暂停/驱动可读性（涉及 `backend/src/core/agent_runner.py` 与 `backend/src/core/agent.py`）：
   - 将 “paused” 定义为：**Runner 不会自动调用 `Agent.run()`**（它是一个 gate，而不是 backlog 的一部分）。
   - 将 “backlog” 定义为：不考虑 pause 时，调用 `run()` 是否能推进状态机（排队 user msg / assistant(tool_calls) 需执行工具 / tool message 欠 follow-up assistant）。
   - 将 Runner 的继续运行条件收敛为单一入口：`Agent.drive_decision() -> (should_drive: bool, reason: DriveReason)`，避免 Runner 在外部同时拼 pause gate + backlog 条件。
   - 保留 `not_started`（conversation 未开始且无队列，解释为何不该跑，避免隐式约束）。
-  - 将 `AgentController` 改名为 `AgentRunner`/`AgentDriver`（职责是后台循环驱动与防重入，不是传统 controller）。
+
   - `DriveReason`（讨论版命名）：
     - `should_drive=True`：`backlog_user_msg` / `backlog_tool_execution` / `backlog_tool_followup`
     - `should_drive=False`：`not_started` / `no_backlog` / `paused_no_backlog` / `paused_with_backlog`
