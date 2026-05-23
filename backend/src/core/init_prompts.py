@@ -11,7 +11,7 @@ import os
 import sys
 from datetime import datetime
 
-from commons import WAKE_MEMORY_MANAGER_FLAG
+from src.commons import WAKE_MEMORY_MANAGER_FLAG
 from src.commons import MAIN_MEMORY_FILEPATH, SUMMARIES_DIR, TODO_MEMORY_FILEPATH, MEMORY_MAIN_MD, MEMORY_TODO_MD
 
 INITIAL_MAIN_MEMORY_CONTENT_ZH = "用户刚完成 project-x 的安装，还没让我做什么事情"
