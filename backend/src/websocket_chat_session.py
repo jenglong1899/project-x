@@ -104,7 +104,7 @@ def create_default_agent(*, callbacks: AgentCallbacks) -> Agent:
     )
 
 
-class AgentControllerFactory(Protocol):
+class AgentRunnerFactory(Protocol):
     def __call__(
         self,
         *,
@@ -117,7 +117,7 @@ class AgentControllerFactory(Protocol):
     ) -> AgentRunner: ...
 
 
-def create_agent_controller(
+def create_agent_runner(
     *,
     callbacks: AgentCallbacks,
     is_closed: Callable[[], bool],
@@ -348,11 +348,11 @@ class WebSocketChatSession:
     def __init__(
         self,
         *,
-        agent_controller_factory: AgentControllerFactory | None = None,
+        agent_runner_factory: AgentRunnerFactory | None = None,
     ) -> None:
         """
         WebSocket 连接的会话编排器：桥接 AgentRunner(agent_runner.py) 和 WebSocket。
-        :param agent_controller_factory: 用于测试注入
+        :param agent_runner_factory: 用于测试注入
         """
         self._outgoing_queue: asyncio.Queue[dict[str, Any] | None] = asyncio.Queue()
         self._closed = False
@@ -372,8 +372,8 @@ class WebSocketChatSession:
             on_paused=self._projector.on_paused,
             on_resumed=self._projector.on_resumed,
         )
-        if agent_controller_factory is None:
-            self._agent_controller = create_agent_controller(
+        if agent_runner_factory is None:
+            self._agent_runner = create_agent_runner(
                 callbacks=callbacks,
                 is_closed=lambda: self._closed,
                 on_agent_became_busy=self._projector.on_agent_became_busy,
@@ -382,7 +382,7 @@ class WebSocketChatSession:
                 on_error=self._on_agent_controller_error,
             )
         else:
-            self._agent_controller = agent_controller_factory(
+            self._agent_runner = agent_runner_factory(
                 callbacks=callbacks,
                 is_closed=lambda: self._closed,
                 on_agent_became_busy=self._projector.on_agent_became_busy,
@@ -400,7 +400,7 @@ class WebSocketChatSession:
 
         self._pending_user_contents[user_message_id] = content
 
-        self._agent_controller.submit_user_message(
+        self._agent_runner.submit_user_message(
             frontend_msg_id=user_message_id,
             user_message=content,
         )
@@ -409,13 +409,13 @@ class WebSocketChatSession:
         if self._closed:
             raise RuntimeError("session 已关闭")
 
-        self._agent_controller.request_pause()
+        self._agent_runner.request_pause()
 
     async def submit_resume(self) -> None:
         if self._closed:
             raise RuntimeError("session 已关闭")
 
-        self._agent_controller.resume()
+        self._agent_runner.resume()
 
     async def close(self) -> None:
         if self._closed:
