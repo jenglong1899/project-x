@@ -190,15 +190,19 @@ def build_memory_manager_summary_prompt(is_first_time_awaken: bool) -> str:
 
 **先停下你手头上的事，阅读下面的消息**
 
-**你的角色是memory manager，你刚从worker的上下文中被 fork 出来**
+**你的角色是memory manager，你刚从worker的上下文中被 fork 出来。**
 
 你现在要做的事情就是处理记忆文档（对当前上下文做摘要然后放到记忆文档中、整理记忆文档等等），之前的指令里除了<memory_mechanism>部分，其他的通通可以忽略掉。
 
-{memory_operation_history_prompt}
+你要达成的目标是：让worker拥有像人类一样的记忆。
 
-1. **想想记录下哪些信息到记忆文档中能保证worker重置记忆以后还能像之前那样继续工作，仿佛这个重置什么没发生过一样。**
+下面要描述的是启发式规则，没有穷尽所有应当做或者不做的事。实际执行时，应优先判断怎样做最有利于实现目标。如果某个做法虽然没有被明确写入本文档，但明显有助于目标，就要采用；如果某条具体规则在当前场景下反而妨碍实现目标，就要调整。
 
-2. **想想人类会怎么记住什么**，比如：
+<heuristic_rules>
+
+1. 想想怎样做摘要能保证worker重置记忆以后还能像之前那样继续工作，仿佛这个重置什么没发生过一样。
+
+2. 想想人类会怎么记住什么，比如：
     - 人类不会记住“一小时前执行了ls命令”这种无关紧要的信息
     - 人类会记住重复的工作流程。比如一个新手创业者不知道要如何去记账报税，那么他会搜资料，然后他会把那些资料中有用的内容收集起来，写在文档里面，这样以后就不用再去搜一遍资料了。
     - 人类犯了一个错误就会记录下来，避免以后再犯
@@ -208,14 +212,14 @@ def build_memory_manager_summary_prompt(is_first_time_awaken: bool) -> str:
 
 4. 如果记忆有点散乱了，要把它整理成结构化的。因为杂乱无章的记忆会影响worker的发挥和你的后续维护。
 
+</heuristic_rules>
+
+{memory_operation_history_prompt}
+
 </roles_change_notice>
 """
 
-
-# todo 注意这个FLAG，不要在系统唤起memory manager之前注入，不然到时候memory manager的上下文倒数第二新的那条消息就是那个FLAG，然而这个 flag 之前的消息并没有被摘要过。
-#  所以这个flag要在summary唤起之后再插入。
-
-def build_memory_manager_judge_whether_reset_context_prompt(messages: list[dict[str, Any]]) -> str:
+def build_memory_manager_judge_whether_reset_context_prompt() -> str:
     return f"""
 <roles_change_notice>
 
@@ -233,7 +237,7 @@ def build_memory_manager_judge_whether_reset_context_prompt(messages: list[dict[
 
 如果判断出要重置上下文，你就输出 {RESET_CONTEXT_MAGIC_WORD} ，系统检测到后，就会重置
 
-你会在上下文中看到 {WAKE_MEMORY_MANAGER_FLAG}，你不需要去管这个
+你可能会在上下文中看到 {WAKE_MEMORY_MANAGER_FLAG}，你不需要去管这个
 
 </roles_change_notice>
 """
