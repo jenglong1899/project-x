@@ -11,6 +11,7 @@ import os
 import sys
 from datetime import datetime
 
+from commons import WAKE_MEMORY_MANAGER_FLAG
 from src.commons import MAIN_MEMORY_FILEPATH, SUMMARIES_DIR, TODO_MEMORY_FILEPATH, MEMORY_MAIN_MD, MEMORY_TODO_MD
 
 INITIAL_MAIN_MEMORY_CONTENT_ZH = "用户刚完成 project-x 的安装，还没让我做什么事情"
@@ -41,6 +42,9 @@ def build_system_level_instruction_zh() -> str:
 
 **如果你没有收到处理记忆的user-role msg（会用<roles_change_notice>包裹住），你就是 worker。**
 **如果你收到了处理记忆的指令，你就是 memory manager。**
+
+当系统创建出 memory manager 之后，系统会在worker的上下文中插入 {WAKE_MEMORY_MANAGER_FLAG} (user-role msg) 作为辅助标记，worker不需要关注这个。
+
 </roles>
 
 </memory_mechanism>
