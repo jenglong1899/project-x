@@ -12,12 +12,12 @@
 - **`AgentRunner` 是驱动层**：`backend/src/core/agent_runner.py` 负责“提交消息 + 确保后台运行 + 防重入 + 跑到 idle”，适配层（如 WebSocket）只和它交互，避免直接操作 `Agent`。
 - **`WebSocketChatSession` 是适配层**：`backend/src/websocket_chat_session.py` 通过 `AgentRunner` 驱动 agent（busy/idle/turn 完成回调），并把回调投影成前端事件（assistant delta / tool card / committed 等）。
 - **`ConversationStore` 是持久化层**：`backend/src/conversation_store.py` 把对话落地到 `~/.project-x/memories/originals/*.json`，并负责追加消息与恢复历史 messages。
-- **Memory Manager 是双 runner**：触发点在 `Agent._maybe_wake_memory_manager()`；`summary runner` 维护 `~/.project-x/memories/summaries/main.md` 等记忆文档，`judge runner` 只判断是否 reset-context（两者实现见 `backend/src/core/memory_manager.py`）。
+- **Memory Manager 是双 runner**：触发点在 `Agent._maybe_wake_memory_manager()`；`summary runner` 维护 `~/.project-x/memories/summaries/MAIN.md` 等记忆文档，`judge runner` 只判断是否 reset-context（两者实现见 `backend/src/core/memory_manager.py`）。
 - **reset-context 的关键约束**：当 judge 判定 reset 时必须先等待 in-flight summary 结束；reset 后会尽量保留 worker 最近 10 条消息且第一条必须是 `assistant`（落盘通过 `ConversationStore.start_with_messages()`）。
 
 数据流（大致）：
 `frontend` → `/ws` → `WebSocketChatSession.submit_user_message()` → `Agent.enqueue_user_message()` → `await Agent.run()` → `await agent_turn.stream()` →（可选）`await execute_tool_calls()` → `ConversationStore.append_message()` → 事件经 `ChatEventProjector` 回前端  
-备注：产品已移除“历史会话列表/切换/详情”能力；前端只走 `/ws`，后端在建立连接时自动恢复最近的 conversation segment（没有才 new）。
+备注：当前产品形态没有“会话列表/切换/详情”的 HTTP API；前端只走 `/ws`。后端在连接建立时自动恢复最近的 conversation（没有历史文件则新建一个 segment）。
 
 ## 快速定位表（改功能先看这里）
 - 想改“对外能力/时序/回调/持久化规则”：`backend/src/core/agent.py`
@@ -39,24 +39,32 @@
 - 前端开发代理：`frontend/vite.config.ts` 代理 `/healthz`、`/ws` 到 `PROJECT_X_BACKEND_ORIGIN`（默认 `http://127.0.0.1:8000`）
 - 回调约定：可选回调参数如果允许为 `None`，初始化时用 `backend/src/commons.py` 里的 `noop` 替代，避免到处写 `if callback is None`。
 
+### 环境变量速查（最常用）
+- `PROJECT_X_MODEL_CONFIG`：模型选择（`deepseek-v4-pro`/`deepseek-v4-flash`/`qwen3.5-plus`/`qwen3.5-flash`/`mock`）；默认 `deepseek-v4-pro`
+  - 选 deepseek：需要 `DEEPSEEK_API_KEY`
+  - 选 qwen：需要 `DASHSCOPE_API_KEY`
+  - 选 mock：不需要外部 API key；可用 `PROJECT_X_MOCK_MODEL_DELAY_MS` 模拟延迟
+- `PROJECT_X_MEMORIES_ROOT`：覆盖 `~/.project-x/memories`（包含 `originals/`、`summaries/`、`logs/`）
+- `PROJECT_X_HOST` / `PROJECT_X_PORT`：后端监听地址与端口
+- `PROJECT_X_BACKEND_ORIGIN`：前端 Vite 代理目标（默认 `http://127.0.0.1:8000`）
+- `PROJECT_X_HF_CACHE_DIR`：tokenizer/HF 缓存目录（主要给精确 token 统计预留；当前 `TokenCounter` 默认走字符估算）
+
 ## 后端（围绕 Agent 的三层）
 
 ### 1) `Agent`：对外接口与不变量（`backend/src/core/agent.py`）
 对外接口（最常用的 5 个）：
-- `new_conversation()`：开始新对话（写入 system/user instruction；但**不会**立即创建 conversation 文件）
-- `resume_conversation(conversation_id=...)`：恢复历史对话（会用历史里的 system/user instruction 覆盖当前）
-- `enqueue_user_message(frontend_msg_id=..., user_message=...)`：排队一条 user message（`frontend_msg_id` 由前端生成，用于 committed 回传）
-- `run()`：异步生成循环：drain 队列 → 调模型（流式回调）→（可选）执行工具 → 持久化 → 再 drain → 直到没有 tool_calls
+- `start_conversation()`：连接建立时调用；若 `~/.project-x/memories/originals/` 下存在历史文件则自动恢复“最新一份”，否则初始化一个新 segment（仅把 system/user instruction 放进内存，不会立刻落盘）
+- `enqueue_user_message(frontend_msg_id=..., user_message=...)`：排队一条 user message（`frontend_msg_id` 由前端生成，用于 committed 回传；若当前处于 paused/pause_requested，会先自动 `resume()`）
+- `run()`：异步生成循环：drain 队列 → 调模型（流式回调）→（可选）执行工具 → 持久化 → 再 drain → 直到没有 tool_calls 或命中暂停检查点
 - `drive_decision()`：runner 是否应该自动继续调用 `run()`（把 pause gate / not_started / backlog 统一封装）
+- `request_pause()` / `resume()`：用户侧“暂停/恢复”；暂停的语义是“在回合边界停住，阻止 runner 自动推进下一轮”
   - “paused”：定义为 **Runner 不会自动调用 `Agent.run()`**（它是一个 gate，而不是 backlog 的一部分）。
   - “backlog”：不考虑 pause 时，调用 `run()` 是否能推进状态机（排队 user msg / assistant(tool_calls) 需执行工具 / tool message 欠 follow-up assistant）。
   - “not_started”：conversation 未开始且无队列，用于显式解释为何不该跑（避免隐式约束）。
 
 关键不变量/约束：
-- 调用者必须先 `new_conversation()` / `resume_conversation()`，再 `enqueue_user_message()` / `run()`
 - conversation 文件创建时机：**首条 committed 的 user message 被 drain 进 `_messages` 时才落地**（避免“空会话文件”）
-- `run()` 会显式拒绝“新会话尚未开始（未持久化首条 user message）就进入生成”的误用
-- provider 兼容：deepseek 需要在发送下一条 user message 前去掉 `reasoning_content`（`backend/src/core/policies.py`）
+- `run()` 会显式拒绝“conversation 尚未开始（未持久化首条 user message）就进入生成”的误用
 - `reset_context`：工具执行阶段可能返回重置指令（见 `backend/src/tools/reset_context.py` 与 `backend/src/core/agent_turn.py` 的特判）；真正的 reset 会在 Agent 内部重建会话并触发 `conversation.switched`
 
 回调（适配层用来投影前端事件）：
@@ -75,14 +83,20 @@
 （默认 Agent 工具列表包含 `bash` 和 `read_file`，二者通过每个 Agent 独立的 `CwdState` 共享 cwd。）
 - `backend/src/tools/bash.py`：`create_bash_tool()`（入参 pydantic 校验；`bash -lc` 执行；返回 stdout/stderr/returncode；会更新共享 cwd）
 - `backend/src/tools/read_file.py`：`create_read_file_tool()`（读取文件片段，默认显示 `nl -ba` 风格行号，按完整行应用 `max_chars` 截断；`end` 表示实际返回内容的最后一行；若第一行就超过 `max_chars`，则返回 `end=null` 且 `truncated=true`，方便从 `end + 1` 续读）
+- `backend/src/tools/replace_text.py`：`create_replace_text_tool()`（支持 `literal/regex`；regex 为 Python `re` 语法，`DOTALL | MULTILINE`；替换文本里用 `$!1/$!2...` 引用捕获组；默认不允许多处匹配，避免误替换）
+- `backend/src/tools/insert_text.py`：`create_insert_text_tool()`（把文本插到 needle 前/后；needle 必须唯一，否则返回错误）
 - `backend/src/tools/cwd_state.py`：`CwdState` 是 bash 与 read_file 共享 cwd 的小状态对象；默认 Agent 每次创建独立 `CwdState`，不能复用全局单例。
 - `backend/src/tools/reset_context.py`：`RESET_CONTEXT_TOOL`（工具本身只返回 hint；真正的 reset 编排由 Agent 内部的 reset 流程完成）
+补充约束（很容易踩坑）：
+- 记忆目录写入守卫在 `backend/src/commons.py`：worker **只能**编辑 `~/.project-x/memories/summaries/TODO.md`；memory manager (summary) 不能编辑 `TODO.md`，应编辑 `MAIN.md` 或其他摘要文件。
+- `replace_text/insert_text` 在失败时可能把大段内容落到 `/tmp/...` 并返回 `*_from_file` 路径供下一次调用复用（避免重复粘贴占 token）；这是工具的正常行为。
 
 ### 3) 持久化（`backend/src/conversation_store.py`）
 - 落地目录：`~/.project-x/memories/originals/`（可用 `PROJECT_X_MEMORIES_ROOT` 覆盖根目录，见 `backend/src/commons.py`）
 - `conversation_id`：文件名 `<coolname>-<UTC时间戳>.json`
 - JSON 结构：`{ meta: { "memory-manager": {...} }, messages: [ {role, content, ...} ] }`
 - 给模型用的 runtime messages 会 strip 掉每条 message 的 `meta`（目前消息本身不带 meta）
+补充：memory manager 的运行日志会写到 `~/.project-x/memories/logs/*.jsonl`（见 `backend/src/core/memory_manager_run_logger.py`）。
 
 ## 服务层：把 Agent 暴露给前端
 
@@ -90,7 +104,6 @@
 - 每个 WS 连接一个 `WebSocketChatSession`；直接 `await self._agent.run()`，不再做线程桥接
 - `ChatEventProjector` 决定 assistant 卡片边界：遇到 tool start 会 close 当前 assistant，因此前端时间线呈 `assistant → tool → assistant`
 - 生成状态事件：`agent.became.busy` / `agent.became.idle`（前端用它们驱动 `isGenerating`）
-- WS 支持 `/ws?conversationId=...` 以 resume 历史会话
 - `conversation.switched`：初始恢复最近会话、reset-context 切 segment、memory manager 的 auto reminder 都走同一事件；payload 只包含 `visibleMessages`，不暴露 conversation 文件名 / `conversationFileName`
 
 ### HTTP + WS 路由（`backend/src/web_app.py`、`backend/main.py`）
@@ -100,11 +113,10 @@
 ## 前端（保持“简单单栏聊天”的约束）
 
 ### 核心文件
-- 页面布局/交互：`frontend/src/App.tsx`（侧栏会话 + 主区时间线 + 底部输入；会话列表仅启动时拉取一次，持久化后通过事件 upsert）
+- 页面布局/交互：`frontend/src/App.tsx`（单栏时间线 + 底部输入；支持“暂停/恢复”；自动滚动与“跳到最新”）
 - 协议类型：`frontend/src/features/chat/protocol.ts`（zod 校验；事件含 `conversation.switched` 等）
 - Store：`frontend/src/features/chat/store.ts`（核心状态：`items[]`、`pendingUserMessages[]`、`isGenerating`）
-- WS 客户端：`frontend/src/features/chat/client.ts`（切换会话会重连 `/ws?conversationId=...`；忽略过期 socket 事件以兼容 StrictMode）
-- 历史会话：`frontend/src/features/chat/conversations.ts`（HTTP list/detail + 把后端历史 messages 投影成平铺 `ChatItem[]`）
+- WS 客户端：`frontend/src/features/chat/client.ts`（自动 keepalive `ping`，断线自动重连；用 “active socket” 判定忽略过期 socket 事件以兼容 StrictMode）
 - 组件：`frontend/src/features/chat/components/*`（assistant reasoning 默认展开；tool result 过长会折叠）
 
 时间线模型（重要的简化）：
