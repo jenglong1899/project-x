@@ -2,7 +2,7 @@ from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
 
-from src.commons import MEMORY_MAIN_MD, WAKE_MEMORY_MANAGER_FLAG
+from src.commons import MEMORY_MAIN_MD, WAKE_MEMORY_MANAGER_FLAG, SUMMARIES_DIR
 from src.core.init_prompts import read_main_memory
 
 from src.commons import noop
@@ -214,6 +214,8 @@ def build_memory_manager_summary_prompt(is_first_time_awaken: bool) -> str:
 
 {memory_operation_history_prompt}
 
+你当前的工作目录已经被改为 {SUMMARIES_DIR}
+
 </roles_change_notice>
 """
 
@@ -227,7 +229,7 @@ def build_memory_manager_judge_whether_reset_context_prompt() -> str:
 
 你现在要做的事情就是判断当前是否要重置上下文，之前的指令里除了<memory_mechanism>部分，其他的通通忽略掉
 
-判断是否要重置上下文的标准：如果当前上下文中有50%以上的内容都是对当前任务不重要的，那通常就要重置。（这里的50%是按token估算）
+**判断是否要重置上下文的标准：如果当前上下文中有50%以上的内容都是对当前任务不重要的，那通常就要重置。（这里的50%是按token估算）**
 
 一个例子是，当前上下文中有大量的中间过程，而我们只需要最后的结果，那通常就应该重置。
 
