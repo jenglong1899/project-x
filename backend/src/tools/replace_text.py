@@ -8,6 +8,7 @@ import coolname
 from pydantic import BaseModel, Field
 from pydantic import model_validator
 
+from src.commons import ToolCallerKind, assert_allowed_summaries_write
 from src.core.agent_turn import Tool
 
 
@@ -32,8 +33,9 @@ class ReplaceTextOutput(BaseModel):
 
 
 class ReplaceTextTool:
-    def __init__(self, *, cwd_provider: Any) -> None:
+    def __init__(self, *, cwd_provider: Any, caller_kind: ToolCallerKind) -> None:
         self._cwd_provider = cwd_provider
+        self._caller_kind = caller_kind
 
     def to_tool(self) -> Tool:
         return Tool(
@@ -67,6 +69,7 @@ class ReplaceTextTool:
     async def run(self, *, arguments: dict[str, Any]) -> dict[str, Any]:
         tool_input = ReplaceTextInput.model_validate(arguments)
         filepath = self._resolve_filepath(tool_input.filepath)
+        assert_allowed_summaries_write(caller_kind=self._caller_kind, target_path=filepath)
         repl = self._resolve_repl(tool_input)
 
         try:
@@ -185,5 +188,5 @@ class ReplaceTextTool:
         return updated_content, n
 
 
-def create_replace_text_tool(*, cwd_provider: Any) -> Tool:
-    return ReplaceTextTool(cwd_provider=cwd_provider).to_tool()
+def create_replace_text_tool(*, cwd_provider: Any, caller_kind: ToolCallerKind = "worker") -> Tool:
+    return ReplaceTextTool(cwd_provider=cwd_provider, caller_kind=caller_kind).to_tool()

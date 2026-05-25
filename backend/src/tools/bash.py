@@ -1,12 +1,14 @@
 import asyncio
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 from src.core.agent_turn import Tool
 from src.tools.cwd_state import CwdState
+
+ToolCallerKind = Literal["worker", "memory_manager_summary"]
 
 
 class BashToolInput(BaseModel):
@@ -20,7 +22,14 @@ class BashToolOutput(BaseModel):
 
 
 class BashTool:
-    def __init__(self, *, initial_cwd: str | None = None, cwd_state: CwdState | None = None) -> None:
+    def __init__(
+        self,
+        *,
+        caller_kind: ToolCallerKind,
+        initial_cwd: str | None = None,
+        cwd_state: CwdState | None = None,
+    ) -> None:
+        self._caller_kind = caller_kind
         self._cwd_state = cwd_state or CwdState(initial_cwd=initial_cwd)
 
     def to_tool(self) -> Tool:
@@ -32,6 +41,9 @@ class BashTool:
         )
 
     async def run(self, *, arguments: dict[str, Any]) -> dict[str, Any]:
+        if self._caller_kind == "memory_manager_summary":
+            raise ValueError("memory manager (summary) 禁止调用 bash；请改用 read_file/replace_text/insert_text")
+
         tool_input = BashToolInput.model_validate(arguments)
         with TemporaryDirectory() as temp_dir:
             state_path = Path(temp_dir) / "bash-state"
@@ -75,5 +87,10 @@ class BashTool:
         return int(lines[0]), Path(lines[1]).resolve()
 
 
-def create_bash_tool(*, initial_cwd: str | None = None, cwd_state: CwdState | None = None) -> Tool:
-    return BashTool(initial_cwd=initial_cwd, cwd_state=cwd_state).to_tool()
+def create_bash_tool(
+    *,
+    caller_kind: ToolCallerKind = "worker",
+    initial_cwd: str | None = None,
+    cwd_state: CwdState | None = None,
+) -> Tool:
+    return BashTool(caller_kind=caller_kind, initial_cwd=initial_cwd, cwd_state=cwd_state).to_tool()

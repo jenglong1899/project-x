@@ -6,6 +6,7 @@ from uuid import uuid4
 import coolname
 from pydantic import BaseModel, Field, model_validator
 
+from src.commons import ToolCallerKind, assert_allowed_summaries_write
 from src.core.agent_turn import Tool
 
 
@@ -28,8 +29,9 @@ class InsertTextOutput(BaseModel):
 
 
 class InsertTextTool:
-    def __init__(self, *, cwd_provider: Any) -> None:
+    def __init__(self, *, cwd_provider: Any, caller_kind: ToolCallerKind) -> None:
         self._cwd_provider = cwd_provider
+        self._caller_kind = caller_kind
 
     def to_tool(self) -> Tool:
         return Tool(
@@ -55,6 +57,7 @@ class InsertTextTool:
     async def run(self, *, arguments: dict[str, Any]) -> dict[str, Any]:
         tool_input = InsertTextInput.model_validate(arguments)
         filepath = self._resolve_filepath(tool_input.filepath)
+        assert_allowed_summaries_write(caller_kind=self._caller_kind, target_path=filepath)
         text = self._resolve_text(tool_input)
 
         try:
@@ -152,5 +155,5 @@ class InsertTextTool:
         return content[:insert_at] + text + content[insert_at:]
 
 
-def create_insert_text_tool(*, cwd_provider: Any) -> Tool:
-    return InsertTextTool(cwd_provider=cwd_provider).to_tool()
+def create_insert_text_tool(*, cwd_provider: Any, caller_kind: ToolCallerKind = "worker") -> Tool:
+    return InsertTextTool(cwd_provider=cwd_provider, caller_kind=caller_kind).to_tool()

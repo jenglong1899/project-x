@@ -337,11 +337,12 @@ class Agent(AgentBase):
         if summary_task is None or summary_task.done():
             summary_round = self._memory_manager_summary_awaken_count + 1
             worker_messages_snapshot = [dict(message) for message in self._messages]
+            summary_tools = self._build_memory_manager_summary_tools()
             summary_task = asyncio.create_task(
                 self._memory_manager_summary_runner.run(
                     worker_messages=worker_messages_snapshot,
                     model_config=self._model_config,
-                    tools=self._tools,
+                    tools=summary_tools,
                     is_first_time_awaken=self._memory_manager_summary_awaken_count == 0,
                     conversation_file_name=conversation_store.conversation_file_name,
                     awaken_round=summary_round,
@@ -361,11 +362,12 @@ class Agent(AgentBase):
         if judge_task is None or judge_task.done():
             judge_round = self._memory_manager_judge_awaken_count + 1
             worker_messages_snapshot = [dict(message) for message in self._messages]
+            judge_tools = self._build_memory_manager_summary_tools()
             self._memory_manager_judge_task = asyncio.create_task(
                 self._memory_manager_judge_runner.run(
                     worker_messages=worker_messages_snapshot,
                     model_config=self._model_config,
-                    tools=self._tools,
+                    tools=judge_tools,
                     conversation_file_name=conversation_store.conversation_file_name,
                     awaken_round=judge_round,
                 )
@@ -387,6 +389,12 @@ class Agent(AgentBase):
                 except Exception:
                     logger.exception("Agent[%s] 等待 memory_manager_summary_task 时失败，仍继续 reset_context", self.name)
             self._reset_context_keep_last_worker_messages(keep_last_n=10)
+
+    @staticmethod
+    def _build_memory_manager_summary_tools() -> list[Tool]:
+        from src.toolkits import build_memory_manager_summary_tools
+
+        return build_memory_manager_summary_tools()
 
 
     def _append_runtime_message(self, message: dict[str, Any]) -> None:

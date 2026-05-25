@@ -133,6 +133,12 @@ class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
         fake_read_file_tool = SimpleNamespace(name="read_file")
         fake_replace_text_tool = SimpleNamespace(name="replace_text")
         fake_insert_text_tool = SimpleNamespace(name="insert_text")
+        fake_tools = [
+            fake_bash_tool,
+            fake_read_file_tool,
+            fake_replace_text_tool,
+            fake_insert_text_tool,
+        ]
 
         with mock.patch(
             "src.websocket_chat_session.build_system_level_instruction_zh",
@@ -147,24 +153,12 @@ class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
             "src.websocket_chat_session.CwdState",
             return_value=fake_cwd_state,
         ), mock.patch(
-            "src.websocket_chat_session.create_bash_tool",
-            return_value=fake_bash_tool,
-        ) as create_bash_tool, mock.patch(
-            "src.websocket_chat_session.create_read_file_tool",
-            return_value=fake_read_file_tool,
-        ) as create_read_file_tool, mock.patch(
-            "src.websocket_chat_session.create_replace_text_tool",
-            return_value=fake_replace_text_tool,
-        ) as create_replace_text_tool, mock.patch(
-            "src.websocket_chat_session.create_insert_text_tool",
-            return_value=fake_insert_text_tool,
-        ) as create_insert_text_tool, mock.patch("src.websocket_chat_session.Agent") as agent_cls:
+            "src.websocket_chat_session.build_worker_tools",
+            return_value=fake_tools,
+        ) as build_worker_tools, mock.patch("src.websocket_chat_session.Agent") as agent_cls:
             create_default_agent(callbacks=make_noop_agent_callbacks())
 
-        create_bash_tool.assert_called_once_with(cwd_state=fake_cwd_state)
-        create_read_file_tool.assert_called_once_with(cwd_provider=fake_cwd_state)
-        create_replace_text_tool.assert_called_once_with(cwd_provider=fake_cwd_state)
-        create_insert_text_tool.assert_called_once_with(cwd_provider=fake_cwd_state)
+        build_worker_tools.assert_called_once_with(cwd_state=fake_cwd_state)
 
         agent_kwargs = agent_cls.call_args.kwargs
         self.assertEqual(
