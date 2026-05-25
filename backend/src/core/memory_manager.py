@@ -107,9 +107,7 @@ class MemoryManagerJudgeResetContextRunner:
         )
         user_prompt = {
             "role": "user",
-            "content": build_memory_manager_judge_whether_reset_context_prompt(
-                messages=worker_messages
-            ),
+            "content": build_memory_manager_judge_whether_reset_context_prompt(),
         }
         forked_messages.append(
             {
