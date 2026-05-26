@@ -86,8 +86,7 @@ class Agent(AgentBase):
         self._system_instruction = system_instruction
         self._user_instruction = user_instruction
         self._tools = tools
-        self._tools_by_name = {tool.name: tool for tool in tools}
-        if len(self._tools_by_name) != len(self._tools):
+        if len({tool.name for tool in tools}) != len(tools):
             raise ValueError("tools 里存在重复的 name")
         self._on_ai_content_delta = on_ai_content_delta or noop
         self._on_ai_reasoning_delta = on_ai_reasoning_delta or noop
@@ -510,7 +509,7 @@ class Agent(AgentBase):
 
             tool_messages = await execute_tool_calls(
                 ai_msg_dict=ai_msg_dict,
-                tools_by_name=self._tools_by_name,
+                tools=self._tools,
                 on_tool_result=self._on_tool_result,
             )
             for tool_message in tool_messages:

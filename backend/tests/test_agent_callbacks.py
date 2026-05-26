@@ -149,7 +149,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
 
         tool_messages = await execute_tool_calls(
             ai_msg_dict=ai_msg_dict,
-            tools_by_name={"echo": self._echo_tool()},
+            tools=[self._echo_tool()],
             on_tool_result=lambda **kwargs: tool_results.append(kwargs),
         )
 
@@ -191,7 +191,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
 
         tool_messages = await execute_tool_calls(
             ai_msg_dict=ai_msg_dict,
-            tools_by_name={},
+            tools=[],
             on_tool_result=lambda **kwargs: tool_results.append(kwargs),
         )
 
@@ -221,8 +221,8 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
 
         tool_messages = await execute_tool_calls(
             ai_msg_dict=ai_msg_dict,
-            tools_by_name={
-                "raw_text": Tool(
+            tools=[
+                Tool(
                     name="raw_text",
                     description="返回纯文本",
                     parameters_json_schema={
@@ -234,7 +234,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     },
                     handler=_raw_text_handler,
                 ),
-            },
+            ],
             on_tool_result=lambda **kwargs: tool_results.append(kwargs),
         )
 
@@ -260,7 +260,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
 
         tool_messages = await execute_tool_calls(
             ai_msg_dict=ai_msg_dict,
-            tools_by_name={"echo": self._echo_tool()},
+            tools=[self._echo_tool()],
             on_tool_result=lambda **kwargs: tool_results.append(kwargs),
         )
 
@@ -290,14 +290,14 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
 
         tool_messages = await execute_tool_calls(
             ai_msg_dict=ai_msg_dict,
-            tools_by_name={
-                "boom": Tool(
+            tools=[
+                Tool(
                     name="boom",
                     description="总是抛异常",
                     parameters_json_schema={"type": "object", "properties": {}},
                     handler=_boom_handler,
                 )
-            },
+            ],
             on_tool_result=lambda **kwargs: tool_results.append(kwargs),
         )
 

@@ -1,7 +1,7 @@
 import asyncio
 import os
 import json
-from collections.abc import AsyncIterable, Mapping
+from collections.abc import AsyncIterable, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol, cast
 from litellm import acompletion
@@ -300,8 +300,12 @@ def _stringify_tool_result(result: Any) -> str:
 
 
 async def execute_tool_calls(*, ai_msg_dict: dict[str, Any],
-                             tools_by_name: Mapping[str, Tool],
+                             tools: Sequence[Tool],
                              on_tool_result: OnToolResult) -> list[dict[str, Any]]:
+    tools_by_name = {tool.name: tool for tool in tools}
+    if len(tools_by_name) != len(tools):
+        raise ValueError("tools 里存在重复的 name")
+
     tool_calls = ai_msg_dict.get("tool_calls", [])
     tool_messages: list[dict[str, Any]] = []
     for index, tool_call in enumerate(tool_calls):

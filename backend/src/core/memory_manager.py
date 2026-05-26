@@ -43,10 +43,6 @@ class MemoryManagerSummaryRunner:
         )
         logger.append_event(user_prompt)
 
-        tools_by_name = {tool.name: tool for tool in tools}
-        if len(tools_by_name) != len(tools):
-            raise ValueError("tools 里存在重复的 name")
-
         while True:
             assistant_message = await stream(
                 model_config=model_config,
@@ -73,7 +69,7 @@ class MemoryManagerSummaryRunner:
 
             tool_messages = await execute_tool_calls(
                 ai_msg_dict=assistant_message,
-                tools_by_name=tools_by_name,
+                tools=tools,
                 on_tool_result=noop,
             )
             forked_messages.extend(tool_messages)

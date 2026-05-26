@@ -7,22 +7,6 @@
 弄一个日志来记录memory manager的工作过程，summary和judge分别单独记录。日志名字是conversation file-name的前6位+{summary/judge}+{第几轮唤起}。
 记录 user msg, ai msg, tool msg 就行
 
-# 2
-
-```
-tools_by_name = {tool.name: tool for tool in tools}
-
-if len(tools_by_name) != len(tools):
-    raise ValueError("tools 里存在重复的 name")
-
-tool_messages = await execute_tool_calls(
-    ai_msg_dict=assistant_message,
-    tools_by_name=tools_by_name,
-    on_tool_result=noop,
-)
-```
-我感觉这种写法有点太多余了，不应该是调用者去整理出tools_by_name，应该是execute_tool_calls自己整理出来
-
 # 3
 
 conversation.switched 和 paused 好像没有关联吧？你都能切换对话了，那肯定是在运行中啊。
