@@ -133,3 +133,11 @@
 - `docs/plans/`：实施时写下的更稳定计划文档（通常与当前实现更一致，但仍以代码为准）
 - `docs/code_explanations/`：教学/讲义（例如 `teach_backend_asyncio_basics.md`、`teach_frontend_store_basics.md`）
 - TODO.md 和 README.md 你不需要去阅读，通常这只会分散你的注意力。
+
+## 近期工作记忆
+
+- 已新增计划文档：`docs/plans/2026-05-26-ccproxy_codex_integration.md`
+- 关键约束/结论（ccproxy-api Codex 逆向接入）：
+  - 目标模型是 GPT-5.2，需要走 OpenAI Responses API（而非 Chat Completions）。
+  - Codex/Responses 下自定义 system prompts/instructions 会被 required Codex instruction prompt 覆盖，因此 project-x 的 system prompt 必须下沉到 user（放到第一条 user 的开头），且验收必须支持 tool call。
+  - ccproxy 不会自带“Codex 本机工具定义”（如 shell/apply_patch）；tool definition 仍由客户端（project-x）在请求里提供，并由 project-x 本地执行。
