@@ -1,5 +1,4 @@
 import re
-import difflib
 from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
@@ -25,11 +24,6 @@ class ReplaceTextInput(BaseModel):
         if (self.repl is None) == (self.repl_from_file is None):
             raise ValueError("repl 与 repl_from_file 必须且只能提供一个")
         return self
-
-
-class ReplaceTextOutput(BaseModel):
-    unified_diff: str
-    replaced_count: int
 
 
 class ReplaceTextTool:
@@ -59,8 +53,7 @@ class ReplaceTextTool:
                 "- allow_multiple_occurrences：是否允许匹配并替换多处；否则匹配多次会返回错误\n"
                 "\n"
                 "返回：\n"
-                "- unified_diff(hunks)\n"
-                "- replaced_count"
+                "- ok（编辑成功）"
             ),
             parameters_json_schema=ReplaceTextInput.model_json_schema(),
             handler=self.run,
@@ -88,30 +81,7 @@ class ReplaceTextTool:
                 f"{exc}；已将 repl 保存到 {repl_file}，下次可用 repl_from_file 复用"
             ) from exc
 
-        unified_diff = self._build_unified_diff(
-            before=original_content,
-            after=updated_content,
-        )
-        return ReplaceTextOutput(
-            unified_diff=unified_diff,
-            replaced_count=_replaced_count,
-        ).model_dump()
-
-    @staticmethod
-    def _build_unified_diff(*, before: str, after: str) -> str:
-        diff_lines = list(
-            difflib.unified_diff(
-                before.splitlines(),
-                after.splitlines(),
-                fromfile="a/file",
-                tofile="b/file",
-                n=3,
-                lineterm="",
-            )
-        )
-        if not diff_lines:
-            return ""
-        return "\n".join(diff_lines) + "\n"
+        return "ok"
 
     def _resolve_filepath(self, filepath: str) -> Path:
         path = Path(filepath).expanduser()

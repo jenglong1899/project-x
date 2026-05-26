@@ -1,4 +1,3 @@
-import difflib
 from pathlib import Path
 from typing import Any, Literal
 from uuid import uuid4
@@ -24,10 +23,6 @@ class InsertTextInput(BaseModel):
         return self
 
 
-class InsertTextOutput(BaseModel):
-    unified_diff: str
-
-
 class InsertTextTool:
     def __init__(self, *, cwd_provider: Any, caller_kind: ToolCallerKind) -> None:
         self._cwd_provider = cwd_provider
@@ -48,7 +43,7 @@ class InsertTextTool:
                 "text 与 text_from_file 只能选一个\n"
                 "\n"
                 "返回：\n"
-                "- unified_diff(hunks)\n"
+                "- ok（编辑成功）\n"
             ),
             parameters_json_schema=InsertTextInput.model_json_schema(),
             handler=self.run,
@@ -75,27 +70,7 @@ class InsertTextTool:
                 f"{exc}；已将 text 保存到 {text_file}，下次可用 text_from_file 复用"
             ) from exc
 
-        unified_diff = self._build_unified_diff(
-            before=original_content,
-            after=updated_content,
-        )
-        return InsertTextOutput(unified_diff=unified_diff).model_dump()
-
-    @staticmethod
-    def _build_unified_diff(*, before: str, after: str) -> str:
-        diff_lines = list(
-            difflib.unified_diff(
-                before.splitlines(),
-                after.splitlines(),
-                fromfile="a/file",
-                tofile="b/file",
-                n=3,
-                lineterm="",
-            )
-        )
-        if not diff_lines:
-            return ""
-        return "\n".join(diff_lines) + "\n"
+        return "ok"
 
     def _resolve_filepath(self, filepath: str) -> Path:
         path = Path(filepath).expanduser()

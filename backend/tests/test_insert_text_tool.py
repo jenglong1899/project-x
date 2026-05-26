@@ -41,7 +41,7 @@ class InsertTextToolTests(unittest.IsolatedAsyncioTestCase):
                 }
             )
 
-            self.assertIn("@@ ", result["unified_diff"])
+            self.assertEqual(result, "ok")
             self.assertEqual(path.read_text(encoding="utf-8"), "hello project-x world\n")
 
     async def test_insert_text_tool_errors_when_needle_is_not_unique(self) -> None:
