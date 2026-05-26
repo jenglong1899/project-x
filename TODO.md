@@ -1,13 +1,4 @@
-#
-
-看一下codex中gpt5.2的prompt
-
-#
-
-弄一个日志来记录memory manager的工作过程，summary和judge分别单独记录。日志名字是conversation file-name的前6位+{summary/judge}+{第几轮唤起}。
-记录 user msg, ai msg, tool msg 就行
-
-# 3
+# 
 
 conversation.switched 和 paused 好像没有关联吧？你都能切换对话了，那肯定是在运行中啊。
 
