@@ -100,8 +100,6 @@ wait_for_backend() {
 ) &
 frontend_pid="$!"
 
-echo "前后端已启动。按 Ctrl+C 退出并停止两个进程。"
-
 wait_any_supported="false"
 if help wait 2>/dev/null | grep -q -- "-n"; then
   wait_any_supported="true"
