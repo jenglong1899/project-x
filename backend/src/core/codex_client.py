@@ -1,5 +1,6 @@
 import json
 import os
+import logging
 from dataclasses import dataclass
 from hashlib import sha256
 from typing import Any, AsyncIterator, Callable, Optional
@@ -10,6 +11,7 @@ from src.core.codex_auth import CodexTokens, resolve_codex_tokens
 from src.core.agent_turn import Tool
 
 DEFAULT_CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -37,6 +39,29 @@ def resolve_codex_runtime(*, base_url_override: str | None = None) -> CodexRunti
 class CodexClient:
     def __init__(self, *, base_url: str | None = None) -> None:
         self._runtime = resolve_codex_runtime(base_url_override=base_url)
+
+    @staticmethod
+    def _http_timeout_s() -> float:
+        """
+        默认超时偏保守（更快失败），但真实 API/集成测试在网络不稳定时会更容易抖动。
+
+        优先级（从高到低）：
+        - PROJECT_X_CODEX_HTTP_TIMEOUT_S：明确只影响 Codex HTTP
+        - PROJECT_X_INTEGRATION_TIMEOUT_S：给集成测试统一调参用
+        - 60 秒默认值
+        """
+        for env_key in ("PROJECT_X_CODEX_HTTP_TIMEOUT_S", "PROJECT_X_INTEGRATION_TIMEOUT_S"):
+            raw = os.getenv(env_key, "").strip()
+            if not raw:
+                continue
+            try:
+                timeout_s = float(raw)
+            except Exception:
+                raise ValueError(f"{env_key} 必须是数字，但拿到的是：{raw!r}")
+            if timeout_s <= 0:
+                raise ValueError(f"{env_key} 必须 > 0，但拿到的是：{raw!r}")
+            return timeout_s
+        return 60.0
 
     @staticmethod
     def _deterministic_call_id(*, tool_name: str, arguments: str, index: int) -> str:
@@ -214,7 +239,7 @@ class CodexClient:
         tool_call_index_by_id: dict[str, int] = {}
         next_tool_call_index = 0
 
-        async with httpx.AsyncClient(timeout=httpx.Timeout(60.0)) as client:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(self._http_timeout_s())) as client:
             async with client.stream("POST", url, headers=headers, json=body) as resp:
                 try:
                     resp.raise_for_status()
@@ -248,9 +273,26 @@ class CodexClient:
                             continue
                         call_id = str(event.get("call_id") or "").strip()
                         item_id = str(event.get("item_id") or event.get("id") or "").strip()
-                        stable_id = call_id or item_id
+
+                        # 重要：Codex Responses 的流式事件里，某些 delta 只带 item_id（或只带 call_id），
+                        # 但最终 output_item 可能只带另一种 ID。如果这里在不同阶段选择不同的 ID，
+                        # 就会导致同一个 tool call 在前端出现两张卡片（一个“未命名工具”且永远等不到 result）。
+                        #
+                        # 目前我们选择“尽量用 item_id”：它在流式 delta 中更稳定/更常见，
+                        # 并且 output_item.done 里也一定会带 id（即 item_id）。
+                        stable_id = item_id or call_id
                         if not stable_id:
                             continue
+                        if call_id and item_id and call_id != item_id:
+                            logger.debug(
+                                "Codex tool call id 不一致：优先使用 item_id 作为 tool_call_id（避免前端重复卡片）",
+                                extra={
+                                    "event_type": event_type,
+                                    "call_id": call_id,
+                                    "item_id": item_id,
+                                    "chosen_id": stable_id,
+                                },
+                            )
                         index = tool_call_index_by_id.get(stable_id)
                         if index is None:
                             index = next_tool_call_index
@@ -289,7 +331,8 @@ class CodexClient:
             item_id = str(item.get("id") or "").strip()
             tool_calls.append(
                 {
-                    "id": call_id or item_id,
+                    # 与流式阶段保持一致：优先用 item_id 作为 tool_call_id，避免前端出现重复工具卡片。
+                    "id": item_id or call_id,
                     "type": "function",
                     "function": {
                         "name": str(item.get("name") or ""),
