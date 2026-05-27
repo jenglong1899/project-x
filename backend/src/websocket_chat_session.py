@@ -61,10 +61,8 @@ class AgentCallbacks:
 
 
 def resolve_model_config() -> ModelConfig:
-    # 注意：默认值必须保持“开箱即用”，否则在没有显式配置环境变量的机器上会直接回归不可用。
-    # openai-codex 需要本地 OAuth 凭据（~/.codex/auth.json 或 project-x 自己的 auth store），
-    # 因此不能作为默认模型。
-    model_key = os.getenv("PROJECT_X_MODEL_CONFIG", "deepseek-v4-pro")
+    # codex 才是最划算的，所以应该默认用 codex
+    model_key = os.getenv("PROJECT_X_MODEL_CONFIG", "openai-codex")
     model_config = MODEL_CONFIGS.get(model_key)
     if model_config is None:
         supported = ", ".join(sorted(MODEL_CONFIGS))
