@@ -1,5 +1,8 @@
 import os
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import uvicorn
 
 from src.web_app import build_app

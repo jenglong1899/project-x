@@ -9,6 +9,7 @@ dependencies = [
     "httpx[socks]>=0.28.1,<1",
     "litellm>=1.82.0,!=1.82.7,!=1.82.8",
     "pydantic>=2.12.5",
+    "python-dotenv>=1.2.2",
     "starlette>=0.52.1",
     "transformers>=5.8.1",
     "uvicorn>=0.41.0",
