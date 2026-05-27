@@ -181,7 +181,13 @@ function App() {
 
   return (
     <div className="flex h-full overflow-hidden bg-zinc-950 text-zinc-100">
-      <main className="flex flex-col min-h-0 min-w-0 flex-1 bg-zinc-950">
+      <a
+        className="sr-only focus:not-sr-only focus:absolute focus:left-4 focus:top-4 focus:z-50 focus:rounded-md focus:bg-zinc-900 focus:px-3 focus:py-2 focus:text-sm focus:text-zinc-100 focus:ring-1 focus:ring-zinc-700"
+        href="#main-content"
+      >
+        跳到主要内容
+      </a>
+      <main className="flex flex-col min-h-0 min-w-0 flex-1 bg-zinc-950" id="main-content">
         <div className="relative min-h-0 flex-1">
           {connectionIssueText ? (
             <div className="pointer-events-none absolute right-4 top-4 z-20 max-w-[min(22rem,calc(100%-2rem))]">
@@ -205,20 +211,32 @@ function App() {
                 <>
                   {items.map((item) => {
                     if (item.kind === 'user') {
-                      return <UserTurnBubble key={item.id} item={item} />
+                      return (
+                        <div key={item.id} className="content-auto">
+                          <UserTurnBubble item={item} />
+                        </div>
+                      )
                     }
 
                     if (item.kind === 'assistant') {
-                      return <AssistantTurnBubble key={item.id} item={item} />
+                      return (
+                        <div key={item.id} className="content-auto">
+                          <AssistantTurnBubble item={item} />
+                        </div>
+                      )
                     }
 
-                    return <ToolCallCard key={item.id} item={item} />
+                    return (
+                      <div key={item.id} className="content-auto">
+                        <ToolCallCard item={item} />
+                      </div>
+                    )
                   })}
 
                   {shouldShowGeneratingPlaceholder ? (
                     <article className="flex justify-start">
                       <div className="flex max-w-[85%] items-center gap-3 rounded-md bg-zinc-900 p-3 text-sm text-zinc-400 ring-1 ring-zinc-800">
-                        <LoaderCircle className="size-4 animate-spin text-zinc-500" />
+                        <LoaderCircle className="size-4 animate-spin motion-reduce:animate-none text-zinc-500" />
                         <span>正在等待 AI 响应…</span>
                       </div>
                     </article>
@@ -227,9 +245,9 @@ function App() {
               ) : (
                 <section className="flex min-h-full flex-1 items-center justify-center py-16">
                   <div className="max-w-xl text-center">
-                    <div className="text-3xl font-medium tracking-tight text-zinc-100 sm:text-4xl">
+                    <h1 className="text-3xl font-medium tracking-tight text-zinc-100 sm:text-4xl">
                       今天想聊点什么？
-                    </div>
+                    </h1>
                   </div>
                 </section>
               )}
@@ -265,7 +283,7 @@ function App() {
                         <div>user（待发送）</div>
                         <div
                           aria-label="等待中"
-                          className="h-3 w-3 animate-spin rounded-full border-2 border-zinc-500 border-t-transparent"
+                          className="h-3 w-3 animate-spin motion-reduce:animate-none rounded-full border-2 border-zinc-500 border-t-transparent"
                           role="img"
                         />
                       </div>

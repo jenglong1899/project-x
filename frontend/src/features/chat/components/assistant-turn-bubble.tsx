@@ -29,10 +29,10 @@ export function AssistantTurnBubble({ item }: AssistantTurnBubbleProps) {
           </details>
         ) : null}
 
-        <pre className="mt-2 whitespace-pre-wrap text-sm text-zinc-100">
-          {item.text || '...'}
-        </pre>
-      </div>
-    </article>
-  )
+	        <pre className="mt-2 whitespace-pre-wrap text-sm text-zinc-100">
+	          {item.text || '…'}
+	        </pre>
+	      </div>
+	    </article>
+	  )
 }

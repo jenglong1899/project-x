@@ -31,19 +31,22 @@ export function ChatComposer({
   return (
     <form className="space-y-3" onSubmit={onSubmit}>
       <div className="rounded-[28px] border border-zinc-800 bg-zinc-900/95 p-3 shadow-[0_12px_40px_rgba(0,0,0,0.28)]">
-        <Textarea
-          className="min-h-[104px] min-w-0 resize-none border-0 bg-transparent px-1 text-[15px] text-zinc-100 placeholder:text-zinc-500 focus-visible:ring-0 focus-visible:ring-offset-0"
-          onChange={(event) => onDraftChange(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter' && !event.shiftKey) {
-              event.preventDefault()
-              event.currentTarget.form?.requestSubmit()
-            }
-          }}
-          placeholder="Hi"
-          rows={3}
-          value={draft}
-        />
+	        <Textarea
+	          className="min-h-[104px] min-w-0 resize-none border-0 bg-transparent px-1 text-[15px] text-zinc-100 placeholder:text-zinc-500 focus-visible:ring-0 focus-visible:ring-offset-0"
+	          aria-label="输入消息"
+	          autoComplete="off"
+	          name="message"
+	          onChange={(event) => onDraftChange(event.target.value)}
+	          onKeyDown={(event) => {
+	            if (event.key === 'Enter' && !event.shiftKey) {
+	              event.preventDefault()
+	              event.currentTarget.form?.requestSubmit()
+	            }
+	          }}
+	          placeholder="输入消息…（例如：帮我把下面这段文字总结成 3 点）"
+	          rows={3}
+	          value={draft}
+	        />
 
         <div className="mt-3 flex items-center justify-between gap-3">
           <div className="min-w-0 text-xs text-zinc-500">Enter 发送，Shift+Enter 换行</div>
@@ -63,25 +66,26 @@ export function ChatComposer({
               onClick={onPauseToggle}
               size="icon"
               type="button"
-              variant={isPaused || pauseRequested ? 'secondary' : 'outline'}
-            >
-              {pauseRequested ? (
-                <LoaderCircle className="animate-spin" />
-              ) : isPaused ? (
-                <Play />
-              ) : (
-                <Pause />
-              )}
-            </Button>
+	              variant={isPaused || pauseRequested ? 'secondary' : 'outline'}
+	            >
+	              {pauseRequested ? (
+	                <LoaderCircle className="animate-spin motion-reduce:animate-none" />
+	              ) : isPaused ? (
+	                <Play />
+	              ) : (
+	                <Pause />
+	              )}
+	            </Button>
 
-            <Button
-              className="size-10 rounded-full bg-zinc-100 text-zinc-950 hover:bg-zinc-200 disabled:bg-zinc-800 disabled:text-zinc-500"
-              disabled={!draft.trim()}
-              size="icon"
-              type="submit"
-            >
-              <ArrowUp />
-            </Button>
+	            <Button
+	              className="size-10 rounded-full bg-zinc-100 text-zinc-950 hover:bg-zinc-200 disabled:bg-zinc-800 disabled:text-zinc-500"
+	              disabled={!draft.trim()}
+	              aria-label="发送消息"
+	              size="icon"
+	              type="submit"
+	            >
+	              <ArrowUp />
+	            </Button>
           </div>
         </div>
       </div>

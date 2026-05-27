@@ -61,6 +61,7 @@ export function ToolCallCard({ item }: ToolCallCardProps) {
   const stderrDisplay = stderrText
     ? toolResultDisplayText(stderrText, hasLongStderr ? resultOpen : true)
     : null
+  const resultRegionId = `tool-result-${item.id}`
 
   return (
     <article>
@@ -71,7 +72,7 @@ export function ToolCallCard({ item }: ToolCallCardProps) {
               Tool
             </div>
             <div className="mt-1 text-sm font-medium text-zinc-200">
-              {item.toolName || '等待工具名...'}
+              {item.toolName || '等待工具名…'}
             </div>
           </div>
           <div className="text-xs text-zinc-500">
@@ -83,25 +84,29 @@ export function ToolCallCard({ item }: ToolCallCardProps) {
           <div>
             <div className="text-xs text-zinc-500">tool call</div>
             <pre className="mt-2 whitespace-pre-wrap rounded-md bg-zinc-900 p-3 text-xs text-zinc-300">
-              {argsPretty || item.args || '等待参数...'}
+              {argsPretty || item.args || '等待参数…'}
             </pre>
           </div>
 
           <div>
             <div className="text-xs text-zinc-500">tool result</div>
             {stdoutDisplay || stderrDisplay || resultText ? (
-              <div
+              <button
+                aria-controls={resultRegionId}
+                aria-expanded={hasLongResult || hasLongStdout || hasLongStderr ? resultOpen : true}
                 className={[
-                  'mt-2 space-y-2 rounded-md bg-zinc-900 p-3 text-xs text-zinc-200',
-                  hasLongResult || hasLongStdout || hasLongStderr ? 'cursor-pointer' : '',
+                  'mt-2 block w-full space-y-2 rounded-md bg-zinc-900 p-3 text-left text-xs text-zinc-200',
+                  hasLongResult || hasLongStdout || hasLongStderr ? 'cursor-pointer' : 'cursor-default',
                 ].join(' ')}
-                onDoubleClick={() => {
+                onClick={() => {
                   if (!hasLongResult && !hasLongStdout && !hasLongStderr) {
                     return
                   }
                   setResultOpen((value) => !value)
                 }}
+                type="button"
               >
+                <div id={resultRegionId}>
                 {returncode !== null ? (
                   <div className="text-zinc-400">
                     returncode: <span className="text-zinc-200">{returncode}</span>
@@ -125,7 +130,8 @@ export function ToolCallCard({ item }: ToolCallCardProps) {
                 {!stdoutDisplay && !stderrDisplay && resultText ? (
                   <pre className="whitespace-pre-wrap">{resultText}</pre>
                 ) : null}
-              </div>
+                </div>
+              </button>
             ) : (
               <div className="mt-2 rounded-md bg-zinc-900 p-3 text-xs text-zinc-500">
                 等待结果…
