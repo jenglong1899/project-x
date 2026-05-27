@@ -31,17 +31,15 @@ memory manager相当于快系统，worker相当于慢系统
 
 # 启动
 
+```
+cd backend
+cp .env.example .env
+```
+根据需要选择模型，默认用codex订阅接入（需要在本机已经有登录好的codex）
+
 Linux/WSL/macos:
 
 ```
 chmod +x dev.sh
 ./dev.sh
 ```
-
-## .env（后端）
-
-后端启动时会自动加载 `.env`：
-
-- 默认从 `backend/` 当前工作目录向上查找最近的 `.env`（所以你可以放在 `backend/.env` 或项目根目录 `.env`）。
-- 也可以设置 `PROJECT_X_DOTENV_PATH=/path/to/.env` 来显式指定。
-- 不会覆盖已存在的环境变量（例如你在 shell 里 export 的值优先）。
