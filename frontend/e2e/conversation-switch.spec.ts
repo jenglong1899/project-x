@@ -8,7 +8,7 @@ test('会话列表与切换会话（断开重连）', async ({ page }) => {
   await expect(page.getByText('工作目录')).toHaveCount(0)
   await expect(page.getByText(/WebSocket open/)).toBeVisible()
 
-  const input = page.getByPlaceholder('给 Bionic Claw 发送消息')
+  const input = page.getByPlaceholder('Hi')
   const sendButton = page.locator('button[type="submit"]')
   const newConversationButton = page.getByRole('button', { name: '新建对话' })
   const mainRegion = page.getByRole('main')

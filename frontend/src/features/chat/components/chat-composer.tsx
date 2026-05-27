@@ -40,7 +40,7 @@ export function ChatComposer({
               event.currentTarget.form?.requestSubmit()
             }
           }}
-          placeholder="给 Bionic Claw 发送消息"
+          placeholder="Hi"
           rows={3}
           value={draft}
         />
