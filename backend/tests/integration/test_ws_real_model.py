@@ -10,6 +10,8 @@ import httpx
 import pytest
 import websockets
 
+from tests.integration.integration_timeout import integration_timeout_s
+
 
 pytestmark = pytest.mark.skipif(
     os.getenv("PROJECT_X_RUN_REAL_API_TESTS", "").strip() != "1",
@@ -91,8 +93,10 @@ async def _run_ws_flow(*, ws_url: str) -> tuple[list[AssistantMessage], list[dic
 
     active_assistant_chunks: list[str] | None = None
 
-    async with websockets.connect(ws_url, open_timeout=5, close_timeout=5) as ws:
-        async def _recv_event(*, timeout_s: float = 5) -> dict:
+    timeout_s = integration_timeout_s()
+
+    async with websockets.connect(ws_url, open_timeout=timeout_s, close_timeout=timeout_s) as ws:
+        async def _recv_event(*, timeout_s: float = timeout_s) -> dict:
             raw = await asyncio.wait_for(ws.recv(), timeout=timeout_s)
             return json.loads(raw)
 
@@ -110,9 +114,9 @@ async def _run_ws_flow(*, ws_url: str) -> tuple[list[AssistantMessage], list[dic
 
         async def _send_user_and_wait_committed(user_message_id: str, content: str) -> None:
             await _send_user(user_message_id, content)
-            deadline = time.time() + 20
+            deadline = time.time() + timeout_s
             while time.time() < deadline:
-                event = await _recv_event(timeout_s=5)
+                event = await _recv_event(timeout_s=timeout_s)
                 if event.get("type") == "user.message.committed" and event.get("userMessageId") == user_message_id:
                     return
                 _handle_non_committed_event(event)
@@ -149,9 +153,9 @@ async def _run_ws_flow(*, ws_url: str) -> tuple[list[AssistantMessage], list[dic
         await asyncio.sleep(0.2)
         await _send_user_and_wait_committed("m3", "请调用bash工具查看当前时间。你必须调用 bash，并把结果告诉我。")
 
-        deadline = time.time() + 60
+        deadline = time.time() + timeout_s
         while time.time() < deadline:
-            event = await _recv_event(timeout_s=5)
+            event = await _recv_event(timeout_s=timeout_s)
             _handle_non_committed_event(event)
             if event.get("type") == "tool.result":
                 result = json.loads(event.get("result") or "{}")
