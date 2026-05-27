@@ -164,6 +164,105 @@ async def stream(*, model_config: ModelConfig,
                  on_ai_tool_call_started: OnAiToolCallStarted,
                  on_ai_tool_call_arguments_delta: OnAiToolCallArgumentsDelta,
                  on_ai_tool_call_finished: OnAiToolCallFinished) -> dict[str, Any]:
+    if model_config.provider == "openai-codex":
+        from src.core.codex_client import CodexClient
+
+        client = CodexClient(base_url=model_config.base_url)
+        tool_calls_by_index: dict[int, dict[str, Any]] = {}
+        started_tool_call_indexes: set[int] = set()
+
+        def _on_tool_call_delta(tool_call_delta: dict[str, Any]) -> None:
+            index = _get_field(tool_call_delta, "index", 0)
+            _merge_tool_call_delta(tool_calls_by_index, tool_call_delta)
+            _maybe_emit_tool_call_started(
+                started_tool_call_indexes=started_tool_call_indexes,
+                tool_calls_by_index=tool_calls_by_index,
+                index=index,
+                on_ai_tool_call_started=on_ai_tool_call_started,
+            )
+
+            function_delta = _get_field(tool_call_delta, "function")
+            arguments_delta = _normalize_text_chunk(
+                _get_field(function_delta, "arguments") if function_delta else None
+            )
+            if not arguments_delta:
+                return
+            tool_call = tool_calls_by_index[index]
+            on_ai_tool_call_arguments_delta(
+                index=index,
+                tool_call_id=tool_call["id"] or None,
+                tool_name=tool_call["function"]["name"] or None,
+                arguments_delta=arguments_delta,
+            )
+
+        assistant_message = await client.stream_assistant_message(
+            model=model_config.model,
+            messages=messages,
+            tools=tools,
+            on_text_delta=lambda delta: on_ai_content_delta(content_delta=delta),
+            on_reasoning_delta=lambda delta: on_ai_reasoning_delta(reasoning_delta=delta),
+            on_tool_call_delta=_on_tool_call_delta,
+        )
+
+        tool_calls = assistant_message.get("tool_calls") or []
+        if isinstance(tool_calls, list) and tool_calls:
+            # 注意：流式 delta 里的 tool_call.index 可能与最终 tool_calls 列表顺序不一致。
+            # 这里不能用 enumerate(assistant_message["tool_calls"]) 去覆盖 tool_calls_by_index，
+            # 否则会把“按 delta index 聚合出来的 tool_call”替换成另一个 tool_call，导致：
+            # - tool_call_started 去重误判（按 index）
+            # - 前端 tool 卡片顺序与事件不一致
+            id_to_index: dict[str, int] = {}
+            for idx, existing_tc in tool_calls_by_index.items():
+                if isinstance(existing_tc, dict):
+                    existing_id = existing_tc.get("id")
+                    if isinstance(existing_id, str) and existing_id:
+                        id_to_index[existing_id] = idx
+
+            next_index = (max(tool_calls_by_index.keys()) + 1) if tool_calls_by_index else 0
+            for i, tc in enumerate(tool_calls):
+                if not isinstance(tc, dict):
+                    continue
+                tc_id = tc.get("id")
+
+                # 优先用 tool_call_id 对齐：把最终 tool_call 内容回填到“delta 聚合”的同一个 index 上。
+                if isinstance(tc_id, str) and tc_id and tc_id in id_to_index:
+                    tool_calls_by_index[id_to_index[tc_id]] = tc
+                    continue
+
+                # 没有 id（或没在 delta 中出现）时，尽量使用 enumerate 的 i 作为 index，
+                # 但如果该 index 已被其他 tool_call 占用（且 id 不一致），则分配一个新 index，
+                # 以避免覆盖导致的事件错配。
+                if i not in tool_calls_by_index:
+                    tool_calls_by_index[i] = tc
+                else:
+                    occupied_tc = tool_calls_by_index[i]
+                    occupied_id = occupied_tc.get("id") if isinstance(occupied_tc, dict) else None
+                    if not occupied_id or occupied_id == tc_id:
+                        tool_calls_by_index[i] = tc
+                    else:
+                        while next_index in tool_calls_by_index:
+                            next_index += 1
+                        tool_calls_by_index[next_index] = tc
+                        next_index += 1
+
+        for index in sorted(tool_calls_by_index):
+            _maybe_emit_tool_call_started(
+                started_tool_call_indexes=started_tool_call_indexes,
+                tool_calls_by_index=tool_calls_by_index,
+                index=index,
+                on_ai_tool_call_started=on_ai_tool_call_started,
+            )
+            tool_call = tool_calls_by_index[index]
+            on_ai_tool_call_finished(
+                index=index,
+                tool_call_id=tool_call.get("id") or None,
+                tool_name=_get_field(tool_call.get("function"), "name") or None,
+                arguments=_get_field(tool_call.get("function"), "arguments") or "",
+            )
+        return assistant_message
+
+    if model_config.provider != "litellm":
+        raise ValueError(f"暂不支持的 provider: {model_config.provider}")
     if model_config.model == "mock":
         delay_ms_text = os.getenv("PROJECT_X_MOCK_MODEL_DELAY_MS", "0").strip()
         try:

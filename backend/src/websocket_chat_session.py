@@ -23,6 +23,7 @@ from src.core.model_config import (
     QWEN35FLASH,
     QWEN35PLUS,
     MOCK,
+    OPENAI_CODEX,
 )
 from src.core.init_prompts import (
     build_system_level_instruction_zh,
@@ -38,8 +39,9 @@ MODEL_CONFIGS: dict[str, ModelConfig] = {
     "qwen3.5-flash": QWEN35FLASH,
     "qwen3.5-plus": QWEN35PLUS,
     "deepseek-v4-flash": DEEPSEEKV4FLASH,
-    "deepseek-v4-pro":DEEPSEEKV4PRO,
+    "deepseek-v4-pro": DEEPSEEKV4PRO,
     "mock": MOCK,
+    "openai-codex": OPENAI_CODEX,
 }
 
 
@@ -59,6 +61,9 @@ class AgentCallbacks:
 
 
 def resolve_model_config() -> ModelConfig:
+    # 注意：默认值必须保持“开箱即用”，否则在没有显式配置环境变量的机器上会直接回归不可用。
+    # openai-codex 需要本地 OAuth 凭据（~/.codex/auth.json 或 project-x 自己的 auth store），
+    # 因此不能作为默认模型。
     model_key = os.getenv("PROJECT_X_MODEL_CONFIG", "deepseek-v4-pro")
     model_config = MODEL_CONFIGS.get(model_key)
     if model_config is None:
@@ -67,6 +72,20 @@ def resolve_model_config() -> ModelConfig:
             f"PROJECT_X_MODEL_CONFIG={model_key} 不受支持，可选值: {supported}"
         )
     if model_key == "mock":
+        return model_config
+    if model_key == "openai-codex":
+        # 尽量在“开始推理之前”就给出明确错误信息，避免走到 stream(provider=openai-codex)
+        # 才因 resolve_codex_tokens(...) 抛错导致全链路不可用，且错误定位困难。
+        try:
+            from src.core.codex_auth import resolve_codex_tokens
+
+            resolve_codex_tokens(import_from_cli_if_missing=True)
+        except Exception as exc:
+            raise RuntimeError(
+                "选择 openai-codex 需要本地 Codex OAuth 凭据，但当前环境未配置。\n"
+                "- 方案 1：先用 Codex CLI 登录，确保 ~/.codex/auth.json 存在\n"
+                "- 方案 2：切回无需 OAuth 的模型（例如设置 PROJECT_X_MODEL_CONFIG=mock 进行开发调试）"
+            ) from exc
         return model_config
     if not model_config.api_key:
         raise RuntimeError(f"{model_key} 对应的 API key 未配置")

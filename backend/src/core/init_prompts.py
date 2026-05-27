@@ -20,6 +20,8 @@ INITIAL_TODO_MEMORY_CONTENT_ZH = ""
 def build_codex_user_level_instruction()->str:
     return f"""
 你运行在一个叫 project-x 的 Agent 系统中（基于codex封装）。如果你收到了被xml包裹的user-role message，你需要知道这并不是用户输入的，而是系统自动输入的。
+
+{_build_memory_mechanism_instruction()}
 """
 
 def build_system_level_instruction_zh() -> str:

@@ -7,6 +7,11 @@ class ModelConfig:
     model: str
     base_url: str
     api_key: str
+    # provider 用于决定走哪条推理后端：
+    # - "litellm": 现有 OpenAI-compatible 路径（deepseek/qwen/mock）
+    # - "openai-codex": 新增的 Codex OAuth 路径（后续实现）
+    provider: str = "litellm"
+
 
 def _getenv(key: str) -> str:
     """
@@ -42,6 +47,17 @@ DEEPSEEKV4PRO = ModelConfig(
     api_key=_getenv("DEEPSEEK_API_KEY"),
 )
 
-
 # 本地 mock 模型：用于测试/E2E，不依赖外部 API。
 MOCK = ModelConfig(model="mock", base_url="", api_key="")
+
+OPENAI_CODEX = ModelConfig(
+    model="gpt-5.2",
+    # Codex 的 base_url 默认交给 CodexClient 走 env/默认值：
+    # - PROJECT_X_CODEX_BASE_URL
+    # - DEFAULT_CODEX_BASE_URL
+    #
+    # 如需覆盖（例如接入代理/自建网关），上游显式传 ModelConfig(base_url=...)。
+    base_url="",
+    api_key="",
+    provider="openai-codex",
+)

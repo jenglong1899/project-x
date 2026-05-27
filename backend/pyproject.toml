@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
     "coolname>=4.1.0",
+    "httpx[socks]>=0.28.1,<1",
     "litellm>=1.82.0,!=1.82.7,!=1.82.8",
     "pydantic>=2.12.5",
     "starlette>=0.52.1",
@@ -16,6 +17,9 @@ dependencies = [
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
+markers = [
+    "integration: 需要真实外部依赖的集成测试（默认跳过）",
+]
 
 [dependency-groups]
 dev = [
