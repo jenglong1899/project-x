@@ -122,24 +122,56 @@ class CodexClient:
                 continue
         return items
 
-    async def _sse_events(self, *, response: httpx.Response) -> AsyncIterator[dict[str, Any]]:
+    @staticmethod
+    async def _sse_events(*, response: httpx.Response) -> AsyncIterator[dict[str, Any]]:
+        """
+        解析 `text/event-stream` 的 data 帧，产出单条 JSON dict。
+
+        注意：服务端可能使用 CRLF（`\\r\\n`），不能用简单的 `\\n\\n` 去切分帧，
+        否则会出现“请求一直有数据但永远解析不出事件”的假卡死。
+        """
         buffer = ""
+        data_lines: list[str] = []
+
+        def _flush_event() -> dict[str, Any] | None:
+            if not data_lines:
+                return None
+            data = "\n".join(data_lines).strip()
+            data_lines.clear()
+            if not data or data == "[DONE]":
+                return None
+            try:
+                payload = json.loads(data)
+            except Exception:
+                return None
+            return payload if isinstance(payload, dict) else None
+
         async for chunk in response.aiter_text():
+            if not chunk:
+                continue
             buffer += chunk
-            while "\n\n" in buffer:
-                frame, buffer = buffer.split("\n\n", 1)
-                for line in frame.splitlines():
-                    if not line.startswith("data:"):
-                        continue
-                    data = line[len("data:"):].strip()
-                    if not data or data == "[DONE]":
-                        continue
-                    try:
-                        payload = json.loads(data)
-                    except Exception:
-                        continue
-                    if isinstance(payload, dict):
+
+            while True:
+                newline_index = buffer.find("\n")
+                if newline_index < 0:
+                    break
+                raw_line = buffer[:newline_index]
+                buffer = buffer[newline_index + 1:]
+                line = raw_line.rstrip("\r")
+
+                # 空行表示一个 SSE event 结束
+                if not line:
+                    payload = _flush_event()
+                    if payload is not None:
                         yield payload
+                    continue
+
+                if line.startswith("data:"):
+                    data_lines.append(line[len("data:"):].lstrip())
+
+        payload = _flush_event()
+        if payload is not None:
+            yield payload
 
     async def stream_assistant_message(
             self,
