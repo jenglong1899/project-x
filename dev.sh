@@ -59,6 +59,8 @@ wait_for_backend() {
   local backend_port="${PROJECT_X_PORT:-8000}"
   local url="http://127.0.0.1:${backend_port}/healthz"
 
+  echo "等待后端就绪（/healthz）：${url}" >&2
+
   if command -v curl >/dev/null 2>&1; then
     for _ in $(seq 1 120); do
       if curl -fsS "${url}" >/dev/null 2>&1; then
@@ -85,12 +87,11 @@ wait_for_backend() {
   return 0
 }
 
-echo "启动前端：frontend/（npm run dev）"
 (
-  if [[ -n "${PROJECT_X_E2E_PORT:-}" ]]; then
-    echo "检测到 e2e 端口配置，等待后端就绪..." >&2
+  if [[ -z "${PROJECT_X_SKIP_BACKEND_WAIT:-}" ]]; then
     wait_for_backend
   fi
+  echo "启动前端：frontend/（npm run dev）"
   cd "${ROOT_DIR}/frontend"
   if [[ -n "${PROJECT_X_E2E_PORT:-}" ]]; then
     exec npm run dev -- --port "${PROJECT_X_E2E_PORT}" --strictPort
