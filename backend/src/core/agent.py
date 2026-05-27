@@ -25,6 +25,7 @@ from src.core.memory_manager import (
 )
 from src.core.model_config import ModelConfig
 from src.pkg.token_counter import TokenCounter
+from src.toolkits import build_memory_manager_summary_tools
 
 MEMORY_MANAGER_CONTEXT_GROWTH_THRESHOLD = 0.03
 
@@ -336,7 +337,7 @@ class Agent(AgentBase):
         if summary_task is None or summary_task.done():
             summary_round = self._memory_manager_summary_awaken_count + 1
             worker_messages_snapshot = [dict(message) for message in self._messages]
-            summary_tools = self._build_memory_manager_summary_tools()
+            summary_tools = build_memory_manager_summary_tools(provider=self._model_config.provider)
             summary_task = asyncio.create_task(
                 self._memory_manager_summary_runner.run(
                     worker_messages=worker_messages_snapshot,
@@ -361,7 +362,7 @@ class Agent(AgentBase):
         if judge_task is None or judge_task.done():
             judge_round = self._memory_manager_judge_awaken_count + 1
             worker_messages_snapshot = [dict(message) for message in self._messages]
-            judge_tools = self._build_memory_manager_summary_tools()
+            judge_tools = build_memory_manager_summary_tools(provider=self._model_config.provider)
             self._memory_manager_judge_task = asyncio.create_task(
                 self._memory_manager_judge_runner.run(
                     worker_messages=worker_messages_snapshot,
@@ -388,12 +389,6 @@ class Agent(AgentBase):
                 except Exception:
                     logger.exception("Agent[%s] 等待 memory_manager_summary_task 时失败，仍继续 reset_context", self.name)
             self._reset_context_keep_last_worker_messages(keep_last_n=10)
-
-    @staticmethod
-    def _build_memory_manager_summary_tools() -> list[Tool]:
-        from src.toolkits import build_memory_manager_summary_tools
-
-        return build_memory_manager_summary_tools()
 
 
     def _append_runtime_message(self, message: dict[str, Any]) -> None:

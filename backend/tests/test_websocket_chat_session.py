@@ -158,7 +158,7 @@ class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
         ) as build_worker_tools, mock.patch("src.websocket_chat_session.Agent") as agent_cls:
             create_default_agent(callbacks=make_noop_agent_callbacks())
 
-        build_worker_tools.assert_called_once_with(cwd_state=fake_cwd_state)
+        build_worker_tools.assert_called_once_with(cwd_state=fake_cwd_state, provider="litellm")
 
         agent_kwargs = agent_cls.call_args.kwargs
         self.assertEqual(

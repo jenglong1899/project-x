@@ -92,13 +92,14 @@ def resolve_model_config() -> ModelConfig:
 
 def create_default_agent(*, callbacks: AgentCallbacks) -> Agent:
     cwd_state = CwdState()
+    model_config = resolve_model_config()
     return Agent(
         name="project-x-web",
-        model_config=resolve_model_config(),
+        model_config=model_config,
         system_instruction=build_system_level_instruction_zh(),
         user_instruction=build_user_level_instruction_zh(),
         # bash 和 read_file 共享 cwd，所以这里必须给每个 Agent 创建独立状态，不能复用全局单例。
-        tools=build_worker_tools(cwd_state=cwd_state),
+        tools=build_worker_tools(cwd_state=cwd_state, provider=model_config.provider),
         on_ai_content_delta=callbacks.on_ai_content_delta,
         on_ai_reasoning_delta=callbacks.on_ai_reasoning_delta,
         on_ai_tool_call_started=callbacks.on_ai_tool_call_started,

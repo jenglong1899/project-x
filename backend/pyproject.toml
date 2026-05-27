@@ -5,6 +5,7 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "codex-apply-patch>=0.4.0",
     "coolname>=4.1.0",
     "httpx[socks]>=0.28.1,<1",
     "litellm>=1.82.0,!=1.82.7,!=1.82.8",

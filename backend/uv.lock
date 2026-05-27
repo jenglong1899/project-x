@@ -118,6 +118,7 @@ name = "backend"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "codex-apply-patch" },
     { name = "coolname" },
     { name = "httpx", extra = ["socks"] },
     { name = "litellm" },
@@ -136,6 +137,7 @@ dev = [
 
 [package.metadata]
 requires-dist = [
+    { name = "codex-apply-patch", specifier = ">=0.4.0" },
     { name = "coolname", specifier = ">=4.1.0" },
     { name = "httpx", extras = ["socks"], specifier = ">=0.28.1,<1" },
     { name = "litellm", specifier = ">=1.82.0,!=1.82.7,!=1.82.8" },
@@ -194,6 +196,16 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/3d/fa/656b739db8587d7b5dfa22e22ed02566950fbfbcdc20311993483657a5c0/click-8.3.1.tar.gz", hash = "sha256:12ff4785d337a1bb490bb7e9c2b1ee5da3112e94a8622f26a6c77f5d2fc6842a", size = 295065, upload-time = "2025-11-15T20:45:42.706Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/98/78/01c019cdb5d6498122777c1a43056ebb3ebfeef2076d9d026bfe15583b2b/click-8.3.1-py3-none-any.whl", hash = "sha256:981153a64e25f12d547d3426c367a4857371575ee7ad18df2a6183ab0545b2a6", size = 108274, upload-time = "2025-11-15T20:45:41.139Z" },
+]
+
+[[package]]
+name = "codex-apply-patch"
+version = "0.4.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/81/18/7cff6099bb4b478e5171575fd073a7b4a27ae4a1a62091b2eae48620038d/codex_apply_patch-0.4.0.tar.gz", hash = "sha256:00a36e22175b2130145ab3dd8c0e579d27bcf1c235f4084d24566353cd649386", size = 36294, upload-time = "2025-06-19T04:50:57.491Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/16/d0/ad25fa5073e3cfbe7d471d73663e5e0521cf545eaf364d265cc8e79bbdf0/codex_apply_patch-0.4.0-cp314-cp314-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:913eaf704b82c24e56fa3715e696be7cfe7630124582fada697f7d1b9e94fd14", size = 340948, upload-time = "2025-06-19T04:50:33.073Z" },
+    { url = "https://files.pythonhosted.org/packages/96/37/3abbb4c2de8f15c1911ddf0889094d1ec8cb44ad1d18d52acb9193f59f62/codex_apply_patch-0.4.0-cp314-cp314-manylinux_2_5_i686.manylinux1_i686.whl", hash = "sha256:097eeb003d19dbf2ac736dd544005fc8d13a96ad8b5e8830c09d9f31056989cc", size = 372480, upload-time = "2025-06-19T04:50:34.037Z" },
 ]
 
 [[package]]
