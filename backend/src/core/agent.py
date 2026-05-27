@@ -24,7 +24,7 @@ from src.core.memory_manager import (
     MemoryManagerSummaryRunner,
 )
 from src.core.model_config import ModelConfig
-from src.tokenizer.token_counter import TokenCounter
+from src.pkg.token_counter import TokenCounter
 
 MEMORY_MANAGER_CONTEXT_GROWTH_THRESHOLD = 0.03
 

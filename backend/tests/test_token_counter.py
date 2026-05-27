@@ -1,11 +1,11 @@
 import unittest
 
-from src.tokenizer.token_counter import DEFAULT_CONTEXT_WINDOW, TokenCounter, TokenCounterError, TokenizerRegistry
+from src.pkg.token_counter import DEFAULT_CONTEXT_WINDOW, TokenCounter, TokenCounterError, TokenizerRegistry
 
 
 class _FailingRegistry(TokenizerRegistry):
     def get_tokenizer(self, tokenizer_id: str) -> object:  # noqa: ARG002
-        raise TokenCounterError("模拟：tokenizer 初始化失败")
+        raise TokenCounterError("模拟：pkg 初始化失败")
 
 
 class TokenCounterTests(unittest.TestCase):

@@ -47,7 +47,7 @@ MODEL_SPECS: dict[str, ModelSpec] = {
         close_generation_prompt_with_eos=True,
     ),
     # DashScope 的 OpenAI 兼容接口返回的 usage.prompt_tokens 口径会把 assistant 的空消息也“闭合”掉，
-    # 等价于在 generation prompt 末尾额外追加一个 <|im_end|>（即 tokenizer.eos_token_id）。
+    # 等价于在 generation prompt 末尾额外追加一个 <|im_end|>（即 pkg.eos_token_id）。
     "openai/qwen3.5-flash": ModelSpec(
         context_window=256_000,
         tokenizer_id="Qwen/Qwen3.5-35B-A3B",
@@ -69,7 +69,7 @@ DEFAULT_CONTEXT_WINDOW = 128_000
 #
 # 这里的 token 统计目标是“尽量贴近真实 prompt token”，用于 memory manager 的阈值判断：
 # - 校验时允许该字段存在，避免 token 统计阶段直接失败；
-# - 统计时不把它作为独立字段喂给 tokenizer（部分 tokenizer/chat_template 会对未知字段报错）；
+# - 统计时不把它作为独立字段喂给 pkg（部分 pkg/chat_template 会对未知字段报错）；
 # - 统一口径：把推理折叠进 `content` 再统计。
 
 _ALLOWED_MESSAGE_KEYS = {
@@ -131,13 +131,13 @@ class TokenCounter:
         return DEFAULT_CONTEXT_WINDOW
 
     def count_text_tokens(self, model: str, text: str) -> tuple[int, bool]:
-        # 临时策略：不调用任何 tokenizer，统一走估算口径。
+        # 临时策略：不调用任何 pkg，统一走估算口径。
         # 目的：避免本地/CI 里因为 transformers 依赖、HF 缓存、联网下载等不确定因素导致阻塞或失败。
         _ = model
         return ceil(len(text.encode("utf-8")) / 4), True
 
     def count_messages_tokens(self, model: str, messages: list[dict[str, Any]]) -> tuple[int, bool]:
-        # 临时策略：不调用任何 tokenizer，统一走估算口径。
+        # 临时策略：不调用任何 pkg，统一走估算口径。
         # 注意：仍然保留 message 字段校验与 reasoning_content 折叠逻辑，避免上游把异常字段悄悄吞掉。
         self._validate_messages(messages)
         _ = model
@@ -176,7 +176,7 @@ class TokenCounter:
         """
         统一 apply_chat_template 与估算口径：只保留 chat template 需要/支持的字段。
 
-        - 统计时不能把 `reasoning_content` 作为独立字段传给 tokenizer（部分 tokenizer 会报错）
+        - 统计时不能把 `reasoning_content` 作为独立字段传给 pkg（部分 pkg 会报错）
         - 但如果 provider 会把它计入上下文，则需要把它计入 token（折叠进 content）
         """
         sanitized: list[dict[str, Any]] = []
@@ -204,7 +204,7 @@ class TokenCounter:
     @staticmethod
     def _extract_input_ids(encoded: Any) -> list[int]:
         """
-        transformers 的 apply_chat_template(tokenize=True) 在不同版本/不同 tokenizer 下可能返回：
+        transformers 的 apply_chat_template(tokenize=True) 在不同版本/不同 pkg 下可能返回：
         - list[int]
         - BatchEncoding（dict-like，含 input_ids）
         - dict（含 input_ids）

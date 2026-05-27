@@ -1,7 +1,7 @@
 import os
 import unittest
 
-from src.tokenizer.token_counter import TokenCounter
+from src.pkg.token_counter import TokenCounter
 
 
 class TokenCounterIntegrationTests(unittest.IsolatedAsyncioTestCase):
@@ -56,7 +56,7 @@ class TokenCounterIntegrationTests(unittest.IsolatedAsyncioTestCase):
             local_tokens, is_estimate = counter.count_messages_tokens(model, messages)
             if is_estimate:
                 raise unittest.SkipTest(
-                    "当前 TokenCounter 处于“仅估算”模式（不会调用 tokenizer），无法做 usage.prompt_tokens 对齐断言"
+                    "当前 TokenCounter 处于“仅估算”模式（不会调用 pkg），无法做 usage.prompt_tokens 对齐断言"
                 )
 
             resp = await acompletion(
