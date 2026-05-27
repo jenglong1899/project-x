@@ -40,7 +40,8 @@
 - 回调约定：可选回调参数如果允许为 `None`，初始化时用 `backend/src/commons.py` 里的 `noop` 替代，避免到处写 `if callback is None`。
 
 ### 环境变量速查（最常用）
-- `PROJECT_X_MODEL_CONFIG`：模型选择（`deepseek-v4-pro`/`deepseek-v4-flash`/`qwen3.5-plus`/`qwen3.5-flash`/`mock`）；默认 `deepseek-v4-pro`
+- `PROJECT_X_MODEL_CONFIG`：模型选择（`openai-codex`/`deepseek-v4-pro`/`deepseek-v4-flash`/`qwen3.5-plus`/`qwen3.5-flash`/`mock`）；默认 `deepseek-v4-pro`
+  - openai-codex: 需要在本机已登陆codex cli
   - 选 deepseek：需要 `DEEPSEEK_API_KEY`
   - 选 qwen：需要 `DASHSCOPE_API_KEY`
   - 选 mock：不需要外部 API key；可用 `PROJECT_X_MOCK_MODEL_DELAY_MS` 模拟延迟
