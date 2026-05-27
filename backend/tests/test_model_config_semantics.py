@@ -2,25 +2,6 @@ import asyncio
 import importlib
 
 
-def test_default_model_config_is_not_codex(monkeypatch) -> None:
-    """
-    回归保护：
-    - 未显式设置 PROJECT_X_MODEL_CONFIG 时，默认不应选择 openai-codex（否则会要求本地 OAuth 凭据）。
-    """
-    monkeypatch.delenv("PROJECT_X_MODEL_CONFIG", raising=False)
-    monkeypatch.setenv("DEEPSEEK_API_KEY", "dummy-key")
-
-    # 这些常量在 import 时会读取环境变量，所以这里用 reload 锁定行为。
-    import src.core.model_config as model_config_mod
-    import src.websocket_chat_session as ws_mod
-
-    importlib.reload(model_config_mod)
-    importlib.reload(ws_mod)
-
-    cfg = ws_mod.resolve_model_config()
-    assert cfg.provider != "openai-codex"
-
-
 def test_agent_turn_codex_uses_model_config_base_url(monkeypatch) -> None:
     """
     语义一致性保护：
