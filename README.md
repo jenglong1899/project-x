@@ -22,9 +22,10 @@ memory manager相当于快系统，worker相当于慢系统
 - steer conversation（后期基于这个做multi-agent沟通）
 - 暂停（等本轮工具调用结束后暂停），现在AI的输出速度太快了，得加这个功能，方便调试
 
-# 文档：
+# 文档
+
 - AGENTS.md 大致讲述项目的结构。
-- docs/feature-decisions 产品功能决策
+- docs/feature-decisions.md 产品功能决策
 - docs/draft-plans 我自己写的初步计划
 - docs/plans AI基于初步计划制定的计划
 - docs/code_explanations 让 AI 给我解释的一些代码，对其他人应该没啥用。用 [structured-knowledge](https://github.com/jenglong1899/structured-knowledge) skill 制作
