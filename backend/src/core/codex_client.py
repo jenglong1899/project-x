@@ -86,6 +86,21 @@ class CodexClient:
         return out
 
     @staticmethod
+    def _looks_like_unexpanded_shell_var(value: str) -> bool:
+        """
+        一些 IDE（例如 PyCharm 的 Run Configuration 里引用 env 文件）只是“按行解析键值”，
+        并不会像 shell 那样展开 `$http_proxy` 这类引用，导致代理值变成字面量 `$http_proxy`，
+        httpx 解析 proxy 时会直接失败并快速报 ConnectError。
+        """
+        raw = str(value or "").strip()
+        if not raw.startswith("$"):
+            return False
+        name = raw[1:]
+        if not name:
+            return False
+        return all(ch.isalnum() or ch == "_" for ch in name)
+
+    @staticmethod
     def _http_max_retries() -> int:
         """
         Codex 的网络抖动（尤其是 ReadTimeout）会导致一次 run() 直接失败，
@@ -437,6 +452,13 @@ class CodexClient:
                     else:
                         if proxy_env:
                             hint_lines.append(f"- 当前进程检测到代理环境变量：{proxy_env!r}")
+                            if any(self._looks_like_unexpanded_shell_var(v) for v in proxy_env.values()):
+                                hint_lines.append(
+                                    "- 检测到代理值疑似未展开的 shell 变量（例如字面量 '$http_proxy'）。"
+                                    "如果你在 IDE 里引用 ~/.zshenv/.bashrc 作为 env 文件，通常不会展开 $VAR；"
+                                    "请在 Run/Debug Configuration 里填入完整代理 URL，"
+                                    "或改用 PROJECT_X_CODEX_HTTP_PROXY 显式指定。"
+                                )
                             hint_lines.append("- 可尝试设置 PROJECT_X_CODEX_HTTP_TRUST_ENV=0 禁用环境代理")
                             hint_lines.append("- 或设置 PROJECT_X_CODEX_HTTP_PROXY 显式指定可用代理（如 socks5h://...）")
                     hint = "\n".join(hint_lines)

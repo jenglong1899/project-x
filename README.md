@@ -45,3 +45,5 @@ Linux/macOS:
 chmod +x dev.sh
 ./dev.sh
 ```
+
+如果用Codex订阅，想在Pycharm中跑断点、codex订阅的集成测试，要在 run configuration 里面加环境变量，key是`PROJECT_X_CODEX_HTTP_PROXY`，value是`socks5h://172.17.16.1:7890`（如果你的vpn是7890端口）
