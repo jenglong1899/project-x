@@ -18,6 +18,39 @@ ROOT_DIR="$(
 backend_pid=""
 frontend_pid=""
 
+check_internet_connectivity() {
+  # 这里的“外网”按能否访问 Google 来粗略判断（便于快速发现网络被限制/代理未生效的情况）。
+  # 失败只做告警，不阻断本地开发启动。
+  if [[ -n "${PROJECT_X_SKIP_INTERNET_CHECK:-}" ]]; then
+    return 0
+  fi
+
+  local ok="false"
+
+  if command -v curl >/dev/null 2>&1; then
+    # generate_204 返回 204，体积小，适合用来做连通性探测
+    if curl -fsS --max-time 2 "https://www.google.com/generate_204" >/dev/null 2>&1; then
+      ok="true"
+    fi
+  elif command -v wget >/dev/null 2>&1; then
+    if wget -qO- --timeout=2 "https://www.google.com/generate_204" >/dev/null 2>&1; then
+      ok="true"
+    fi
+  elif command -v ping >/dev/null 2>&1; then
+    # ping 参数在不同平台不完全一致，这里尽量用最保守的参数组合
+    if ping -c 1 "www.google.com" >/dev/null 2>&1; then
+      ok="true"
+    fi
+  else
+    echo "提示：未找到 curl/wget/ping，跳过外网连通性检查。" >&2
+    return 0
+  fi
+
+  if [[ "${ok}" != "true" ]]; then
+    echo "警告：外网连接检测失败（Google 不可达）。默认情况下 Codex 订阅可能无法连接；请检查代理/VPN/网络策略，或设置 PROJECT_X_SKIP_INTERNET_CHECK=1 跳过此检查。" >&2
+  fi
+}
+
 cleanup() {
   set +e
 
@@ -37,6 +70,8 @@ cleanup() {
 }
 
 trap cleanup EXIT INT TERM
+
+check_internet_connectivity
 
 if ! command -v npm >/dev/null 2>&1; then
   echo "未找到 npm。请先安装 Node.js/npm。" >&2
