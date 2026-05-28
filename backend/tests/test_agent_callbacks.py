@@ -58,6 +58,18 @@ class _StaticJudgeRunner:
         return self.should_reset_context
 
 
+class _SequenceJudgeRunner:
+    def __init__(self, results: list[bool]) -> None:
+        self._results = list(results)
+        self.calls: list[dict[str, object]] = []
+
+    async def run(self, **kwargs: object) -> bool:
+        self.calls.append(kwargs)
+        if not self._results:
+            return False
+        return self._results.pop(0)
+
+
 class _BlockingSummaryRunner:
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []
@@ -69,6 +81,11 @@ class _BlockingSummaryRunner:
         self.started.set()
         await self.allow_finish.wait()
         return None
+
+
+def _threshold_for_messages(*, message_count: int, context_window: int, token_per_message: int) -> int:
+    used_percent = int(message_count * token_per_message * 100 / context_window)
+    return (used_percent // 3) * 3
 
 
 @contextmanager
@@ -421,7 +438,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
     async def test_memory_manager_magic_word_switches_conversation(self) -> None:
         switch_events: list[list[dict[str, object]]] = []
         summary_runner = _StaticSummaryRunner()
-        judge_runner = _StaticJudgeRunner(should_reset_context=True)
+        judge_runner = _SequenceJudgeRunner([True, False])
 
         with tempfile.TemporaryDirectory() as temp_dir:
             with _patch_agent_conversation_store_without_history(temp_dir):
@@ -464,15 +481,14 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                 ):
                     agent.enqueue_user_message(frontend_msg_id="u1", user_message="hello")
                     agent._safe_drain_user_message_queue()
-                    agent._require_conversation_store().update_memory_manager_checkpoint_tokens(last_checkpoint_tokens=1)
                     result = await agent.run()
 
                 stored_files = list(Path(temp_dir).glob("*.json"))
                 self.assertEqual(len(stored_files), 2)
 
         self.assertEqual(result, final_ai_msg)
-        self.assertEqual(len(summary_runner.calls), 1)
-        self.assertEqual(len(judge_runner.calls), 1)
+        self.assertEqual(len(summary_runner.calls), 2)
+        self.assertEqual(len(judge_runner.calls), 2)
         self.assertEqual(
             switch_events[-1],
             [
@@ -483,8 +499,8 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(agent._messages[0], {"role": "system", "content": "system-2"})
         self.assertEqual(agent._messages[1], {"role": "user", "content": "user-2"})
-        self.assertEqual(agent._memory_manager_summary_awaken_count, 0)
-        self.assertEqual(agent._memory_manager_judge_awaken_count, 0)
+        self.assertEqual(agent._memory_manager_summary_awaken_count, 1)
+        self.assertEqual(agent._memory_manager_judge_awaken_count, 1)
 
     async def test_memory_manager_does_not_awaken_below_context_growth_threshold(self) -> None:
         summary_runner = _StaticSummaryRunner()
@@ -507,7 +523,9 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                 agent.enqueue_user_message(frontend_msg_id="u1", user_message="hello")
                 agent._safe_drain_user_message_queue()
                 store = agent._require_conversation_store()
-                store.update_memory_manager_checkpoint_tokens(last_checkpoint_tokens=3)
+                # 当前 tokens=3（system/user instruction + 首条用户消息），used_percent=3，
+                # current_threshold=3；将 last_triggered_threshold 设为 3，确保不会被唤醒。
+                store.update_memory_manager_last_triggered_threshold(last_triggered_threshold=3)
 
                 await agent._maybe_wake_memory_manager()
 
@@ -556,20 +574,20 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                 ):
                     agent.enqueue_user_message(frontend_msg_id="u1", user_message="hello")
                     agent._safe_drain_user_message_queue()
-                    agent._require_conversation_store().update_memory_manager_checkpoint_tokens(last_checkpoint_tokens=1)
                     result = await agent.run()
 
         self.assertEqual(result, final_ai_msg)
-        self.assertEqual(len(summary_runner.calls), 1)
+        self.assertEqual(len(summary_runner.calls), 2)
         self.assertTrue(summary_runner.calls[0]["is_first_time_awaken"])
-        self.assertEqual(len(judge_runner.calls), 1)
-        self.assertEqual(agent._memory_manager_summary_awaken_count, 1)
-        self.assertEqual(agent._memory_manager_judge_awaken_count, 1)
+        self.assertFalse(summary_runner.calls[1]["is_first_time_awaken"])
+        self.assertEqual(len(judge_runner.calls), 2)
+        self.assertEqual(agent._memory_manager_summary_awaken_count, 2)
+        self.assertEqual(agent._memory_manager_judge_awaken_count, 2)
 
     async def test_judge_reset_waits_for_summary_before_switching_conversation(self) -> None:
         switch_events: list[list[dict[str, object]]] = []
         summary_runner = _BlockingSummaryRunner()
-        judge_runner = _StaticJudgeRunner(should_reset_context=True)
+        judge_runner = _SequenceJudgeRunner([True, False])
 
         with tempfile.TemporaryDirectory() as temp_dir:
             with _patch_agent_conversation_store_without_history(temp_dir):
@@ -612,7 +630,6 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                 ):
                     agent.enqueue_user_message(frontend_msg_id="u1", user_message="hello")
                     agent._safe_drain_user_message_queue()
-                    agent._require_conversation_store().update_memory_manager_checkpoint_tokens(last_checkpoint_tokens=1)
                     run_task = asyncio.create_task(agent.run())
                     await summary_runner.started.wait()
                     self.assertEqual(switch_events, [[]])
@@ -620,8 +637,8 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     result = await run_task
 
         self.assertEqual(result, final_ai_msg)
-        self.assertEqual(len(summary_runner.calls), 1)
-        self.assertEqual(len(judge_runner.calls), 1)
+        self.assertEqual(len(summary_runner.calls), 2)
+        self.assertEqual(len(judge_runner.calls), 2)
         self.assertEqual(len(switch_events), 2)
 
     async def test_summary_does_not_reenter_while_in_flight(self) -> None:
@@ -665,7 +682,6 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                 ):
                     agent.enqueue_user_message(frontend_msg_id="u1", user_message="hello")
                     agent._safe_drain_user_message_queue()
-                    agent._require_conversation_store().update_memory_manager_checkpoint_tokens(last_checkpoint_tokens=1)
                     result = await agent.run()
 
                 summary_runner.allow_finish.set()
@@ -673,9 +689,9 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, final_ai_msg)
         self.assertEqual(len(summary_runner.calls), 1)
-        self.assertEqual(len(judge_runner.calls), 2)
+        self.assertEqual(len(judge_runner.calls), 3)
         self.assertEqual(agent._memory_manager_summary_awaken_count, 1)
-        self.assertEqual(agent._memory_manager_judge_awaken_count, 2)
+        self.assertEqual(agent._memory_manager_judge_awaken_count, 3)
         self.assertEqual(
             sum(1 for m in agent._messages if m.get("role") == "user" and m.get("content") == WAKE_MEMORY_MANAGER_FLAG),
             1,

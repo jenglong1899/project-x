@@ -11,7 +11,7 @@ from src.commons import ORIGINALS_DIR
 MEMORY_MANAGER_META_KEY = "memory-manager"
 MEMORY_MANAGER_SUMMARY_AWAKEN_COUNT_KEY = "summary-awaken-count"
 MEMORY_MANAGER_JUDGE_AWAKEN_COUNT_KEY = "judge-awaken-count"
-MEMORY_MANAGER_LAST_CHECKPOINT_TOKENS_KEY = "last-checkpoint-tokens"
+MEMORY_MANAGER_LAST_TRIGGERED_THRESHOLD_KEY = "last-triggered-threshold"
 PAUSE_META_KEY = "pause"
 PAUSE_REQUESTED_KEY = "requested"
 PAUSE_PAUSED_KEY = "paused"
@@ -70,7 +70,7 @@ class ConversationStore:
         self._messages: list[dict[str, Any]] = []
         self._memory_manager_summary_awaken_count = 0
         self._memory_manager_judge_awaken_count = 0
-        self._memory_manager_last_checkpoint_tokens = 0
+        self._memory_manager_last_triggered_threshold = 0
         self._pause_requested = False
         self._paused = False
 
@@ -94,8 +94,8 @@ class ConversationStore:
         return self._memory_manager_judge_awaken_count
 
     @property
-    def memory_manager_last_checkpoint_tokens(self) -> int:
-        return self._memory_manager_last_checkpoint_tokens
+    def memory_manager_last_triggered_threshold(self) -> int:
+        return self._memory_manager_last_triggered_threshold
 
     @property
     def pause_requested(self) -> bool:
@@ -113,10 +113,10 @@ class ConversationStore:
         if self.has_persisted_conversation():
             self._write_json_atomically()
 
-    def update_memory_manager_checkpoint_tokens(self, *, last_checkpoint_tokens: int) -> None:
-        if last_checkpoint_tokens < 0:
-            raise ValueError("last_checkpoint_tokens 不能为负数")
-        self._memory_manager_last_checkpoint_tokens = last_checkpoint_tokens
+    def update_memory_manager_last_triggered_threshold(self, *, last_triggered_threshold: int) -> None:
+        if last_triggered_threshold < 0:
+            raise ValueError("last_triggered_threshold 不能为负数")
+        self._memory_manager_last_triggered_threshold = last_triggered_threshold
         if self.has_persisted_conversation():
             self._write_json_atomically()
 
@@ -202,13 +202,13 @@ class ConversationStore:
         if isinstance(memory_manager_meta, dict):
             summary_awaken_count = memory_manager_meta.get(MEMORY_MANAGER_SUMMARY_AWAKEN_COUNT_KEY)
             judge_awaken_count = memory_manager_meta.get(MEMORY_MANAGER_JUDGE_AWAKEN_COUNT_KEY)
-            last_checkpoint_tokens = memory_manager_meta.get(MEMORY_MANAGER_LAST_CHECKPOINT_TOKENS_KEY)
+            last_triggered_threshold = memory_manager_meta.get(MEMORY_MANAGER_LAST_TRIGGERED_THRESHOLD_KEY)
             if isinstance(summary_awaken_count, int) and summary_awaken_count >= 0:
                 store._memory_manager_summary_awaken_count = summary_awaken_count
             if isinstance(judge_awaken_count, int) and judge_awaken_count >= 0:
                 store._memory_manager_judge_awaken_count = judge_awaken_count
-            if isinstance(last_checkpoint_tokens, int) and last_checkpoint_tokens >= 0:
-                store._memory_manager_last_checkpoint_tokens = last_checkpoint_tokens
+            if isinstance(last_triggered_threshold, int) and last_triggered_threshold >= 0:
+                store._memory_manager_last_triggered_threshold = last_triggered_threshold
 
         pause_meta = meta.get(PAUSE_META_KEY)
         if isinstance(pause_meta, dict):
@@ -278,7 +278,7 @@ class ConversationStore:
                 MEMORY_MANAGER_META_KEY: {
                     MEMORY_MANAGER_SUMMARY_AWAKEN_COUNT_KEY: self._memory_manager_summary_awaken_count,
                     MEMORY_MANAGER_JUDGE_AWAKEN_COUNT_KEY: self._memory_manager_judge_awaken_count,
-                    MEMORY_MANAGER_LAST_CHECKPOINT_TOKENS_KEY: self._memory_manager_last_checkpoint_tokens,
+                    MEMORY_MANAGER_LAST_TRIGGERED_THRESHOLD_KEY: self._memory_manager_last_triggered_threshold,
                 },
                 PAUSE_META_KEY: {
                     PAUSE_REQUESTED_KEY: self._pause_requested,

@@ -31,7 +31,7 @@ class AgentMemoryManagerBackgroundTaskTests(unittest.IsolatedAsyncioTestCase):
         agent.start_conversation()
         agent.enqueue_user_message(frontend_msg_id="1", user_message="hi")
         agent._safe_drain_user_message_queue()
-        agent._require_conversation_store().update_memory_manager_checkpoint_tokens(last_checkpoint_tokens=1)
+        agent._require_conversation_store().update_memory_manager_last_triggered_threshold(last_triggered_threshold=27)
 
         agent._memory_manager_summary_runner.run = mock.AsyncMock(side_effect=RuntimeError("boom"))  # type: ignore[method-assign]
         agent._memory_manager_judge_runner.run = mock.AsyncMock(return_value=False)  # type: ignore[method-assign]

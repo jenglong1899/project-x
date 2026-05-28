@@ -27,7 +27,7 @@ from src.core.model_config import ModelConfig
 from src.pkg.token_counter import TokenCounter
 from src.toolkits import build_memory_manager_summary_tools
 
-MEMORY_MANAGER_CONTEXT_GROWTH_THRESHOLD = 0.03
+MEMORY_MANAGER_CONTEXT_USED_THRESHOLD_STEP_PERCENT = 3
 
 logger = logging.getLogger(__name__)
 
@@ -350,26 +350,24 @@ class Agent(AgentBase):
         conversation_store = self._require_conversation_store()
         context_limit = self._token_counter.context_window(self._model_config.model)
         current_tokens, _is_estimate = self._token_counter.count_messages_tokens(self._model_config.model, self._messages)
-        last_checkpoint_tokens = conversation_store.memory_manager_last_checkpoint_tokens
+        last_triggered_threshold = conversation_store.memory_manager_last_triggered_threshold
 
-        if last_checkpoint_tokens <= 0 or current_tokens <= last_checkpoint_tokens:
-            conversation_store.update_memory_manager_checkpoint_tokens(last_checkpoint_tokens=current_tokens)
-            return
-
-        growth_ratio = (current_tokens - last_checkpoint_tokens) / context_limit
-        if growth_ratio < MEMORY_MANAGER_CONTEXT_GROWTH_THRESHOLD:
+        used_percent = int(current_tokens * 100 / context_limit)
+        current_threshold = (used_percent // MEMORY_MANAGER_CONTEXT_USED_THRESHOLD_STEP_PERCENT) * MEMORY_MANAGER_CONTEXT_USED_THRESHOLD_STEP_PERCENT
+        if current_threshold <= last_triggered_threshold:
             return
 
         logger.info(
-            "Agent[%s] 唤醒 memory manager（file=%s tokens=%s checkpoint=%s ratio=%.4f threshold=%.4f）",
+            "Agent[%s] 唤醒 memory manager（file=%s tokens=%s used_percent=%s last_threshold=%s current_threshold=%s step=%s）",
             self.name,
             conversation_store.conversation_file_name,
             current_tokens,
-            last_checkpoint_tokens,
-            growth_ratio,
-            MEMORY_MANAGER_CONTEXT_GROWTH_THRESHOLD,
+            used_percent,
+            last_triggered_threshold,
+            current_threshold,
+            MEMORY_MANAGER_CONTEXT_USED_THRESHOLD_STEP_PERCENT,
         )
-        conversation_store.update_memory_manager_checkpoint_tokens(last_checkpoint_tokens=current_tokens)
+        conversation_store.update_memory_manager_last_triggered_threshold(last_triggered_threshold=current_threshold)
 
         summary_task = self._memory_manager_summary_task
         if summary_task is None or summary_task.done():
@@ -552,6 +550,9 @@ class Agent(AgentBase):
             if ai_msg_dict is not self._messages[-1]:
                 self._append_runtime_message(ai_msg_dict)
             if not ai_msg_dict.get("tool_calls"):
+                # 即使本轮没有工具调用，也需要按上下文阈值唤醒 memory manager，
+                # 否则“纯聊天”场景永远不会触发摘要/重置判断。
+                await self._maybe_wake_memory_manager()
                 if self._pause_requested:
                     # 为了让“暂停”在有pending user message的场景下也可靠生效：
                     # 即使本轮没有 tool_calls，只要本轮模型调用已经结束，
