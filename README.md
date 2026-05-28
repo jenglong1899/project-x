@@ -31,13 +31,13 @@ memory manager相当于快系统，worker相当于慢系统
 
 # 启动
 
+默认用codex订阅，如果要用其他，需要设置环境变量
 ```
 cd backend
 cp .env.example .env
 ```
-根据需要选择模型，默认用codex订阅接入（需要在本机已经有登录好的codex）
 
-Linux/WSL/macos:
+Linux/macOS:
 
 ```
 chmod +x dev.sh
