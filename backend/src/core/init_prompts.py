@@ -25,6 +25,8 @@ def build_codex_user_level_instruction()->str:
     return f"""
 你运行在一个基于 Codex 封装的，名为 project-x 的 Agent 系统中。如果你收到了被xml包裹的user-role message，你需要知道这并不是用户输入的，而是系统自动输入的。
 
+Codex提供的multi_tool_use.parallel在本系统中不存在，不要调用这个。
+
 {_build_memory_mechanism_instruction()}
 
 <todo_mechanism>
