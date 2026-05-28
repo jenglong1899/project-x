@@ -31,6 +31,17 @@ class MemoryManagerSummaryRunner:
             runner_kind="summary",
             awaken_round=awaken_round,
         )
+        logger.append_event(
+            {
+                "kind": "runner.started",
+                "worker_messages": len(worker_messages),
+                "forked_messages": len(forked_messages),
+                "tools": [tool.name for tool in tools],
+                "provider": model_config.provider,
+                "model": model_config.model,
+                "is_first_time_awaken": is_first_time_awaken,
+            }
+        )
         user_prompt = {
             "role": "user",
             "content": build_memory_manager_summary_prompt(
@@ -58,6 +69,7 @@ class MemoryManagerSummaryRunner:
             forked_messages.append(assistant_message)
             logger.append_event(
                 {
+                    "kind": "assistant.message",
                     "role": "assistant",
                     "content": "\n".join(
                         s for s in [assistant_message.get("reasoning_content"), assistant_message.get("content")] if isinstance(s, str) and s
@@ -77,12 +89,19 @@ class MemoryManagerSummaryRunner:
             for tool_message in tool_messages:
                 logger.append_event(
                     {
+                        "kind": "tool.message",
                         "role": "tool",
                         "content": tool_message.get("content"),
                         "tool_call_id": tool_message.get("tool_call_id"),
                     }
                 )
 
+        logger.append_event(
+            {
+                "kind": "runner.finished",
+                "forked_messages": len(forked_messages),
+            }
+        )
         return None
 
 
@@ -101,6 +120,16 @@ class MemoryManagerJudgeResetContextRunner:
             conversation_file_name=conversation_file_name,
             runner_kind="judge",
             awaken_round=awaken_round,
+        )
+        logger.append_event(
+            {
+                "kind": "runner.started",
+                "worker_messages": len(worker_messages),
+                "forked_messages": len(forked_messages),
+                "tools": [tool.name for tool in tools],
+                "provider": model_config.provider,
+                "model": model_config.model,
+            }
         )
         user_prompt = {
             "role": "user",
@@ -127,6 +156,7 @@ class MemoryManagerJudgeResetContextRunner:
             forked_messages.append(assistant_message)
             logger.append_event(
                 {
+                    "kind": "assistant.message",
                     "role": "assistant",
                     "content": "\n".join(
                         s for s in [assistant_message.get("reasoning_content"), assistant_message.get("content")] if isinstance(s, str) and s
@@ -162,7 +192,15 @@ class MemoryManagerJudgeResetContextRunner:
             forked_messages.extend(tool_messages)
 
         content = assistant_message.get("content")
-        return isinstance(content, str) and RESET_CONTEXT_MAGIC_WORD in content.splitlines()
+        should_reset = isinstance(content, str) and RESET_CONTEXT_MAGIC_WORD in content.splitlines()
+        logger.append_event(
+            {
+                "kind": "runner.finished",
+                "forked_messages": len(forked_messages),
+                "should_reset_context": should_reset,
+            }
+        )
+        return should_reset
 
 
 def build_memory_manager_summary_prompt(is_first_time_awaken: bool) -> str:

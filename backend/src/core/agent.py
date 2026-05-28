@@ -122,8 +122,10 @@ class Agent(AgentBase):
     def start_conversation(self) -> None:
         conversation_file_name = ConversationStore.find_latest_conversation_file_name()
         if conversation_file_name:
+            logger.info("Agent[%s].start_conversation：恢复历史会话（file=%s）", self.name, conversation_file_name)
             self._load_conversation_from_file(conversation_file_name=conversation_file_name)
         else:
+            logger.info("Agent[%s].start_conversation：创建新会话", self.name)
             self._start_new_conversation_segment()
 
     def _start_new_conversation_segment(self) -> None:
@@ -200,8 +202,21 @@ class Agent(AgentBase):
 
     def enqueue_user_message(self, *, frontend_msg_id: str, user_message: str) -> None:
         if self._paused or self._pause_requested:
+            logger.info(
+                "Agent[%s].enqueue_user_message：暂停中自动恢复（paused=%s pause_requested=%s）",
+                self.name,
+                self._paused,
+                self._pause_requested,
+            )
             self.resume()
         self._user_msg_queue.append(QueuedUserMessage(frontend_msg_id, user_message))
+        logger.info(
+            "Agent[%s].enqueue_user_message：已入队（frontend_msg_id=%s queue=%s user_len=%s）",
+            self.name,
+            frontend_msg_id,
+            len(self._user_msg_queue),
+            len(user_message),
+        )
         self._on_user_msg_enqueued(frontend_msg_id=frontend_msg_id)
 
     def request_pause(self) -> None:
@@ -209,6 +224,7 @@ class Agent(AgentBase):
             return
         self._pause_requested = True
         self._persist_pause_state()
+        logger.info("Agent[%s].request_pause：pause_requested=true", self.name)
         self._on_pause_requested()
 
     def resume(self) -> None:
@@ -218,6 +234,7 @@ class Agent(AgentBase):
         self._paused = False
         self._persist_pause_state()
         if was_paused or was_pause_requested:
+            logger.info("Agent[%s].resume：已恢复（was_paused=%s was_pause_requested=%s）", self.name, was_paused, was_pause_requested)
             self._on_resumed()
 
     def is_paused(self) -> bool:
@@ -274,11 +291,23 @@ class Agent(AgentBase):
             item = self._user_msg_queue.popleft()
             user_message = {"role": "user", "content": item.content}
             self._messages.append(user_message)
+            logger.info(
+                "Agent[%s]._safe_drain_user_message_queue：出队并持久化（frontend_msg_id=%s remaining=%s user_len=%s）",
+                self.name,
+                item.frontend_msg_id,
+                len(self._user_msg_queue),
+                len(item.content),
+            )
             # 只有等到用户发送了一个消息 之后，才创建对话文件。
             # 不然用户创建了一个会话，但是没有说任何内容，然后这个对话文件就被持久化下来了，
             # 然后用户 resume conversation ，结果发现这玩意是空的，这就很不合理。
             if not conversation_store.has_persisted_conversation():
                 conversation_store.start_with_first_user_message(user_content=item.content)
+                logger.info(
+                    "Agent[%s] 会话已持久化（file=%s）",
+                    self.name,
+                    conversation_store.conversation_file_name,
+                )
                 self._persist_memory_manager_state()
             else:
                 conversation_store.append_message(user_message)
@@ -331,6 +360,15 @@ class Agent(AgentBase):
         if growth_ratio < MEMORY_MANAGER_CONTEXT_GROWTH_THRESHOLD:
             return
 
+        logger.info(
+            "Agent[%s] 唤醒 memory manager（file=%s tokens=%s checkpoint=%s ratio=%.4f threshold=%.4f）",
+            self.name,
+            conversation_store.conversation_file_name,
+            current_tokens,
+            last_checkpoint_tokens,
+            growth_ratio,
+            MEMORY_MANAGER_CONTEXT_GROWTH_THRESHOLD,
+        )
         conversation_store.update_memory_manager_checkpoint_tokens(last_checkpoint_tokens=current_tokens)
 
         summary_task = self._memory_manager_summary_task
@@ -338,6 +376,12 @@ class Agent(AgentBase):
             summary_round = self._memory_manager_summary_awaken_count + 1
             worker_messages_snapshot = [dict(message) for message in self._messages]
             summary_tools = build_memory_manager_summary_tools(provider=self._model_config.provider)
+            logger.info(
+                "Agent[%s] 启动 memory_manager_summary_task（round=%s messages=%s）",
+                self.name,
+                summary_round,
+                len(worker_messages_snapshot),
+            )
             summary_task = asyncio.create_task(
                 self._memory_manager_summary_runner.run(
                     worker_messages=worker_messages_snapshot,
@@ -363,6 +407,12 @@ class Agent(AgentBase):
             judge_round = self._memory_manager_judge_awaken_count + 1
             worker_messages_snapshot = [dict(message) for message in self._messages]
             judge_tools = build_memory_manager_summary_tools(provider=self._model_config.provider)
+            logger.info(
+                "Agent[%s] 启动 memory_manager_judge_task（round=%s messages=%s）",
+                self.name,
+                judge_round,
+                len(worker_messages_snapshot),
+            )
             self._memory_manager_judge_task = asyncio.create_task(
                 self._memory_manager_judge_runner.run(
                     worker_messages=worker_messages_snapshot,
@@ -379,6 +429,7 @@ class Agent(AgentBase):
             logger.warning("memory manager judge task 未初始化，本次跳过 judge")
             return
         should_reset_context = await judge_task
+        logger.info("Agent[%s] memory manager judge 结果（should_reset_context=%s）", self.name, should_reset_context)
         if should_reset_context:
             summary_task = self._memory_manager_summary_task
             if summary_task is not None and not summary_task.done():
@@ -388,6 +439,7 @@ class Agent(AgentBase):
                     raise
                 except Exception:
                     logger.exception("Agent[%s] 等待 memory_manager_summary_task 时失败，仍继续 reset_context", self.name)
+            logger.info("Agent[%s] 开始 reset_context（keep_last_n=10）", self.name)
             self._reset_context_keep_last_worker_messages(keep_last_n=10)
 
 
@@ -477,6 +529,14 @@ class Agent(AgentBase):
             raise RuntimeError("conversation 尚未开始：没有待处理的 user message，请先 enqueue_user_message()")
 
         while True:
+            logger.info(
+                "Agent[%s].run：开始模型调用（messages=%s tools=%s paused=%s pause_requested=%s）",
+                self.name,
+                len(self._messages),
+                len(self._tools),
+                self._paused,
+                self._pause_requested,
+            )
             ai_msg_dict = await self._safe_stream(model_config=self._model_config,
                                                   messages=self._messages,
                                                   tools=self._tools,
@@ -499,9 +559,15 @@ class Agent(AgentBase):
                     self._pause_requested = False
                     self._paused = True
                     self._persist_pause_state()
+                    logger.info("Agent[%s].run：在回合边界进入 paused", self.name)
                     self._on_paused()
                 return ai_msg_dict
 
+            logger.info(
+                "Agent[%s].run：收到 tool_calls（n=%s）",
+                self.name,
+                len(ai_msg_dict.get("tool_calls") or []),
+            )
             tool_messages = await execute_tool_calls(
                 ai_msg_dict=ai_msg_dict,
                 tools=self._tools,
@@ -522,6 +588,7 @@ class Agent(AgentBase):
                 self._pause_requested = False
                 self._paused = True
                 self._persist_pause_state()
+                logger.info("Agent[%s].run：在工具执行后进入 paused", self.name)
                 self._on_paused()
                 return ai_msg_dict
 

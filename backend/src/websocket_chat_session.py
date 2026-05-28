@@ -408,6 +408,12 @@ class WebSocketChatSession:
         if self._closed:
             raise RuntimeError("session 已关闭")
 
+        logger.info(
+            "WebSocketChatSession.submit_user_message：收到用户消息（msg_id=%s len=%s closed=%s）",
+            user_message_id,
+            len(content),
+            self._closed,
+        )
         self._pending_user_contents[user_message_id] = content
 
         self._agent_runner.submit_user_message(
@@ -419,17 +425,20 @@ class WebSocketChatSession:
         if self._closed:
             raise RuntimeError("session 已关闭")
 
+        logger.info("WebSocketChatSession.submit_pause_request：收到暂停请求（closed=%s）", self._closed)
         self._agent_runner.request_pause()
 
     async def submit_resume(self) -> None:
         if self._closed:
             raise RuntimeError("session 已关闭")
 
+        logger.info("WebSocketChatSession.submit_resume：收到恢复请求（closed=%s）", self._closed)
         self._agent_runner.resume()
 
     async def close(self) -> None:
         if self._closed:
             return
+        logger.info("WebSocketChatSession.close：会话关闭")
         self._closed = True
         await self._outgoing_queue.put(None)
 
@@ -438,9 +447,13 @@ class WebSocketChatSession:
         # 而有些清空我们会塞大量的delta回去，这就导致前端收delta可能会延迟
         if self._closed:
             return
+        event_type = event.get("type")
+        if isinstance(event_type, str):
+            logger.info("WebSocketChatSession.emit：%s", event_type)
         self._outgoing_queue.put_nowait(event)
 
     def _on_switch_conversation(self, *, visible_messages: list[dict[str, Any]]) -> None:
+        logger.info("WebSocketChatSession._on_switch_conversation：切换会话（visible=%s）", len(visible_messages))
         self._emit_sync(
             {
                 "type": "conversation.switched",
@@ -460,6 +473,12 @@ class WebSocketChatSession:
 
     def _on_queued_user_msg_committed(self, *, frontend_msg_id: str) -> None:
         content = self._pending_user_contents.pop(frontend_msg_id, "")
+        logger.info(
+            "WebSocketChatSession._on_queued_user_msg_committed：消息落盘（msg_id=%s len=%s pending=%s）",
+            frontend_msg_id,
+            len(content),
+            len(self._pending_user_contents),
+        )
 
         self._projector.on_user_message_committed(
             user_message_id=frontend_msg_id,

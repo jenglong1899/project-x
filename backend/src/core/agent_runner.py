@@ -1,8 +1,12 @@
 import asyncio
 from collections.abc import Callable
+import logging
 
 from src.commons import noop
 from src.core.agent_base import AgentBase
+
+
+logger = logging.getLogger(__name__)
 
 
 class AgentRunner:
@@ -46,9 +50,16 @@ class AgentRunner:
         if self._task is not None and not self._task.done():
             raise RuntimeError("AgentController 忙，不能切换会话")
 
+        logger.info("AgentRunner.start：初始化会话（agent=%s）", getattr(self._agent, "name", "<unknown>"))
         self._agent.start_conversation()
 
     def submit_user_message(self, *, frontend_msg_id: str, user_message: str) -> None:
+        logger.info(
+            "AgentRunner.submit_user_message：入队（agent=%s frontend_msg_id=%s user_len=%s）",
+            getattr(self._agent, "name", "<unknown>"),
+            frontend_msg_id,
+            len(user_message),
+        )
         self._agent.enqueue_user_message(
             frontend_msg_id=frontend_msg_id,
             user_message=user_message,
@@ -56,9 +67,11 @@ class AgentRunner:
         self._ensure_running()
 
     def request_pause(self) -> None:
+        logger.info("AgentRunner.request_pause：收到暂停请求（agent=%s）", getattr(self._agent, "name", "<unknown>"))
         self._agent.request_pause()
 
     def resume(self) -> None:
+        logger.info("AgentRunner.resume：收到恢复请求（agent=%s）", getattr(self._agent, "name", "<unknown>"))
         self._agent.resume()
         # resume 的语义是“解除暂停并尽可能继续推进状态机”。
         # 是否需要调度 run() 由 agent.drive_decision() 统一决定。
@@ -70,10 +83,25 @@ class AgentRunner:
         - 如果当前没有 task，或 task 已结束，则启动新的 task
         - 如果 task 正在运行，则不做任何事（防重入）
         """
-        if not self._agent.drive_decision().should_drive:
+        decision = self._agent.drive_decision()
+        if not decision.should_drive:
+            logger.info(
+                "AgentRunner._ensure_running：不需要驱动（agent=%s reason=%s）",
+                getattr(self._agent, "name", "<unknown>"),
+                getattr(decision, "reason", "<unknown>"),
+            )
             return
         if self._task is not None and not self._task.done():
+            logger.info(
+                "AgentRunner._ensure_running：已在运行，跳过（agent=%s）",
+                getattr(self._agent, "name", "<unknown>"),
+            )
             return
+        logger.info(
+            "AgentRunner._ensure_running：启动后台任务（agent=%s reason=%s）",
+            getattr(self._agent, "name", "<unknown>"),
+            getattr(decision, "reason", "<unknown>"),
+        )
         self._task = asyncio.create_task(self._run_until_idle())
 
     async def _run_until_idle(self) -> None:
@@ -86,14 +114,28 @@ class AgentRunner:
         self._on_agent_became_busy()
         try:
             while True:
+                decision = self._agent.drive_decision()
+                logger.info(
+                    "AgentRunner._run_until_idle：进入一轮（agent=%s reason=%s）",
+                    getattr(self._agent, "name", "<unknown>"),
+                    getattr(decision, "reason", "<unknown>"),
+                )
                 await self._agent.run()
                 self._on_agent_turn_completed()
 
                 if self._is_closed():
+                    logger.info("AgentRunner._run_until_idle：连接已关闭，退出（agent=%s）", getattr(self._agent, "name", "<unknown>"))
                     return
-                if not self._agent.drive_decision().should_drive:
+                decision = self._agent.drive_decision()
+                if not decision.should_drive:
+                    logger.info(
+                        "AgentRunner._run_until_idle：无 backlog，退出（agent=%s reason=%s）",
+                        getattr(self._agent, "name", "<unknown>"),
+                        getattr(decision, "reason", "<unknown>"),
+                    )
                     return
         except Exception as exc:
+            logger.exception("AgentRunner._run_until_idle：异常退出（agent=%s）", getattr(self._agent, "name", "<unknown>"))
             self._on_error(exc)
         finally:
             self._on_agent_became_idle()

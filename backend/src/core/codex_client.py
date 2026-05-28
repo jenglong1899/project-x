@@ -379,7 +379,7 @@ class CodexClient:
                                 if not stable_id:
                                     continue
                                 if call_id and item_id and call_id != item_id:
-                                    logger.debug(
+                                    logger.info(
                                         "Codex tool call id 不一致：优先使用 item_id 作为 tool_call_id（避免前端重复卡片）",
                                         extra={
                                             "event_type": event_type,
