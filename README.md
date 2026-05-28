@@ -29,6 +29,8 @@ memory manager相当于快系统，worker相当于慢系统
 - docs/plans AI基于初步计划制定的计划
 - docs/code_explanations 让 AI 给我解释的一些代码，对其他人应该没啥用。用 [structured-knowledge](https://github.com/jenglong1899/structured-knowledge) skill 制作
 
+你可能需要把 AGENTS.md 中的 `# 用户开发环境` 一节给删掉
+
 # 启动
 
 默认用codex订阅，如果要用其他，需要设置环境变量

@@ -134,3 +134,8 @@
 - `docs/plans/`：实施时写下的更稳定计划文档（通常与当前实现更一致，但仍以代码为准）
 - `docs/code_explanations/`：教学/讲义（例如 `teach_backend_asyncio_basics.md`、`teach_frontend_store_basics.md`）
 - TODO.md 和 README.md 你不需要去阅读，通常这只会分散你的注意力。
+
+# 用户开发环境
+
+用户通常是在 WSL2 中进行开发（你也在WSL2）中，用户通常是在 Windows 上用 Jetbrain Gateway 连接 WSL2 上的 Pycharm 后端进行开发，用户也会用 Windows Terminal 连 WSL2
+
