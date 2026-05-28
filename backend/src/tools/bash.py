@@ -5,7 +5,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from src.core.agent_turn import Tool
+from src.tools.tool import Tool
 from src.tools.cwd_state import CwdState
 
 ToolCallerKind = Literal["worker", "memory_manager_summary"]

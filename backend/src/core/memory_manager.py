@@ -6,7 +6,8 @@ from src.commons import MEMORY_MAIN_MD, WAKE_MEMORY_MANAGER_FLAG, SUMMARIES_DIR
 from src.core.init_prompts import read_main_memory
 
 from src.commons import noop
-from src.core.agent_turn import Tool, execute_tool_calls, stream
+from src.core.agent_turn import execute_tool_calls, stream
+from src.tools.tool import Tool
 from src.core.memory_manager_run_logger import MemoryManagerRunLogger
 from src.core.model_config import ModelConfig
 

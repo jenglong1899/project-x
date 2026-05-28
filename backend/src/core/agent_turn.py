@@ -2,11 +2,11 @@ import asyncio
 import os
 import json
 from collections.abc import AsyncIterable, Sequence
-from dataclasses import dataclass
 from typing import Any, Protocol, cast
 from litellm import acompletion
 
 from src.core.model_config import ModelConfig
+from src.tools.tool import Tool, ToolHandler
 
 
 class OnAiContentDelta(Protocol):
@@ -49,26 +49,6 @@ class OnAiToolCallFinished(Protocol):
     ) -> None: ...
 
 
-class ToolHandler(Protocol):
-    async def __call__(self, *, arguments: dict[str, Any]) -> Any: ...
-
-
-@dataclass(frozen=True)
-class Tool:
-    name: str
-    description: str
-    parameters_json_schema: dict[str, Any]
-    handler: ToolHandler
-
-    def to_tool_param(self) -> dict[str, Any]:
-        return {
-            "type": "function",
-            "function": {
-                "name": self.name,
-                "description": self.description,
-                "parameters": self.parameters_json_schema,
-            },
-        }
 
 
 def _get_field(obj: Any, field_name: str, default: Any = None) -> Any:

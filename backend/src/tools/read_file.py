@@ -4,7 +4,7 @@ from typing import Any
 
 from pydantic import BaseModel, Field, model_validator
 
-from src.core.agent_turn import Tool
+from src.tools.tool import Tool
 
 
 DEFAULT_MAX_CHARS = 30_000

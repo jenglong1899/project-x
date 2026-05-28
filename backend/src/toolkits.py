@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from src.commons import SUMMARIES_DIR, ToolCallerKind
-from src.core.agent_turn import Tool
+from src.tools.tool import Tool
 from src.tools.apply_patch import create_apply_patch_tool
 from src.tools.bash import create_bash_tool
 from src.tools.cwd_state import CwdState

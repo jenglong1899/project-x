@@ -6,7 +6,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from src.commons import ToolCallerKind, assert_allowed_summaries_write
-from src.core.agent_turn import Tool
+from src.tools.tool import Tool
 
 import codex_apply_patch as cap
 

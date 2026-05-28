@@ -9,7 +9,7 @@ from typing import Any, AsyncIterator, Callable, Optional
 import httpx
 
 from src.core.codex_auth import CodexTokens, resolve_codex_tokens
-from src.core.agent_turn import Tool
+from src.tools.tool import Tool
 
 DEFAULT_CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"
 logger = logging.getLogger(__name__)

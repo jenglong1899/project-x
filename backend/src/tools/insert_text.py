@@ -6,7 +6,7 @@ import coolname
 from pydantic import BaseModel, Field, model_validator
 
 from src.commons import ToolCallerKind, assert_allowed_summaries_write
-from src.core.agent_turn import Tool
+from src.tools.tool import Tool
 
 
 class InsertTextInput(BaseModel):

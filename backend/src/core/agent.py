@@ -16,8 +16,8 @@ from src.core.agent_turn import (
     OnAiToolCallArgumentsDelta,
     OnAiToolCallFinished,
     OnToolResult,
-    Tool,
 )
+from src.tools.tool import Tool
 from src.commons import WAKE_MEMORY_MANAGER_FLAG
 from src.core.memory_manager import (
     MemoryManagerJudgeResetContextRunner,
