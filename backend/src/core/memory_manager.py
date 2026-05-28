@@ -1,5 +1,3 @@
-from abc import ABC, abstractmethod
-from dataclasses import dataclass
 from typing import Any
 
 from src.commons import MEMORY_MAIN_MD, WAKE_MEMORY_MANAGER_FLAG, SUMMARIES_DIR
@@ -225,7 +223,7 @@ def build_memory_manager_summary_prompt(is_first_time_awaken: bool) -> str:
 
 **你的角色是memory manager，你刚从worker的上下文中被 fork 出来。**
 
-你现在要做的事情就是处理记忆文档（对当前上下文做摘要然后放到记忆文档中、整理记忆文档等等），之前的指令里除了<memory_mechanism>部分，其他的通通可以忽略掉。
+你现在要做的事情就是处理记忆文档，比如对当前上下文做摘要然后放到记忆文档中、整理记忆文档等等（会有另外一个 memory manager 来负责做重置上下文的决策）
 
 你要达成的目标是：让worker拥有像人类一样的记忆。
 
@@ -247,9 +245,11 @@ def build_memory_manager_summary_prompt(is_first_time_awaken: bool) -> str:
 
 </heuristic_rules>
 
+不要对上下文中前面的 system/developer-role 指令以及 <project_x_instruction> 做摘要，因为这些信息在重置后系统会自动注入
+
 {memory_operation_history_prompt}
 
-你当前的工作目录已经被改为 {SUMMARIES_DIR}
+你当前的工作目录（Bash工具）已经被改为 {SUMMARIES_DIR}
 
 </roles_change_notice>
 """
@@ -262,7 +262,7 @@ def build_memory_manager_judge_whether_reset_context_prompt() -> str:
 
 **你的角色是memory manager，你刚从worker的上下文中被 fork 出来**
 
-你现在要做的事情就是判断当前是否要重置上下文，之前的指令里除了<memory_mechanism>部分，其他的通通忽略掉
+你现在要做的事情就是判断当前是否要重置上下文（会有另外一个memory manager负责做摘要）
 
 **判断是否要重置上下文的标准：如果当前上下文中有50%以上的内容都是对当前任务不重要的，那通常就要重置。（这里的50%是按token估算）**
 
