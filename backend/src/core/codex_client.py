@@ -424,7 +424,11 @@ class CodexClient:
                 httpx.RemoteProtocolError,
                 httpx.ProxyError,
             ) as exc:
-                should_retry = (not received_any_event) and (attempt < max_retries)
+                # 如果已经收到过任何 SSE 事件，再重试会导致前端内容重复，因此直接把原异常抛出去。
+                if received_any_event:
+                    raise
+
+                should_retry = attempt < max_retries
                 if not should_retry:
                     proxy_env = self._proxy_env_snapshot()
                     hint_lines: list[str] = []

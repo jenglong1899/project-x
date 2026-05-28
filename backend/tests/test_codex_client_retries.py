@@ -31,7 +31,7 @@ class _FakeStreamContext:
 
 
 class _FakeAsyncClient:
-    def __init__(self, *, timeout: httpx.Timeout) -> None:
+    def __init__(self, *, timeout: httpx.Timeout, **_kwargs) -> None:
         self._timeout = timeout
         self.stream_calls: list[tuple[str, str]] = []
         self._attempt = 0
@@ -57,7 +57,7 @@ def test_retries_when_no_events_emitted(monkeypatch) -> None:
 
     clients: list[_FakeAsyncClient] = []
 
-    def _fake_async_client(*, timeout: httpx.Timeout):
+    def _fake_async_client(*, timeout: httpx.Timeout, **kwargs):
         client = _FakeAsyncClient(timeout=timeout)
         clients.append(client)
         return client
@@ -100,8 +100,8 @@ def test_retries_when_no_events_emitted(monkeypatch) -> None:
         return {"assistant_msg": assistant_msg, "deltas": "".join(msg_parts)}
 
     # 每次进入 async with 都会新建一个 fake client，所以这里用 hook 去装 stream 行为
-    def _wrapped_async_client(*, timeout: httpx.Timeout):
-        c = _fake_async_client(timeout=timeout)
+    def _wrapped_async_client(*, timeout: httpx.Timeout, **kwargs):
+        c = _fake_async_client(timeout=timeout, **kwargs)
         _install_stream_behavior(c)
         return c
 
@@ -123,7 +123,7 @@ def test_does_not_retry_after_partial_stream(monkeypatch) -> None:
     monkeypatch.setenv("PROJECT_X_CODEX_HTTP_MAX_RETRIES", "2")
     monkeypatch.setenv("PROJECT_X_CODEX_HTTP_RETRY_BACKOFF_S", "0")
 
-    def _fake_async_client(*, timeout: httpx.Timeout):
+    def _fake_async_client(*, timeout: httpx.Timeout, **kwargs):
         client = _FakeAsyncClient(timeout=timeout)
 
         def _stream(method: str, url: str, *, headers: dict, json: dict):
@@ -155,4 +155,3 @@ def test_does_not_retry_after_partial_stream(monkeypatch) -> None:
 
     with pytest.raises(httpx.ReadTimeout):
         asyncio.run(_run())
-
