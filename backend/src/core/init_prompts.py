@@ -11,7 +11,7 @@ import os
 import sys
 from datetime import datetime
 
-from commons import ORIGINALS_DIR
+from src.commons import ORIGINALS_DIR
 from src.commons import WAKE_MEMORY_MANAGER_FLAG
 from src.commons import MAIN_MEMORY_FILEPATH, SUMMARIES_DIR, TODO_MEMORY_FILEPATH, MEMORY_MAIN_MD, MEMORY_TODO_MD
 
