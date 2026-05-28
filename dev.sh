@@ -93,10 +93,17 @@ wait_for_backend() {
   fi
   echo "启动前端：frontend/（npm run dev）"
   cd "${ROOT_DIR}/frontend"
-  if [[ -n "${PROJECT_X_E2E_PORT:-}" ]]; then
-    exec npm run dev -- --port "${PROJECT_X_E2E_PORT}" --strictPort
+  # 在 Codespaces 里如果 Vite 只监听 localhost，端口转发/浏览器访问经常会出现 WebSocket 不稳定（例如 EPIPE）。
+  # 监听 0.0.0.0 能显著降低这类问题，同时不影响本地开发体验（本地也能访问 localhost）。
+  extra_args=()
+  if [[ "${CODESPACES:-}" == "true" ]] || [[ -n "${GITHUB_CODESPACES_PORT_FORWARDING_DOMAIN:-}" ]]; then
+    extra_args+=(--host 0.0.0.0)
   fi
-  exec npm run dev
+
+  if [[ -n "${PROJECT_X_E2E_PORT:-}" ]]; then
+    exec npm run dev -- "${extra_args[@]}" --port "${PROJECT_X_E2E_PORT}" --strictPort
+  fi
+  exec npm run dev -- "${extra_args[@]}"
 ) &
 frontend_pid="$!"
 
