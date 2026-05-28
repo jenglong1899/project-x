@@ -513,6 +513,14 @@ class Agent(AgentBase):
         self._conversation_store = conversation_store
         conversation_store.start_with_messages(messages=kept_messages)
         self._messages = conversation_store.build_messages_from_history()
+        # reset-context 会创建一份全新的 conversation 文件；如果不初始化阈值，
+        # 下一轮 run() 里会立刻再次触发 memory manager 唤醒（因为 used_percent 可能依然很高），
+        # 造成同一轮里重复唤醒/甚至重复 reset 的“抖动”。
+        context_limit = self._token_counter.context_window(self._model_config.model)
+        current_tokens, _is_estimate = self._token_counter.count_messages_tokens(self._model_config.model, self._messages)
+        used_percent = int(current_tokens * 100 / context_limit)
+        current_threshold = (used_percent // MEMORY_MANAGER_CONTEXT_USED_THRESHOLD_STEP_PERCENT) * MEMORY_MANAGER_CONTEXT_USED_THRESHOLD_STEP_PERCENT
+        conversation_store.update_memory_manager_last_triggered_threshold(last_triggered_threshold=current_threshold)
         self._persist_pause_state()
         self._notify_switch_conversation(messages=self._messages)
         self._on_resumed()
