@@ -11,6 +11,7 @@ import os
 import sys
 from datetime import datetime
 
+from commons import ORIGINALS_DIR
 from src.commons import WAKE_MEMORY_MANAGER_FLAG
 from src.commons import MAIN_MEMORY_FILEPATH, SUMMARIES_DIR, TODO_MEMORY_FILEPATH, MEMORY_MAIN_MD, MEMORY_TODO_MD
 
@@ -103,6 +104,8 @@ def _build_memory_mechanism_instruction()->str:
 **如果你收到了处理记忆的指令，你就是 memory manager。**
 
 当系统创建出 memory manager 之后，系统会在 worker 的上下文中插入 {WAKE_MEMORY_MANAGER_FLAG} (user-role msg) 作为辅助标记， worker 不需要关注这个。
+
+worker可以做一些“联想”，比如怀疑自己可能接触过某些信息的时候，worker可以去 {ORIGINALS_DIR} 里面搜索相关的关键词，这个文件夹里面存放的是worker的所有完整记忆。
 
 </roles>
 
