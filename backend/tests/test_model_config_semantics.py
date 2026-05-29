@@ -19,7 +19,7 @@ def test_agent_turn_codex_uses_model_config_base_url(monkeypatch) -> None:
         async def stream_assistant_message(self, **kwargs):  # type: ignore[no-untyped-def]
             return {"role": "assistant", "content": "ok"}
 
-    import src.core.codex_client as codex_client_mod
+    import src.pkg.openai_codex.client as codex_client_mod
 
     monkeypatch.setattr(codex_client_mod, "CodexClient", FakeCodexClient)
 
@@ -48,4 +48,3 @@ def test_agent_turn_codex_uses_model_config_base_url(monkeypatch) -> None:
     msg = asyncio.run(_run())
     assert msg.get("content") == "ok"
     assert captured["base_url"] == model_config.base_url
-

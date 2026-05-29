@@ -75,7 +75,7 @@ def resolve_model_config() -> ModelConfig:
         # 尽量在“开始推理之前”就给出明确错误信息，避免走到 stream(provider=openai-codex)
         # 才因 resolve_codex_tokens(...) 抛错导致全链路不可用，且错误定位困难。
         try:
-            from src.core.codex_auth import resolve_codex_tokens
+            from src.pkg.openai_codex.auth import resolve_codex_tokens
 
             resolve_codex_tokens(import_from_cli_if_missing=True)
         except Exception as exc:

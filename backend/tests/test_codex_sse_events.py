@@ -16,7 +16,7 @@ class TestCodexClientSseEvents:
         回归测试：SSE 服务端常用 CRLF（\\r\\n）。如果只按 \\n\\n 切分，会永远解析不出事件，
         表现为“模型一直没响应”。
         """
-        from src.core.codex_client import CodexClient
+        from src.pkg.openai_codex.client import CodexClient
 
         async def _run() -> list[dict]:
             client = object.__new__(CodexClient)
