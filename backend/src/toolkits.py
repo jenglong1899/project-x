@@ -19,7 +19,7 @@ def _build_tools(*, caller_kind: ToolCallerKind, cwd_state: CwdState, provider: 
     if provider == "openai-codex":
         return [
             *base_tools,
-            create_apply_patch_tool(caller_kind=caller_kind),
+            create_apply_patch_tool(caller_kind=caller_kind, cwd_provider=cwd_state),
         ]
 
     return [

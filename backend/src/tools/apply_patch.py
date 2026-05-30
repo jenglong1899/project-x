@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import asyncio
+import os
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any
 
@@ -14,10 +17,23 @@ import codex_apply_patch as cap
 class ApplyPatchInput(BaseModel):
     patch: str = Field(min_length=1)
 
+_CHDIR_LOCK = asyncio.Lock()
+
+
+@contextmanager
+def _pushd(target_dir: Path):
+    original_dir = Path.cwd()
+    os.chdir(target_dir)
+    try:
+        yield
+    finally:
+        os.chdir(original_dir)
+
 
 class ApplyPatchTool:
-    def __init__(self, *, caller_kind: ToolCallerKind) -> None:
+    def __init__(self, *, caller_kind: ToolCallerKind, cwd_provider: Any) -> None:
         self._caller_kind = caller_kind
+        self._cwd_provider = cwd_provider
 
     def to_tool(self) -> Tool:
         return Tool(
@@ -39,9 +55,23 @@ class ApplyPatchTool:
     async def run(self, *, arguments: dict[str, Any]) -> dict[str, Any]:
         tool_input = ApplyPatchInput.model_validate(arguments)
         patch = tool_input.patch
-        assert_allowed_summaries_write(caller_kind=self._caller_kind, target_path=resolved)
-        result = cap.apply_patch(patch)
+        cwd = Path(getattr(self._cwd_provider, "cwd")).expanduser().resolve()
+
+        for path_text in _extract_patch_paths(patch):
+            resolved = self._resolve_patch_path(cwd=cwd, path_text=path_text)
+            assert_allowed_summaries_write(caller_kind=self._caller_kind, target_path=resolved)
+
+        async with _CHDIR_LOCK:
+            with _pushd(cwd):
+                result = cap.apply_patch(patch)
         return {"ok": True, "result": str(result)}
+
+    @staticmethod
+    def _resolve_patch_path(*, cwd: Path, path_text: str) -> Path:
+        path = Path(path_text).expanduser()
+        if path.is_absolute():
+            return path.resolve()
+        return (cwd / path).resolve()
 
 
 def _extract_patch_paths(patch: str) -> list[str]:
@@ -62,5 +92,5 @@ def _extract_patch_paths(patch: str) -> list[str]:
     return [p for p in paths if p]
 
 
-def create_apply_patch_tool(*, caller_kind: ToolCallerKind) -> Tool:
-    return ApplyPatchTool(caller_kind=caller_kind).to_tool()
+def create_apply_patch_tool(*, caller_kind: ToolCallerKind, cwd_provider: Any) -> Tool:
+    return ApplyPatchTool(caller_kind=caller_kind, cwd_provider=cwd_provider).to_tool()
