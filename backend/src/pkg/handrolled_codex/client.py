@@ -2,6 +2,7 @@ import json
 import os
 import logging
 import asyncio
+import base64
 from dataclasses import dataclass
 from hashlib import sha256
 from typing import Any, AsyncIterator, Callable, Optional
@@ -157,6 +158,43 @@ class CodexClient:
         return 60.0
 
     @staticmethod
+    def _codex_cloudflare_headers(*, access_token: str) -> dict[str, str]:
+        """
+        chatgpt.com/backend-api/codex 前面有 Cloudflare。某些网络环境下如果缺少“白名单 originator”类 header，
+        会直接 403（即使 token 正确）。
+
+        这里尽量模仿 codex CLI 的指纹：
+        - originator: codex_cli_rs
+        - User-Agent: codex_cli_rs/... (Project X)
+        - ChatGPT-Account-ID: 从 OAuth JWT claim 里解析（解析失败则忽略）
+        """
+        headers: dict[str, str] = {
+            "originator": "codex_cli_rs",
+            "User-Agent": "codex_cli_rs/0.0.0 (Project X)",
+        }
+
+        token = str(access_token or "").strip()
+        if not token:
+            return headers
+
+        try:
+            parts = token.split(".")
+            if len(parts) < 2:
+                return headers
+            payload_b64 = parts[1] + "=" * (-len(parts[1]) % 4)
+            claims = json.loads(base64.urlsafe_b64decode(payload_b64.encode("utf-8", errors="ignore")))
+            acct_id = (
+                claims.get("https://api.openai.com/auth", {}).get("chatgpt_account_id")
+                if isinstance(claims, dict)
+                else None
+            )
+            if isinstance(acct_id, str) and acct_id.strip():
+                headers["ChatGPT-Account-ID"] = acct_id.strip()
+        except Exception:
+            pass
+        return headers
+
+    @staticmethod
     def _deterministic_call_id(*, tool_name: str, arguments: str, index: int) -> str:
         payload = f"{tool_name}\n{arguments}\n{index}".encode("utf-8", errors="replace")
         digest = sha256(payload).hexdigest()[:16]
@@ -307,6 +345,8 @@ class CodexClient:
             instructions = str(messages[0].get("content") or "").strip()
             payload_messages = messages[1:]
 
+        reasoning = {"effort": "medium", "summary": "auto"}
+        include = ["reasoning.encrypted_content"]
         body = {
             "model": model,
             "instructions": instructions,
@@ -316,6 +356,8 @@ class CodexClient:
             "parallel_tool_calls": True if tools else None,
             "store": False,
             "stream": True,
+            "reasoning": reasoning,
+            "include": include,
         }
         body = {k: v for k, v in body.items() if v is not None}
 
@@ -324,6 +366,7 @@ class CodexClient:
             "Accept": "text/event-stream",
             "Content-Type": "application/json",
         }
+        headers.update(self._codex_cloudflare_headers(access_token=self._runtime.access_token))
         url = f"{self._runtime.base_url}/responses"
 
         content_parts: list[str] = []
