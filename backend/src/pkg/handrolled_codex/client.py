@@ -16,6 +16,67 @@ DEFAULT_CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"
 logger = logging.getLogger(__name__)
 
 
+class CodexSseError(RuntimeError):
+    def __init__(
+        self,
+        *,
+        message: str,
+        code: str | None = None,
+        param: str | None = None,
+        url: str | None = None,
+        model: str | None = None,
+        raw_event: dict[str, Any] | None = None,
+    ) -> None:
+        parts: list[str] = ["Codex SSE error event"]
+        if url:
+            parts.append(f"- url={url!r}")
+        if model:
+            parts.append(f"- model={model!r}")
+        parts.append(f"- message={message!r}")
+        if code:
+            parts.append(f"- code={code!r}")
+        if param:
+            parts.append(f"- param={param!r}")
+        super().__init__("\n".join(parts) + "\n")
+        self.code = code
+        self.param = param
+        self.url = url
+        self.model = model
+        self.raw_event = raw_event
+
+    @staticmethod
+    def _get_field(obj: Any, key: str) -> Any:
+        return obj.get(key) if isinstance(obj, dict) else None
+
+    @classmethod
+    def from_event(
+        cls,
+        *,
+        event: dict[str, Any],
+        url: str,
+        model: str,
+    ) -> "CodexSseError":
+        # 经验：不同后端/版本里 error 事件的字段形状并不稳定，尽量宽松提取。
+        nested_err = cls._get_field(event, "error")
+        message = (
+            cls._get_field(event, "message")
+            or cls._get_field(nested_err, "message")
+            or cls._get_field(event, "detail")
+            or cls._get_field(nested_err, "detail")
+            or "stream emitted error event"
+        )
+        code = cls._get_field(event, "code") or cls._get_field(nested_err, "code")
+        param = cls._get_field(event, "param") or cls._get_field(nested_err, "param")
+        return cls(
+            message=str(message).strip(),
+            code=str(code).strip() if isinstance(code, str) and code.strip() else None,
+            param=str(param).strip() if isinstance(param, str) and param.strip() else None,
+            url=url,
+            model=model,
+            raw_event=event,
+        )
+
+
 @dataclass(frozen=True)
 class CodexRuntime:
     base_url: str
@@ -407,6 +468,8 @@ class CodexClient:
                         async for event in self._sse_events(response=resp):
                             received_any_event = True
                             event_type = str(event.get("type") or "")
+                            if event_type == "error":
+                                raise CodexSseError.from_event(event=event, url=url, model=model)
                             if event_type == "response.output_text.delta":
                                 delta = str(event.get("delta") or "")
                                 if delta:
