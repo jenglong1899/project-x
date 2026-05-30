@@ -128,6 +128,7 @@
 ### 测试注意事项
 - Playwright strict mode：`getByText()` 容易 strict violation，优先用更具体的 locator（例如 `getByRole('main')...`）
 - Codex CLI 沙盒内禁止创建 socket（例如 uvicorn 绑定端口），跑 e2e 需要允许非沙盒执行
+- `cd frontend && npm run test:e2e` 进行重大改动后，一定要运行端到端测试
 
 ## 文档说明
 - `docs/draft-plans/`：早期草案/想法，内容不保证与当前实现一致
