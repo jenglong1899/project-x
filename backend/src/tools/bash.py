@@ -1,14 +1,13 @@
 import asyncio
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, Field
 
+from src.commons import ToolCallerKind
 from src.tools.tool import Tool
-from src.tools.cwd_state import CwdState
-
-ToolCallerKind = Literal["worker", "memory_manager_summary"]
+from src.tools.cwd_state import CwdState, persist_worker_cwd
 
 
 class BashToolInput(BaseModel):
@@ -35,7 +34,7 @@ class BashTool:
     def to_tool(self) -> Tool:
         return Tool(
             name="bash",
-            description="执行一条 bash 命令，并返回标准输出、标准错误和退出码。本工具能记住cwd。",
+            description="执行一条 bash 命令，并返回标准输出、标准错误和退出码。本工具能记住cwd，当你执行`cd <some_path> && <some_command>`时，后面不用再写`cd <some_path>`",
             parameters_json_schema=BashToolInput.model_json_schema(),
             handler=self.run,
         )
@@ -71,6 +70,8 @@ class BashTool:
                 fallback_returncode=process.returncode or 0,
             )
             self._cwd_state.cwd = cwd
+            if self._caller_kind == "worker":
+                persist_worker_cwd(cwd=cwd)
         return BashToolOutput(
             stdout=(stdout_bytes or b"").decode(),
             stderr=(stderr_bytes or b"").decode(),

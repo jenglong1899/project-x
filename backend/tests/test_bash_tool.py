@@ -64,9 +64,20 @@ class BashToolTests(unittest.IsolatedAsyncioTestCase):
         cwd_state = CwdState(initial_cwd="/")
         bash_tool = create_bash_tool(cwd_state=cwd_state)
 
-        await bash_tool.handler(arguments={"command": "cd /tmp"})
+        with mock.patch("src.tools.bash.persist_worker_cwd") as _mock_persist:
+            await bash_tool.handler(arguments={"command": "cd /tmp"})
 
         self.assertEqual(cwd_state.cwd, Path("/tmp"))
+
+    async def test_bash_tool_persists_cwd_after_run(self) -> None:
+        cwd_state = CwdState(initial_cwd="/")
+        bash_tool = create_bash_tool(cwd_state=cwd_state)
+
+        with mock.patch("src.tools.bash.persist_worker_cwd") as mock_persist:
+            await bash_tool.handler(arguments={"command": "cd /tmp"})
+
+        mock_persist.assert_called()
+        self.assertEqual(mock_persist.call_args.kwargs["cwd"], Path("/tmp"))
 
     @mock.patch("src.tools.bash.asyncio.create_subprocess_exec")
     async def test_bash_tool_expands_user_in_initial_cwd(self, mock_exec: mock.Mock) -> None:

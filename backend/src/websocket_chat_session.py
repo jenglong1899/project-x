@@ -29,7 +29,7 @@ from src.core.init_prompts import (
     build_system_level_instruction_zh,
     build_user_level_instruction_zh,
 )
-from src.tools.cwd_state import CwdState
+from src.tools.cwd_state import CwdState, load_persisted_worker_cwd
 from src.toolkits import build_worker_tools
 
 
@@ -91,7 +91,7 @@ def resolve_model_config() -> ModelConfig:
 
 
 def create_default_agent(*, callbacks: AgentCallbacks) -> Agent:
-    cwd_state = CwdState()
+    cwd_state = CwdState(initial_cwd=str(load_persisted_worker_cwd()))
     model_config = resolve_model_config()
     return Agent(
         name="project-x-web",
