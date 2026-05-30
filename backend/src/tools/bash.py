@@ -34,7 +34,9 @@ class BashTool:
     def to_tool(self) -> Tool:
         return Tool(
             name="bash",
-            description="执行一条 bash 命令，并返回标准输出、标准错误和退出码。本工具能记住cwd，当你执行`cd <some_path> && <some_command>`时，后面不用再写`cd <some_path>`",
+            description="执行一条 bash 命令，并返回标准输出、标准错误和退出码。"
+                        "本工具能记住cwd，当你执行`cd <some_path> && <some_command>`时，后面不用再写`cd <some_path>`。"
+                        "`read`和`apply_patch`工具同样沿用cwd。",
             parameters_json_schema=BashToolInput.model_json_schema(),
             handler=self.run,
         )
