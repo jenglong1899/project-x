@@ -10,6 +10,7 @@ from src.tools.tool import Tool
 
 import codex_apply_patch as cap
 
+
 class ApplyPatchInput(BaseModel):
     patch: str = Field(min_length=1)
 
@@ -23,11 +24,6 @@ class ApplyPatchTool:
             name="apply_patch",
             description=(
                 "按 Codex 的 `*** Begin Patch` 格式对工作区文件应用补丁。\n"
-                "\n"
-                "约束：\n"
-                "- 只允许修改当前项目工作区内的相对路径（拒绝绝对路径、包含 `..` 的路径）。\n"
-                "- 仍会应用 summaries 写入守卫：worker 只能改 TODO.md，memory manager(summary) 不能改 TODO.md。\n"
-                "\n"
                 "输入 patch 示例：\n"
                 "*** Begin Patch\n"
                 "*** Update File: backend/src/foo.py\n"
@@ -43,33 +39,9 @@ class ApplyPatchTool:
     async def run(self, *, arguments: dict[str, Any]) -> dict[str, Any]:
         tool_input = ApplyPatchInput.model_validate(arguments)
         patch = tool_input.patch
-        self._validate_target_paths(patch)
-
-
+        assert_allowed_summaries_write(caller_kind=self._caller_kind, target_path=resolved)
         result = cap.apply_patch(patch)
         return {"ok": True, "result": str(result)}
-
-    def _validate_target_paths(self, patch: str) -> None:
-        if "*** Begin Patch" not in patch or "*** End Patch" not in patch:
-            raise ValueError("patch 必须包含 `*** Begin Patch` 与 `*** End Patch`")
-
-        # 工具运行在后端进程中，但要允许编辑整个仓库（包含 frontend/ 等），
-        # 所以这里把“项目工作区根目录”定义为仓库根（backend/ 的上一级）。
-        project_root = Path(__file__).resolve().parents[4]
-        for raw in _extract_patch_paths(patch):
-            path = Path(raw)
-            if path.is_absolute():
-                raise ValueError(f"apply_patch 禁止使用绝对路径：{raw!r}")
-            if any(part == ".." for part in path.parts):
-                raise ValueError(f"apply_patch 禁止使用包含 '..' 的路径：{raw!r}")
-
-            resolved = (project_root / path).resolve()
-            try:
-                resolved.relative_to(project_root)
-            except ValueError as exc:
-                raise ValueError(f"apply_patch 目标路径越界：{raw!r}") from exc
-
-            assert_allowed_summaries_write(caller_kind=self._caller_kind, target_path=resolved)
 
 
 def _extract_patch_paths(patch: str) -> list[str]:
