@@ -1,6 +1,6 @@
 # 项目记忆
 
-本文档是对代码库的一种摘要，目的是为了帮助 Agent 建立对代码库的理解，**并不代表 Agent 不需要去阅读摘要所对应的代码文件，因为 Agent 有可能不知道“自己不知道”**，比如 Agent 在实现某个功能的时候，做了某个兜底，但是由于没有看全代码，不知道原本的代码中已经有兜底了（不知道自己不知道），导致代码重复。
+本文档是对代码库的一种摘要，目的是为了帮助 Agent 建立对代码库的理解，但本文档并不一定和代码库保持一致，所以 Agent 不能光靠本文档就去回答用户的问题、执行任务，而是要去读代码文件
 
 ## 核心心智模型
 
@@ -14,6 +14,7 @@
 - **`ConversationStore` 是持久化层**：`backend/src/conversation_store.py` 把对话落地到 `~/.project-x/memories/originals/*.json`，并负责追加消息与恢复历史 messages。
 - **Memory Manager 是双 runner**：触发点在 `Agent._maybe_wake_memory_manager()`；`summary runner` 维护 `~/.project-x/memories/summaries/MAIN.md` 等记忆文档，`judge runner` 只判断是否 reset-context（两者实现见 `backend/src/core/memory_manager.py`）。
 - **reset-context 的关键约束**：当 judge 判定 reset 时必须先等待 in-flight summary 结束；reset 后会尽量保留 worker 最近 10 条消息且第一条必须是 `assistant`（落盘通过 `ConversationStore.start_with_messages()`）。
+- src/commons.py 含有项目里面常用的变量、函数，必读
 
 数据流（大致）：
 `frontend` → `/ws` → `WebSocketChatSession.submit_user_message()` → `Agent.enqueue_user_message()` → `await Agent.run()` → `await agent_turn.stream()` →（可选）`await execute_tool_calls()` → `ConversationStore.append_message()` → 事件经 `ChatEventProjector` 回前端  
