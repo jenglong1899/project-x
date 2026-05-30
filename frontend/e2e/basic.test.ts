@@ -27,6 +27,22 @@ test.beforeEach(async () => {
   await removeTempTestDir()
 })
 
+test.afterAll(async () => {
+  const baseRoot = process.env.PROJECT_X_E2E_BASE_ROOT
+  if (!baseRoot) {
+    console.log('[e2e] 未找到 PROJECT_X_E2E_BASE_ROOT；无法打印 /tmp/project-x-e2e-{id} 目录路径')
+    return
+  }
+
+  console.log(`[e2e] 本次 e2e 临时目录：${baseRoot}`)
+  try {
+    const names = await fs.readdir(baseRoot)
+    console.log(`[e2e] 目录内容（一级）：${names.sort().join(', ') || '(空)'}`)
+  } catch (err) {
+    console.log(`[e2e] 读取目录内容失败：${String(err)}`)
+  }
+})
+
 test('端到端：对话 + bash 工具链路', async ({ page }) => {
   await page.goto('/')
   await stepPause(page)
