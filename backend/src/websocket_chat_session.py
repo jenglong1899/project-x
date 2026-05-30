@@ -449,7 +449,10 @@ class WebSocketChatSession:
             return
         event_type = event.get("type")
         if isinstance(event_type, str):
-            logger.info("WebSocketChatSession.emit：%s", event_type)
+            if event_type != 'assistant.message.delta':
+                logger.info("WebSocketChatSession.emit：%s", event_type)
+            else:
+                logger.debug("WebSocketChatSession.emit：%s", event_type)
         self._outgoing_queue.put_nowait(event)
 
     def _on_switch_conversation(self, *, visible_messages: list[dict[str, Any]]) -> None:
