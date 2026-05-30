@@ -15,8 +15,8 @@ def test_codex_stream_real_api_smoke() -> None:
     """
     真实集成测试（不 mock）：验证我们能用 OAuth token 调通 Codex backend 并解析 SSE。
     """
-    from src.pkg.openai_codex.auth import resolve_codex_tokens
-    from src.pkg.openai_codex.client import CodexClient
+    from src.pkg.handrolled_codex.auth import resolve_codex_tokens
+    from src.pkg.handrolled_codex.client import CodexClient
 
     try:
         resolve_codex_tokens(import_from_cli_if_missing=True)
@@ -55,7 +55,7 @@ def test_codex_real_api_tool_call_roundtrip() -> None:
     目标链路：
     user -> assistant(function_call) -> tool(function_call_output) -> assistant(引用 tool 输出)
     """
-    from src.pkg.openai_codex.auth import resolve_codex_tokens
+    from src.pkg.handrolled_codex.auth import resolve_codex_tokens
     from src.core.model_config import ModelConfig
     from src.core.agent_turn import Tool, execute_tool_calls, stream
 

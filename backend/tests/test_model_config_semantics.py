@@ -19,7 +19,7 @@ def test_agent_turn_codex_uses_model_config_base_url(monkeypatch) -> None:
         async def stream_assistant_message(self, **kwargs):  # type: ignore[no-untyped-def]
             return {"role": "assistant", "content": "ok"}
 
-    import src.pkg.openai_codex.client as codex_client_mod
+    import src.pkg.handrolled_codex.client as codex_client_mod
 
     monkeypatch.setattr(codex_client_mod, "CodexClient", FakeCodexClient)
 

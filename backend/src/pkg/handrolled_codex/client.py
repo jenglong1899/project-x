@@ -8,7 +8,7 @@ from typing import Any, AsyncIterator, Callable, Optional
 
 import httpx
 
-from src.pkg.openai_codex.auth import CodexTokens, resolve_codex_tokens
+from src.pkg.handrolled_codex.auth import CodexTokens, resolve_codex_tokens
 from src.tools.tool import Tool
 
 DEFAULT_CODEX_BASE_URL = "https://chatgpt.com/backend-api/codex"

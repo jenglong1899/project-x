@@ -231,7 +231,7 @@ async def _stream_with_codex(*,
                              on_ai_tool_call_started: OnAiToolCallStarted,
                              on_ai_tool_call_arguments_delta: OnAiToolCallArgumentsDelta,
                              on_ai_tool_call_finished: OnAiToolCallFinished) -> dict[str, Any]:
-    from src.pkg.openai_codex.client import CodexClient
+    from src.pkg.handrolled_codex.client import CodexClient
 
     client = CodexClient(base_url=model_config.base_url)
     tool_calls_by_index: dict[int, dict[str, Any]] = {}

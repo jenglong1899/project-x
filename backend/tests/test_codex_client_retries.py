@@ -52,8 +52,8 @@ def test_retries_when_no_events_emitted(monkeypatch) -> None:
     """
     回归测试：第一次请求在拿到任何 SSE 事件前就 ReadTimeout，应当自动重试。
     """
-    from src.pkg.openai_codex.client import CodexClient
-    import src.pkg.openai_codex.client as codex_client_mod
+    from src.pkg.handrolled_codex.client import CodexClient
+    import src.pkg.handrolled_codex.client as codex_client_mod
 
     clients: list[_FakeAsyncClient] = []
 
@@ -117,8 +117,8 @@ def test_does_not_retry_after_partial_stream(monkeypatch) -> None:
     """
     如果已经开始吐出 SSE 事件，再发生 ReadTimeout，重试会导致前端内容重复，因此不重试。
     """
-    from src.pkg.openai_codex.client import CodexClient
-    import src.pkg.openai_codex.client as codex_client_mod
+    from src.pkg.handrolled_codex.client import CodexClient
+    import src.pkg.handrolled_codex.client as codex_client_mod
 
     monkeypatch.setenv("PROJECT_X_CODEX_HTTP_MAX_RETRIES", "2")
     monkeypatch.setenv("PROJECT_X_CODEX_HTTP_RETRY_BACKOFF_S", "0")
