@@ -122,11 +122,11 @@ class _FakeAgentPauseWithQueuedMessages(AgentBase):
         return {"role": "assistant", "content": "done"}
 
 
-class AgentControllerPauseResumeTests(unittest.IsolatedAsyncioTestCase):
+class AgentRunnerPauseResumeTests(unittest.IsolatedAsyncioTestCase):
     async def test_resume_paused_tool_turn_restarts_without_new_user_message(self) -> None:
         agent = _FakeAgentPausedToolTurn()
         idle_events: asyncio.Queue[None] = asyncio.Queue()
-        controller = AgentRunner(
+        runner = AgentRunner(
             agent=agent,
             is_closed=lambda: False,
             on_agent_became_busy=lambda: None,
@@ -134,24 +134,24 @@ class AgentControllerPauseResumeTests(unittest.IsolatedAsyncioTestCase):
             on_agent_became_idle=lambda: idle_events.put_nowait(None),
             on_error=lambda _exc: None,
         )
-        controller.start()
+        runner.start()
 
-        controller.submit_user_message(frontend_msg_id="m1", user_message="hi")
+        runner.submit_user_message(frontend_msg_id="m1", user_message="hi")
         await asyncio.wait_for(idle_events.get(), timeout=1)
         self.assertEqual(agent.run_calls, 1)
         self.assertTrue(agent.is_paused())
         self.assertEqual(agent.drive_decision().reason, DriveReason.paused_with_backlog)
 
-        controller.resume()
+        runner.resume()
         await asyncio.wait_for(idle_events.get(), timeout=1)
         self.assertEqual(agent.run_calls, 2)
         self.assertFalse(agent.is_paused())
         self.assertEqual(agent.drive_decision().reason, DriveReason.no_backlog)
 
-    async def test_pause_stops_controller_loop_even_with_queued_messages(self) -> None:
+    async def test_pause_stops_runner_loop_even_with_queued_messages(self) -> None:
         agent = _FakeAgentPauseWithQueuedMessages()
         idle_events: asyncio.Queue[None] = asyncio.Queue()
-        controller = AgentRunner(
+        runner = AgentRunner(
             agent=agent,
             is_closed=lambda: False,
             on_agent_became_busy=lambda: None,
@@ -159,18 +159,18 @@ class AgentControllerPauseResumeTests(unittest.IsolatedAsyncioTestCase):
             on_agent_became_idle=lambda: idle_events.put_nowait(None),
             on_error=lambda _exc: None,
         )
-        controller.start()
+        runner.start()
 
-        controller.submit_user_message(frontend_msg_id="m1", user_message="one")
-        controller.submit_user_message(frontend_msg_id="m2", user_message="two")
-        controller.request_pause()
+        runner.submit_user_message(frontend_msg_id="m1", user_message="one")
+        runner.submit_user_message(frontend_msg_id="m2", user_message="two")
+        runner.request_pause()
 
         await asyncio.wait_for(idle_events.get(), timeout=1)
         self.assertEqual(agent.run_calls, 1)
         self.assertTrue(agent.is_paused())
         self.assertEqual(agent.drive_decision().reason, DriveReason.paused_with_backlog)
 
-        controller.resume()
+        runner.resume()
         await asyncio.wait_for(idle_events.get(), timeout=1)
         self.assertEqual(agent.run_calls, 2)
         self.assertFalse(agent.is_paused())

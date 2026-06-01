@@ -45,10 +45,10 @@ class AgentRunner:
         初始化对话状态（必须先调用，否则 agent.run 可能因为 conversation_store 未初始化而报错）。
 
         约束：
-        - controller 忙（task 正在跑）时不允许切换会话。
+        - runner 忙（task 正在跑）时不允许切换会话。
         """
         if self._task is not None and not self._task.done():
-            raise RuntimeError("AgentController 忙，不能切换会话")
+            raise RuntimeError("AgentRunner 忙，不能切换会话")
 
         logger.info("AgentRunner.start：初始化会话（agent=%s）", getattr(self._agent, "name", "<unknown>"))
         self._agent.start_conversation()

@@ -139,7 +139,7 @@ def create_agent_runner(
     # 产品形态上不再暴露“会话列表/切换/显式恢复某个会话文件”给前端：
     # WebSocket 连接建立时永远走“自动恢复最近的 conversation segment”，
     # 如果本地还没有任何对话文件，则退化为 new_conversation。
-    controller = AgentRunner(
+    runner = AgentRunner(
         agent=create_default_agent(callbacks=callbacks),
         is_closed=is_closed,
         on_agent_became_busy=on_agent_became_busy,
@@ -147,8 +147,8 @@ def create_agent_runner(
         on_agent_became_idle=on_agent_became_idle,
         on_error=on_error,
     )
-    controller.start()
-    return controller
+    runner.start()
+    return runner
 
 
 @dataclass
@@ -389,7 +389,7 @@ class WebSocketChatSession:
                 on_agent_became_busy=self._projector.on_agent_became_busy,
                 on_agent_turn_completed=self._projector.on_agent_turn_completed,
                 on_agent_became_idle=self._projector.on_agent_became_idle,
-                on_error=self._on_agent_controller_error,
+                on_error=self._on_agent_runner_error,
             )
         else:
             self._agent_runner = agent_runner_factory(
@@ -398,7 +398,7 @@ class WebSocketChatSession:
                 on_agent_became_busy=self._projector.on_agent_became_busy,
                 on_agent_turn_completed=self._projector.on_agent_turn_completed,
                 on_agent_became_idle=self._projector.on_agent_became_idle,
-                on_error=self._on_agent_controller_error,
+                on_error=self._on_agent_runner_error,
             )
 
     async def next_event(self) -> dict[str, Any] | None:
@@ -464,8 +464,9 @@ class WebSocketChatSession:
             }
         )
 
-    def _on_agent_controller_error(self, exc: Exception) -> None:
-        logger.exception("WebSocketChatSession agent.run 失败")
+    def _on_agent_runner_error(self, exc: Exception) -> None:
+        # AgentRunner 内部已经 logger.exception 过（含 traceback），这里避免重复打印整段堆栈导致日志过长。
+        logger.error("WebSocketChatSession agent.run 失败：%s: %s", type(exc).__name__, exc)
         self._emit_sync(
             {
                 "type": "error",

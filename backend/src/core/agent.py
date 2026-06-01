@@ -564,7 +564,7 @@ class Agent(AgentBase):
                 if self._pause_requested:
                     # 为了让“暂停”在有pending user message的场景下也可靠生效：
                     # 即使本轮没有 tool_calls，只要本轮模型调用已经结束，
-                    # 我们也要在回合边界暂停，阻止 controller 立刻进入下一轮模型调用。
+                    # 我们也要在回合边界暂停，阻止 runner 立刻进入下一轮模型调用。
                     self._pause_requested = False
                     self._paused = True
                     self._persist_pause_state()

@@ -94,7 +94,7 @@ class FakeAgent(AgentBase):
         return {"role": "assistant", "content": "done"}
 
 
-def make_agent_controller_factory(
+def make_agent_runner_factory(
     *,
     scripted_runs: list[ScriptedRun],
     start_visible_messages: list[dict[str, object]] | None = None,
@@ -108,7 +108,7 @@ def make_agent_controller_factory(
         on_agent_became_idle: Callable[[], None],
         on_error: Callable[[Exception], None],
     ) -> AgentRunner:
-        controller = AgentRunner(
+        runner = AgentRunner(
             agent=FakeAgent(
                 callbacks=callbacks,
                 scripted_runs=list(scripted_runs),
@@ -120,8 +120,8 @@ def make_agent_controller_factory(
             on_agent_became_idle=on_agent_became_idle,
             on_error=on_error,
         )
-        controller.start()
-        return controller
+        runner.start()
+        return runner
 
     return factory
 
@@ -207,7 +207,7 @@ class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
             callbacks.on_ai_content_delta(content_delta="后说")
 
         session = WebSocketChatSession(
-            agent_runner_factory=make_agent_controller_factory(
+            agent_runner_factory=make_agent_runner_factory(
                 scripted_runs=[scripted_run],
             ),
         )
@@ -287,7 +287,7 @@ class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
             return scripted_run
 
         session = WebSocketChatSession(
-            agent_runner_factory=make_agent_controller_factory(
+            agent_runner_factory=make_agent_runner_factory(
                 scripted_runs=[
                     make_scripted_run("第一条回复"),
                     make_scripted_run("第二条回复"),
@@ -322,7 +322,7 @@ class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
         self,
     ) -> None:
         session = WebSocketChatSession(
-            agent_runner_factory=make_agent_controller_factory(
+            agent_runner_factory=make_agent_runner_factory(
                 scripted_runs=[],
                 start_visible_messages=[
                     {"role": "user", "content": "上一轮问题"},
@@ -354,7 +354,7 @@ class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
             callbacks.on_ai_content_delta(content_delta="新会话开始输出")
 
         session = WebSocketChatSession(
-            agent_runner_factory=make_agent_controller_factory(
+            agent_runner_factory=make_agent_runner_factory(
                 scripted_runs=[scripted_run],
             ),
         )
