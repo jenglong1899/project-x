@@ -8,7 +8,7 @@ from typing import Any, cast
 
 try:
     from transformers import AutoTokenizer  # type: ignore
-except Exception:  # pragma: no cover
+except ImportError:  # pragma: no cover
     AutoTokenizer = None
 
 
@@ -104,7 +104,7 @@ class TokenizerRegistry:
                 cache_dir=str(self._cache_dir),
                 local_files_only=True,
             )
-        except Exception:
+        except (OSError, ValueError, RuntimeError, TypeError):
             tokenizer = _hf_from_pretrained(
                 tokenizer_id,
                 trust_remote_code=True,

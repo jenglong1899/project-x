@@ -336,8 +336,15 @@ class Agent(AgentBase):
             except asyncio.CancelledError:
                 logger.info("Agent[%s] 后台任务 %s 被取消", agent_name, task_name)
                 return
-            except Exception:
-                logger.exception("Agent[%s] 读取后台任务 %s 的异常时失败", agent_name, task_name)
+            except Exception as exc:
+                # 这里是 done callback，任何异常都不应继续向外冒泡，否则会污染事件循环日志。
+                logger.exception(
+                    "Agent[%s] 读取后台任务 %s 的异常时失败：%s: %s",
+                    agent_name,
+                    task_name,
+                    type(exc).__name__,
+                    exc,
+                )
                 return
 
             if exc is not None:
@@ -435,8 +442,14 @@ class Agent(AgentBase):
                     await summary_task
                 except asyncio.CancelledError:
                     raise
-                except Exception:
-                    logger.exception("Agent[%s] 等待 memory_manager_summary_task 时失败，仍继续 reset_context", self.name)
+                except Exception as exc:
+                    # reset_context 的用户体验优先于 summary 完整性；summary 失败只打日志，不阻断主流程。
+                    logger.exception(
+                        "Agent[%s] 等待 memory_manager_summary_task 时失败，仍继续 reset_context：%s: %s",
+                        self.name,
+                        type(exc).__name__,
+                        exc,
+                    )
             logger.info("Agent[%s] 开始 reset_context（keep_last_n=10）", self.name)
             self._reset_context_keep_last_worker_messages(keep_last_n=10)
 

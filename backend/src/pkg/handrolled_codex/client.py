@@ -3,6 +3,7 @@ import os
 import logging
 import asyncio
 import base64
+import binascii
 from dataclasses import dataclass
 from hashlib import sha256
 from typing import Any, AsyncIterator, Callable, Optional
@@ -176,7 +177,7 @@ class CodexClient:
             return 5
         try:
             value = int(raw)
-        except Exception:
+        except (TypeError, ValueError):
             raise ValueError(f"PROJECT_X_CODEX_HTTP_MAX_RETRIES 必须是整数，但拿到的是：{raw!r}")
         if value < 0:
             raise ValueError(f"PROJECT_X_CODEX_HTTP_MAX_RETRIES 必须 >= 0，但拿到的是：{raw!r}")
@@ -189,7 +190,7 @@ class CodexClient:
             return 0.5
         try:
             value = float(raw)
-        except Exception:
+        except (TypeError, ValueError):
             raise ValueError(f"PROJECT_X_CODEX_HTTP_RETRY_BACKOFF_S 必须是数字，但拿到的是：{raw!r}")
         if value < 0:
             raise ValueError(f"PROJECT_X_CODEX_HTTP_RETRY_BACKOFF_S 必须 >= 0，但拿到的是：{raw!r}")
@@ -211,7 +212,7 @@ class CodexClient:
                 continue
             try:
                 timeout_s = float(raw)
-            except Exception:
+            except (TypeError, ValueError):
                 raise ValueError(f"{env_key} 必须是数字，但拿到的是：{raw!r}")
             if timeout_s <= 0:
                 raise ValueError(f"{env_key} 必须 > 0，但拿到的是：{raw!r}")
@@ -251,7 +252,7 @@ class CodexClient:
             )
             if isinstance(acct_id, str) and acct_id.strip():
                 headers["ChatGPT-Account-ID"] = acct_id.strip()
-        except Exception:
+        except (binascii.Error, UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError):
             pass
         return headers
 
@@ -359,7 +360,7 @@ class CodexClient:
                 return None
             try:
                 payload = json.loads(data)
-            except Exception:
+            except json.JSONDecodeError:
                 return None
             return payload if isinstance(payload, dict) else None
 

@@ -11,9 +11,8 @@ def integration_timeout_s(*, default_timeout_s: float = 180.0) -> float:
         return float(default_timeout_s)
     try:
         timeout_s = float(raw)
-    except Exception:
+    except (TypeError, ValueError):
         raise ValueError(f"PROJECT_X_INTEGRATION_TIMEOUT_S 必须是数字，但拿到的是：{raw!r}")
     if timeout_s <= 0:
         raise ValueError(f"PROJECT_X_INTEGRATION_TIMEOUT_S 必须 > 0，但拿到的是：{raw!r}")
     return timeout_s
-

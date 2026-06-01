@@ -4,8 +4,12 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterator
+import logging
 
 from src.commons import BASE_ROOT
+
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -70,7 +74,14 @@ def _read_codex_cli_tokens() -> CodexTokens | None:
         if not access_token or not refresh_token:
             return None
         return CodexTokens(access_token=access_token, refresh_token=refresh_token)
-    except Exception:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as exc:
+        # 这里经常是“文件存在但内容不合法”（例如用户手动编辑/迁移），日志有助于排查但不应阻塞启动。
+        logger.warning(
+            "读取 Codex CLI tokens 失败，忽略并回退为未配置（path=%s error=%s: %s）",
+            path,
+            type(exc).__name__,
+            exc,
+        )
         return None
 
 

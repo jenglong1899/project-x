@@ -2,8 +2,12 @@ import os
 from pathlib import Path
 import json
 import tempfile
+import logging
 
 from src.commons import CWD_STATE_FILEPATH, DEFAULT_WORKER_CWD
+
+
+logger = logging.getLogger(__name__)
 
 
 class CwdState:
@@ -17,7 +21,13 @@ def load_persisted_worker_cwd(*, state_path: Path = CWD_STATE_FILEPATH) -> Path:
 
     try:
         payload = json.loads(state_path.read_text(encoding="utf-8"))
-    except Exception:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, TypeError, ValueError) as exc:
+        logger.warning(
+            "worker cwd state 文件不可用，回退默认 cwd（path=%s error=%s: %s）",
+            state_path,
+            type(exc).__name__,
+            exc,
+        )
         return DEFAULT_WORKER_CWD
 
     cwd_value = payload.get("cwd")
