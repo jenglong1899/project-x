@@ -24,7 +24,7 @@ def test_agent_turn_codex_uses_model_config_base_url(monkeypatch) -> None:
     monkeypatch.setattr(codex_client_mod, "CodexClient", FakeCodexClient)
 
     model_config = ModelConfig(
-        model="gpt-5.2",
+        model="gpt-5.4",
         base_url="https://example.invalid/backend-api/codex",
         api_key="",
         provider="openai-codex",

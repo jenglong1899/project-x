@@ -51,7 +51,7 @@ DEEPSEEKV4PRO = ModelConfig(
 MOCK = ModelConfig(model="mock", base_url="", api_key="")
 
 OPENAI_CODEX = ModelConfig(
-    model="gpt-5.2",
+    model="gpt-5.4",
     # Codex 的 base_url 默认交给 CodexClient 走 env/默认值：
     # - PROJECT_X_CODEX_BASE_URL
     # - DEFAULT_CODEX_BASE_URL

@@ -30,7 +30,7 @@ def test_codex_stream_real_api_smoke() -> None:
 
     async def _run() -> dict:
         return await client.stream_assistant_message(
-            model=os.getenv("PROJECT_X_CODEX_MODEL", "gpt-5.2").strip() or "gpt-5.2",
+            model=os.getenv("PROJECT_X_CODEX_MODEL", "gpt-5.4").strip() or "gpt-5.4",
             messages=[
                 {"role": "system", "content": "你是一个简洁的助手。"},
                 {"role": "user", "content": "回复我一个数字 7。只输出 7。"},
@@ -65,7 +65,7 @@ def test_codex_real_api_tool_call_roundtrip() -> None:
         pytest.skip(f"未配置 Codex OAuth 凭据，跳过真实集成测试：{type(exc).__name__}: {exc}")
 
     model_config = ModelConfig(
-        model=os.getenv("PROJECT_X_CODEX_MODEL", "gpt-5.2").strip() or "gpt-5.2",
+        model=os.getenv("PROJECT_X_CODEX_MODEL", "gpt-5.4").strip() or "gpt-5.4",
         base_url=os.getenv("PROJECT_X_CODEX_BASE_URL", "https://chatgpt.com/backend-api/codex").strip().rstrip("/"),
         api_key="",
         provider="openai-codex",
