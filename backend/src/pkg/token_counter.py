@@ -35,6 +35,10 @@ class ModelSpec:
 
 
 MODEL_SPECS: dict[str, ModelSpec] = {
+    "openai-codex": ModelSpec(
+        context_window=258_000,
+        tokenizer_id="empty",
+    ),
     # DeepSeek 官方 OpenAI 兼容接口的 usage.prompt_tokens 也会把 assistant 空消息闭合（+eos）。
     "openai/deepseek-v4-flash": ModelSpec(
         context_window=1_000_000,
