@@ -55,15 +55,13 @@ class ConversationStore:
     def __init__(
         self,
         *,
-        system_instruction: str,
-        user_instruction: str,
+        init_messages: list[dict[str, Any]],
         originals_dir: Path | None = None,
     ) -> None:
         """
         :param originals_dir: 主要是为了测试方便，所以这里把它作为一个参数。
         """
-        self._system_instruction = system_instruction
-        self._user_instruction = user_instruction
+        self._init_messages = [dict(message) for message in init_messages]
         self._originals_dir = (originals_dir or ORIGINALS_DIR).expanduser()
         self._file_path: Path | None = None
         self._conversation_file_name = ""
@@ -84,6 +82,10 @@ class ConversationStore:
 
     def has_persisted_conversation(self) -> bool:
         return self._file_path is not None
+
+    @property
+    def init_messages(self) -> list[dict[str, Any]]:
+        return [dict(message) for message in self._init_messages]
 
     @property
     def memory_manager_summary_awaken_count(self) -> int:
@@ -132,8 +134,7 @@ class ConversationStore:
 
         self._conversation_file_name = build_conversation_file_name()
         self._messages = [
-            {"role": "system", "content": self._system_instruction},
-            {"role": "user", "content": self._user_instruction},
+            *self.init_messages,
             {"role": "user", "content": user_content},
         ]
         self._originals_dir.mkdir(parents=True, exist_ok=True)
@@ -153,8 +154,7 @@ class ConversationStore:
 
         self._conversation_file_name = build_conversation_file_name()
         self._messages = [
-            {"role": "system", "content": self._system_instruction},
-            {"role": "user", "content": self._user_instruction},
+            *self.init_messages,
             *[dict(m) for m in messages],
         ]
         self._originals_dir.mkdir(parents=True, exist_ok=True)
@@ -194,7 +194,11 @@ class ConversationStore:
         if not all(isinstance(m, dict) for m in messages):
             raise ValueError("conversation JSON.messages 每个元素必须是 object")
 
-        store = cls(system_instruction="", user_instruction="", originals_dir=resolved_originals_dir)
+        init_messages = payload.get("init_messages")
+        if not isinstance(init_messages, list) or not init_messages or not all(isinstance(m, dict) for m in init_messages):
+            raise ValueError("conversation JSON.init_messages 必须是非空对象数组")
+
+        store = cls(init_messages=init_messages, originals_dir=resolved_originals_dir)
         store._file_path = file_path
         store._conversation_file_name = conversation_file_name
         store._messages = messages
@@ -218,14 +222,6 @@ class ConversationStore:
                 store._pause_requested = pause_requested
             if isinstance(paused, bool):
                 store._paused = paused
-
-        # 继续旧对话时，system/user instruction 以历史为准（从 messages 的前两条恢复）。
-        system_msg = messages[0]
-        user_msg = messages[1] if len(messages) >= 2 else None
-        if system_msg.get("role") == "system" and isinstance(system_msg.get("content"), str):
-            store._system_instruction = system_msg["content"]
-        if isinstance(user_msg, dict) and user_msg.get("role") == "user" and isinstance(user_msg.get("content"), str):
-            store._user_instruction = user_msg["content"]
 
         return store
 
@@ -274,6 +270,7 @@ class ConversationStore:
             raise RuntimeError("conversation 文件路径为空")
 
         payload = {
+            "init_messages": self._init_messages,
             "meta": {
                 MEMORY_MANAGER_META_KEY: {
                     MEMORY_MANAGER_SUMMARY_AWAKEN_COUNT_KEY: self._memory_manager_summary_awaken_count,

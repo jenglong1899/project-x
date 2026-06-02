@@ -5,15 +5,16 @@ from pathlib import Path
 
 from src.conversation_store import ConversationStore
 
+INIT_MESSAGES = [
+    {"role": "system", "content": "system"},
+    {"role": "user", "content": "memory"},
+]
+
 
 class ConversationStoreTests(unittest.TestCase):
     def test_start_with_first_user_message_creates_json_with_basic_structure(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            store = ConversationStore(
-                system_instruction="system",
-                user_instruction="memory",
-                originals_dir=Path(temp_dir),
-            )
+            store = ConversationStore(init_messages=INIT_MESSAGES, originals_dir=Path(temp_dir))
 
             store.start_with_first_user_message(user_content="第一条用户消息已经超过二十个字符限制了并且后面还有内容")
 
@@ -21,6 +22,7 @@ class ConversationStoreTests(unittest.TestCase):
             self.assertEqual(len(stored_files), 1)
 
             payload = json.loads(stored_files[0].read_text(encoding="utf-8"))
+            self.assertEqual(payload["init_messages"], INIT_MESSAGES)
             self.assertIsInstance(payload["meta"], dict)
             self.assertNotIn("display-name", payload["meta"])
             self.assertEqual(
@@ -31,22 +33,14 @@ class ConversationStoreTests(unittest.TestCase):
 
     def test_append_message_requires_started_conversation(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            store = ConversationStore(
-                system_instruction="system",
-                user_instruction="memory",
-                originals_dir=Path(temp_dir),
-            )
+            store = ConversationStore(init_messages=INIT_MESSAGES, originals_dir=Path(temp_dir))
 
             with self.assertRaisesRegex(RuntimeError, "尚未开始"):
                 store.append_message({"role": "assistant", "content": "hello"})
 
     def test_has_persisted_conversation_reflects_json_creation(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
-            store = ConversationStore(
-                system_instruction="system",
-                user_instruction="memory",
-                originals_dir=Path(temp_dir),
-            )
+            store = ConversationStore(init_messages=INIT_MESSAGES, originals_dir=Path(temp_dir))
 
             self.assertFalse(store.has_persisted_conversation())
             store.start_with_first_user_message(user_content="hello")
@@ -55,11 +49,7 @@ class ConversationStoreTests(unittest.TestCase):
     def test_memory_manager_state_is_persisted_and_loaded(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             originals_dir = Path(temp_dir)
-            store = ConversationStore(
-                system_instruction="system",
-                user_instruction="memory",
-                originals_dir=originals_dir,
-            )
+            store = ConversationStore(init_messages=INIT_MESSAGES, originals_dir=originals_dir)
 
             store.start_with_first_user_message(user_content="hello")
             store.update_memory_manager_state(
@@ -80,11 +70,7 @@ class ConversationStoreTests(unittest.TestCase):
     def test_pause_state_is_persisted_and_loaded(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             originals_dir = Path(temp_dir)
-            store = ConversationStore(
-                system_instruction="system",
-                user_instruction="memory",
-                originals_dir=originals_dir,
-            )
+            store = ConversationStore(init_messages=INIT_MESSAGES, originals_dir=originals_dir)
 
             store.start_with_first_user_message(user_content="hello")
             store.update_pause_state(pause_requested=True, paused=False)

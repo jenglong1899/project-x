@@ -141,11 +141,8 @@ class WebSocketChatSessionTests(unittest.IsolatedAsyncioTestCase):
         ]
 
         with mock.patch(
-            "src.websocket_chat_session.build_system_level_instruction_zh",
-            return_value="system",
-        ), mock.patch(
-            "src.websocket_chat_session.build_user_level_instruction_zh",
-            return_value="user",
+            "src.websocket_chat_session.build_init_messages",
+            return_value=[{"role": "user", "content": "user"}],
         ), mock.patch(
             "src.websocket_chat_session.resolve_model_config",
             return_value=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),

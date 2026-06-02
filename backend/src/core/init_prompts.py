@@ -1,11 +1,12 @@
 """
-构建system/user instruction
+构建会话启动消息
 """
 # ======================================================
 # 按 alt+z 开启软换行
 # ======================================================
 
-# memory 是最重要的，所以memory一开始的讲解是放在system prompt的开头。记忆文件的内容放在 user prompt 的末尾。（AI对开头和结尾记得最牢）
+# memory 是最重要的，所以对支持 system prompt 的 provider，
+# 记忆机制说明放在 system message 开头；记忆文档内容放在 user message 末尾。
 
 import os
 import sys
@@ -18,7 +19,7 @@ from src.commons import MAIN_MEMORY_FILEPATH, SUMMARIES_DIR, TODO_MEMORY_FILEPAT
 INITIAL_MAIN_MEMORY_CONTENT_ZH = "用户刚完成 project-x 的安装，还没让我做什么事情"
 INITIAL_TODO_MEMORY_CONTENT_ZH = ""
 
-def build_codex_user_level_instruction()->str:
+def _build_codex_user_level_instruction() -> str:
     """
     codex逆向出来的没法设置system prompt
     :return:
@@ -55,7 +56,17 @@ codex提供的`update_plan`工具在 project-x 中并不存在
 </project_x_instruction>
 """
 
-def build_system_level_instruction_zh() -> str:
+
+def build_init_messages(*, provider: str) -> list[dict[str, str]]:
+    if provider == "openai-codex":
+        return [{"role": "user", "content": _build_codex_user_level_instruction()}]
+    return [
+        {"role": "system", "content": _build_system_level_instruction_zh()},
+        {"role": "user", "content": _build_user_level_instruction_zh()},
+    ]
+
+
+def _build_system_level_instruction_zh() -> str:
     """
     用于原生api（非codex的渠道）
     """
@@ -138,7 +149,7 @@ def read_todo_memory() -> str:
     return TODO_MEMORY_FILEPATH.read_text(encoding="utf-8")
 
 
-def build_user_level_instruction_zh() -> str:
+def _build_user_level_instruction_zh() -> str:
     """
     用于原生api（非codex的渠道）
     """

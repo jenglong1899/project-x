@@ -8,16 +8,21 @@ from src.conversation_store import ConversationStore
 from src.core.agent import Agent
 from src.core.model_config import ModelConfig
 
+OLD_INIT_MESSAGES = [
+    {"role": "system", "content": "system-old"},
+    {"role": "user", "content": "user-old"},
+]
+NEW_INIT_MESSAGES = [
+    {"role": "system", "content": "system-new"},
+    {"role": "user", "content": "user-new"},
+]
+
 
 class StartConversationTests(unittest.TestCase):
     def test_start_conversation_restores_latest_messages_and_reuses_file(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             originals_dir = Path(temp_dir)
-            store = ConversationStore(
-                system_instruction="system-old",
-                user_instruction="user-old",
-                originals_dir=originals_dir,
-            )
+            store = ConversationStore(init_messages=OLD_INIT_MESSAGES, originals_dir=originals_dir)
             store.start_with_first_user_message(user_content="hello")
             store.append_message({"role": "assistant", "content": "hi"})
             conversation_file_name = store.conversation_file_name
@@ -31,8 +36,7 @@ class StartConversationTests(unittest.TestCase):
             agent = Agent(
                 name="demo",
                 model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
-                system_instruction="system-new",
-                user_instruction="user-new",
+                init_messages=NEW_INIT_MESSAGES,
                 tools=[],
                 on_switch_conversation=lambda *, visible_messages: switch_events.append(visible_messages),
             )
@@ -40,8 +44,7 @@ class StartConversationTests(unittest.TestCase):
             with mock.patch("src.conversation_store.ORIGINALS_DIR", originals_dir):
                 agent.start_conversation()
 
-            self.assertEqual(agent._system_instruction, "system-old")
-            self.assertEqual(agent._user_instruction, "user-old")
+            self.assertEqual(agent._init_messages, OLD_INIT_MESSAGES)
             self.assertTrue(all("meta" not in m for m in agent._messages))
             self.assertEqual(agent._messages[0]["content"], "system-old")
             self.assertEqual(agent._messages[1]["content"], "user-old")
@@ -67,8 +70,7 @@ class StartConversationTests(unittest.TestCase):
         agent = Agent(
             name="demo",
             model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
-            system_instruction="system",
-            user_instruction="user",
+            init_messages=[{"role": "user", "content": "user"}],
             tools=[],
         )
         with (
@@ -83,11 +85,7 @@ class StartConversationTests(unittest.TestCase):
     def test_start_conversation_restores_memory_manager_state(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             originals_dir = Path(temp_dir)
-            store = ConversationStore(
-                system_instruction="system-old",
-                user_instruction="user-old",
-                originals_dir=originals_dir,
-            )
+            store = ConversationStore(init_messages=OLD_INIT_MESSAGES, originals_dir=originals_dir)
             store.start_with_first_user_message(user_content="hello")
             store.update_memory_manager_state(
                 summary_awaken_count=2,
@@ -98,8 +96,7 @@ class StartConversationTests(unittest.TestCase):
             agent = Agent(
                 name="demo",
                 model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
-                system_instruction="system-new",
-                user_instruction="user-new",
+                init_messages=NEW_INIT_MESSAGES,
                 tools=[],
             )
 

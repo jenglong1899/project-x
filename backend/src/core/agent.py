@@ -65,7 +65,7 @@ class OnResumed(Protocol):
 class Agent(AgentBase):
 
     def __init__(self, *, name: str, model_config: ModelConfig,
-                 system_instruction: str, user_instruction: str,
+                 init_messages: list[dict[str, Any]],
                  tools: list[Tool],
                  on_ai_content_delta: OnAiContentDelta | None = None,
                  on_ai_reasoning_delta: OnAiReasoningDelta | None = None,
@@ -84,8 +84,7 @@ class Agent(AgentBase):
         self.name = name
         self._model_config = model_config
         self._messages: list[dict[str, Any]] = []
-        self._system_instruction = system_instruction
-        self._user_instruction = user_instruction
+        self._init_messages = [dict(message) for message in init_messages]
         self._tools = tools
         if len({tool.name for tool in tools}) != len(tools):
             raise ValueError("tools 里存在重复的 name")
@@ -129,16 +128,10 @@ class Agent(AgentBase):
             self._start_new_conversation_segment()
 
     def _start_new_conversation_segment(self) -> None:
-        self._messages = [
-            {"role": "system", "content": self._system_instruction},
-            {"role": "user", "content": self._user_instruction},
-        ]
+        self._messages = [dict(message) for message in self._init_messages]
         self._pause_requested = False
         self._paused = False
-        self._conversation_store = ConversationStore(
-            system_instruction=self._system_instruction,
-            user_instruction=self._user_instruction,
-        )
+        self._conversation_store = ConversationStore(init_messages=self._init_messages)
         self._notify_switch_conversation(messages=self._messages)
         self._on_resumed()
 
@@ -148,19 +141,7 @@ class Agent(AgentBase):
 
         store = ConversationStore.load_from_conversation_file_name(conversation_file_name=conversation_file_name)
         messages = store.build_messages_from_history()
-        if len(messages) < 2:
-            raise ValueError("缺少 system/user level instruction，无法恢复")
-
-        system_msg = messages[0]
-        user_instruction_msg = messages[1]
-        if system_msg.get("role") != "system" or not isinstance(system_msg.get("content"), str):
-            raise ValueError("conversation 第一条消息必须是 system instruction")
-        if user_instruction_msg.get("role") != "user" or not isinstance(user_instruction_msg.get("content"), str):
-            raise ValueError("conversation 第二条消息必须是 user instruction")
-
-        # 继续旧对话时，system/user instruction 以历史为准。
-        self._system_instruction = system_msg["content"]
-        self._user_instruction = user_instruction_msg["content"]
+        self._init_messages = store.init_messages
         self._memory_manager_summary_awaken_count = store.memory_manager_summary_awaken_count
         self._memory_manager_judge_awaken_count = store.memory_manager_judge_awaken_count
         self._pause_requested = store.pause_requested
@@ -179,9 +160,8 @@ class Agent(AgentBase):
             paused=self._paused,
         )
 
-    @staticmethod
-    def _visible_messages_from(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        return [dict(message) for message in messages[2:]]
+    def _visible_messages_from(self, messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        return [dict(message) for message in messages[len(self._init_messages):]]
 
     def _notify_switch_conversation(self, *, messages: list[dict[str, Any]]) -> None:
         self._on_switch_conversation(visible_messages=self._visible_messages_from(messages))
@@ -530,29 +510,21 @@ class Agent(AgentBase):
 
     def _reset_context(self) -> None:
         from src.core.init_prompts import (
-            build_system_level_instruction_zh,
-            build_user_level_instruction_zh,
+            build_init_messages,
         )
 
         if self._conversation_store is None:
             raise RuntimeError("conversation_store 未初始化，无法 reset_context")
 
-        self._system_instruction = build_system_level_instruction_zh()
-        self._user_instruction = build_user_level_instruction_zh()
+        self._init_messages = build_init_messages(provider=self._model_config.provider)
         self._memory_manager_summary_awaken_count = 0
         self._memory_manager_judge_awaken_count = 0
         self._pause_requested = False
         self._paused = False
 
-        conversation_store = ConversationStore(
-            system_instruction=self._system_instruction,
-            user_instruction=self._user_instruction,
-        )
+        conversation_store = ConversationStore(init_messages=self._init_messages)
         self._conversation_store = conversation_store
-        self._messages = [
-            {"role": "system", "content": self._system_instruction},
-            {"role": "user", "content": self._user_instruction},
-        ]
+        self._messages = [dict(message) for message in self._init_messages]
         conversation_store.start_with_messages(messages=[])
         # reset-context 会创建一份全新的 conversation 文件；如果不初始化阈值，
         # 下一轮 run() 里会立刻再次触发 memory manager 唤醒（因为 used_percent 可能依然很高），

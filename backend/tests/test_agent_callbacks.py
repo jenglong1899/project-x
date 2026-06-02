@@ -92,9 +92,8 @@ def _threshold_for_messages(*, message_count: int, context_window: int, token_pe
 def _patch_agent_conversation_store_without_history(temp_dir: str) -> Iterator[None]:
     with mock.patch("src.core.agent.ConversationStore") as store_cls:
         store_cls.find_latest_conversation_file_name.return_value = None
-        store_cls.side_effect = lambda *, system_instruction, user_instruction: ConversationStore(
-            system_instruction=system_instruction,
-            user_instruction=user_instruction,
+        store_cls.side_effect = lambda *, init_messages: ConversationStore(
+            init_messages=init_messages,
             originals_dir=Path(temp_dir),
         )
         yield
@@ -125,8 +124,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                 agent = Agent(
                     name="demo",
                     model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
-                    system_instruction="system",
-                    user_instruction="hello",
+                    init_messages=[{"role": "user", "content": "hello"}],
                     tools=[],
                     on_user_msg_enqueued=lambda *, frontend_msg_id: enqueued_ids.append(frontend_msg_id),
                     on_queued_user_msg_committed=lambda *, frontend_msg_id: committed_ids.append(frontend_msg_id),
@@ -333,8 +331,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                 agent = Agent(
                     name="demo",
                     model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
-                    system_instruction="system",
-                    user_instruction="hello",
+                    init_messages=[{"role": "user", "content": "hello"}],
                     tools=[self._echo_tool()],
                     on_tool_result=lambda **kwargs: tool_results.append(kwargs),
                 )
@@ -389,9 +386,9 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("display-name", stored_payload["meta"])
         self.assertEqual(
             [message["role"] for message in stored_payload["messages"]],
-            ["system", "user", "user", "assistant", "tool", "assistant"],
+            ["user", "user", "assistant", "tool", "assistant"],
         )
-        self.assertEqual(stored_payload["messages"][4]["content"], "{\"echoed\": 7}")
+        self.assertEqual(stored_payload["messages"][3]["content"], "{\"echoed\": 7}")
         self.assertTrue(all("meta" not in message for message in stored_payload["messages"]))
 
     async def test_append_runtime_message_requires_persisted_conversation(self) -> None:
@@ -400,8 +397,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                 agent = Agent(
                     name="demo",
                     model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
-                    system_instruction="system",
-                    user_instruction="hello",
+                    init_messages=[{"role": "user", "content": "hello"}],
                     tools=[],
                 )
                 agent.start_conversation()
@@ -415,8 +411,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                 agent = Agent(
                     name="demo",
                     model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
-                    system_instruction="system",
-                    user_instruction="hello",
+                    init_messages=[{"role": "user", "content": "hello"}],
                     tools=[],
                 )
                 agent.start_conversation()
@@ -430,8 +425,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
             Agent(
                 name="demo",
                 model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
-                system_instruction="system",
-                user_instruction="hello",
+                init_messages=[{"role": "user", "content": "hello"}],
                 tools=[self._echo_tool(), self._echo_tool()],
             )
 
@@ -445,8 +439,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                 agent = Agent(
                     name="demo",
                     model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
-                    system_instruction="system-1",
-                    user_instruction="user-1",
+                    init_messages=[{"role": "user", "content": "user-1"}],
                     tools=[self._echo_tool()],
                     on_switch_conversation=lambda *, visible_messages: switch_events.append(visible_messages),
                     token_counter=_FakeTokenCounter(),
@@ -473,11 +466,8 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     "_safe_stream",
                     new=mock.AsyncMock(side_effect=[ai_msg_with_tool_call, final_ai_msg]),
                 ), mock.patch(
-                    "src.core.init_prompts.build_system_level_instruction_zh",
-                    return_value="system-2",
-                ), mock.patch(
-                    "src.core.init_prompts.build_user_level_instruction_zh",
-                    return_value="user-2",
+                    "src.core.init_prompts.build_init_messages",
+                    return_value=[{"role": "user", "content": "user-2"}],
                 ):
                     agent.enqueue_user_message(frontend_msg_id="u1", user_message="hello")
                     agent._safe_drain_user_message_queue()
@@ -490,8 +480,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(summary_runner.calls), 3)
         self.assertEqual(len(judge_runner.calls), 2)
         self.assertEqual(switch_events[-1], [])
-        self.assertEqual(agent._messages[0], {"role": "system", "content": "system-2"})
-        self.assertEqual(agent._messages[1], {"role": "user", "content": "user-2"})
+        self.assertEqual(agent._messages[0], {"role": "user", "content": "user-2"})
         self.assertEqual(agent._memory_manager_summary_awaken_count, 1)
         self.assertEqual(agent._memory_manager_judge_awaken_count, 1)
 
@@ -504,8 +493,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                 agent = Agent(
                     name="demo",
                     model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
-                    system_instruction="system",
-                    user_instruction="user",
+                    init_messages=[{"role": "user", "content": "user"}],
                     tools=[self._echo_tool()],
                     token_counter=_FakeTokenCounter(context_window=100, token_per_message=1),
                 )
@@ -516,9 +504,9 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                 agent.enqueue_user_message(frontend_msg_id="u1", user_message="hello")
                 agent._safe_drain_user_message_queue()
                 store = agent._require_conversation_store()
-                # 当前 tokens=3（system/user instruction + 首条用户消息），used_percent=3，
-                # current_threshold=3；将 last_triggered_threshold 设为 3，确保不会被唤醒。
-                store.update_memory_manager_last_triggered_threshold(last_triggered_threshold=3)
+                # 当前 tokens=2（init message + 首条用户消息），used_percent=2，
+                # current_threshold=0；将 last_triggered_threshold 设为 0，确保不会被唤醒。
+                store.update_memory_manager_last_triggered_threshold(last_triggered_threshold=0)
 
                 await agent._maybe_wake_memory_manager()
 
@@ -536,8 +524,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                 agent = Agent(
                     name="demo",
                     model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
-                    system_instruction="system",
-                    user_instruction="user",
+                    init_messages=[{"role": "user", "content": "user"}],
                     tools=[self._echo_tool()],
                     token_counter=_FakeTokenCounter(context_window=100, token_per_message=10),
                 )
@@ -587,8 +574,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                 agent = Agent(
                     name="demo",
                     model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
-                    system_instruction="system-1",
-                    user_instruction="user-1",
+                    init_messages=[{"role": "user", "content": "user-1"}],
                     tools=[self._echo_tool()],
                     on_switch_conversation=lambda *, visible_messages: switch_events.append(visible_messages),
                     token_counter=_FakeTokenCounter(),
@@ -615,11 +601,8 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     "_safe_stream",
                     new=mock.AsyncMock(side_effect=[ai_msg_with_tool_call, final_ai_msg]),
                 ), mock.patch(
-                    "src.core.init_prompts.build_system_level_instruction_zh",
-                    return_value="system-2",
-                ), mock.patch(
-                    "src.core.init_prompts.build_user_level_instruction_zh",
-                    return_value="user-2",
+                    "src.core.init_prompts.build_init_messages",
+                    return_value=[{"role": "user", "content": "user-2"}],
                 ):
                     agent.enqueue_user_message(frontend_msg_id="u1", user_message="hello")
                     agent._safe_drain_user_message_queue()
@@ -634,8 +617,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(judge_runner.calls), 2)
         self.assertEqual(len(switch_events), 2)
         self.assertEqual(switch_events[1], [])
-        self.assertEqual(agent._messages[0], {"role": "system", "content": "system-2"})
-        self.assertEqual(agent._messages[1], {"role": "user", "content": "user-2"})
+        self.assertEqual(agent._messages[0], {"role": "user", "content": "user-2"})
 
     async def test_summary_does_not_reenter_while_in_flight(self) -> None:
         summary_runner = _BlockingSummaryRunner()
@@ -646,8 +628,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                 agent = Agent(
                     name="demo",
                     model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
-                    system_instruction="system-1",
-                    user_instruction="user-1",
+                    init_messages=[{"role": "user", "content": "user-1"}],
                     tools=[self._echo_tool()],
                     token_counter=_FakeTokenCounter(),
                 )
@@ -702,8 +683,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                 agent = Agent(
                     name="demo",
                     model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
-                    system_instruction="system-1",
-                    user_instruction="user-1",
+                    init_messages=[{"role": "user", "content": "user-1"}],
                     tools=[self._echo_tool()],
                     token_counter=_FakeTokenCounter(),
                 )
@@ -715,9 +695,9 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                 agent._append_runtime_message({"role": "user", "content": WAKE_MM_SUMMARY_FLAG})
                 agent._append_runtime_message({"role": "assistant", "content": "after-flag"})
 
-                with mock.patch("src.core.init_prompts.build_system_level_instruction_zh", return_value="system-2"), mock.patch(
-                    "src.core.init_prompts.build_user_level_instruction_zh",
-                    return_value="user-2",
+                with mock.patch(
+                    "src.core.init_prompts.build_init_messages",
+                    return_value=[{"role": "user", "content": "user-2"}],
                 ):
                     await agent._run_memory_manager_summary_before_reset()
                     agent._reset_context()
@@ -726,7 +706,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
         worker_messages = summary_runner.calls[0]["worker_messages"]
         self.assertEqual(worker_messages[-2]["content"], WAKE_MM_SUMMARY_FLAG)
         self.assertEqual(worker_messages[-1], {"role": "assistant", "content": "after-flag"})
-        self.assertEqual(agent._messages, [{"role": "system", "content": "system-2"}, {"role": "user", "content": "user-2"}])
+        self.assertEqual(agent._messages, [{"role": "user", "content": "user-2"}])
 
 
 if __name__ == "__main__":
