@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest import mock
 
 from src.conversation_store import ConversationStore
-from src.commons import WAKE_MEMORY_MANAGER_FLAG
+from src.commons import WAKE_MM_SUMMARY_FLAG
 from src.core.agent import Agent
 from src.core.agent_turn import Tool, execute_tool_calls
 from src.core.model_config import ModelConfig
@@ -487,16 +487,9 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(len(stored_files), 2)
 
         self.assertEqual(result, final_ai_msg)
-        self.assertEqual(len(summary_runner.calls), 2)
+        self.assertEqual(len(summary_runner.calls), 3)
         self.assertEqual(len(judge_runner.calls), 2)
-        self.assertEqual(
-            switch_events[-1],
-            [
-                {"role": "assistant", "content": None, "tool_calls": mock.ANY},
-                {"role": "tool", "tool_call_id": "call_echo_1", "content": "{\"echoed\": 1}"},
-                {"role": "user", "content": WAKE_MEMORY_MANAGER_FLAG},
-            ],
-        )
+        self.assertEqual(switch_events[-1], [])
         self.assertEqual(agent._messages[0], {"role": "system", "content": "system-2"})
         self.assertEqual(agent._messages[1], {"role": "user", "content": "user-2"})
         self.assertEqual(agent._memory_manager_summary_awaken_count, 1)
@@ -637,9 +630,12 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     result = await run_task
 
         self.assertEqual(result, final_ai_msg)
-        self.assertEqual(len(summary_runner.calls), 2)
+        self.assertEqual(len(summary_runner.calls), 3)
         self.assertEqual(len(judge_runner.calls), 2)
         self.assertEqual(len(switch_events), 2)
+        self.assertEqual(switch_events[1], [])
+        self.assertEqual(agent._messages[0], {"role": "system", "content": "system-2"})
+        self.assertEqual(agent._messages[1], {"role": "user", "content": "user-2"})
 
     async def test_summary_does_not_reenter_while_in_flight(self) -> None:
         summary_runner = _BlockingSummaryRunner()
@@ -693,9 +689,44 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(agent._memory_manager_summary_awaken_count, 1)
         self.assertEqual(agent._memory_manager_judge_awaken_count, 3)
         self.assertEqual(
-            sum(1 for m in agent._messages if m.get("role") == "user" and m.get("content") == WAKE_MEMORY_MANAGER_FLAG),
+            sum(1 for m in agent._messages if m.get("role") == "user" and m.get("content") == WAKE_MM_SUMMARY_FLAG),
             1,
         )
+
+    async def test_reset_tail_summary_reuses_existing_summary_flag_boundary(self) -> None:
+        summary_runner = _StaticSummaryRunner()
+        judge_runner = _StaticJudgeRunner(should_reset_context=True)
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with _patch_agent_conversation_store_without_history(temp_dir):
+                agent = Agent(
+                    name="demo",
+                    model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
+                    system_instruction="system-1",
+                    user_instruction="user-1",
+                    tools=[self._echo_tool()],
+                    token_counter=_FakeTokenCounter(),
+                )
+                agent._memory_manager_summary_runner = summary_runner
+                agent._memory_manager_judge_runner = judge_runner
+                agent.start_conversation()
+                agent.enqueue_user_message(frontend_msg_id="u1", user_message="hello")
+                agent._safe_drain_user_message_queue()
+                agent._append_runtime_message({"role": "user", "content": WAKE_MM_SUMMARY_FLAG})
+                agent._append_runtime_message({"role": "assistant", "content": "after-flag"})
+
+                with mock.patch("src.core.init_prompts.build_system_level_instruction_zh", return_value="system-2"), mock.patch(
+                    "src.core.init_prompts.build_user_level_instruction_zh",
+                    return_value="user-2",
+                ):
+                    await agent._run_memory_manager_summary_before_reset()
+                    agent._reset_context()
+
+        self.assertEqual(len(summary_runner.calls), 1)
+        worker_messages = summary_runner.calls[0]["worker_messages"]
+        self.assertEqual(worker_messages[-2]["content"], WAKE_MM_SUMMARY_FLAG)
+        self.assertEqual(worker_messages[-1], {"role": "assistant", "content": "after-flag"})
+        self.assertEqual(agent._messages, [{"role": "system", "content": "system-2"}, {"role": "user", "content": "user-2"}])
 
 
 if __name__ == "__main__":

@@ -12,7 +12,7 @@ import sys
 from datetime import datetime
 
 from src.commons import ORIGINALS_DIR
-from src.commons import WAKE_MEMORY_MANAGER_FLAG
+from src.commons import WAKE_MM_SUMMARY_FLAG
 from src.commons import MAIN_MEMORY_FILEPATH, SUMMARIES_DIR, TODO_MEMORY_FILEPATH, MEMORY_MAIN_MD, MEMORY_TODO_MD
 
 INITIAL_MAIN_MEMORY_CONTENT_ZH = "用户刚完成 project-x 的安装，还没让我做什么事情"
@@ -105,7 +105,7 @@ def _build_memory_mechanism_instruction()->str:
 **如果你没有收到处理记忆的 user-role msg（会用<roles_change_notice>包裹住），你就是 worker。**
 **如果你收到了处理记忆的指令，你就是 memory manager。**
 
-当系统创建出 memory manager 之后，系统会在 worker 的上下文中插入 {WAKE_MEMORY_MANAGER_FLAG} (user-role msg) 作为辅助标记， worker 不需要关注这个。
+当系统创建出 memory manager 之后，系统会在 worker 的上下文中插入 {WAKE_MM_SUMMARY_FLAG} (user-role msg) 作为辅助标记， worker 不需要关注这个。
 
 worker可以做一些“联想”，比如怀疑自己可能接触过某些信息的时候，worker可以去 {ORIGINALS_DIR} 里面搜索相关的关键词，这个文件夹里面存放的是worker的所有完整记忆。
 

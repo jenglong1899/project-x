@@ -1,6 +1,6 @@
 from typing import Any
 
-from src.commons import MEMORY_MAIN_MD, WAKE_MEMORY_MANAGER_FLAG, SUMMARIES_DIR
+from src.commons import MEMORY_MAIN_MD, WAKE_MM_SUMMARY_FLAG, SUMMARIES_DIR
 from src.core.init_prompts import read_main_memory
 
 from src.commons import noop
@@ -208,7 +208,7 @@ def build_memory_manager_summary_prompt(is_first_time_awaken: bool) -> str:
         memory_operation_history_prompt = f"""
 这不是你第一次在当前会话中被唤醒，你之前已经处理过记忆文档。
 
-你上一次被唤醒的地方是*最近的*那条 {WAKE_MEMORY_MANAGER_FLAG} 消息，在那之前的内容都已经被之前的你摘要过了。
+你上一次被唤醒的地方是*最近的*那条 {WAKE_MM_SUMMARY_FLAG} 消息，在那之前的内容都已经被之前的你摘要过了。
 
 这是当前 {MEMORY_MAIN_MD} 的内容（你等会不需要再调用工具去读一遍了）：
 <{MEMORY_MAIN_MD}>
@@ -272,7 +272,7 @@ def build_memory_manager_judge_whether_reset_context_prompt() -> str:
 
 如果判断出要重置上下文，你就输出 {RESET_CONTEXT_MAGIC_WORD} ，系统检测到后，就会重置
 
-你可能会在上下文中看到 {WAKE_MEMORY_MANAGER_FLAG}，你不需要去管这个
+你可能会在上下文中看到 {WAKE_MM_SUMMARY_FLAG}，你不需要去管这个
 
 </roles_change_notice>
 """

@@ -18,7 +18,7 @@ from src.core.agent_turn import (
     OnToolResult,
 )
 from src.tools.tool import Tool
-from src.commons import WAKE_MEMORY_MANAGER_FLAG
+from src.commons import WAKE_MM_SUMMARY_FLAG
 from src.core.memory_manager import (
     MemoryManagerJudgeResetContextRunner,
     MemoryManagerSummaryRunner,
@@ -403,7 +403,7 @@ class Agent(AgentBase):
                 agent_name=self.name,
             )
             self._memory_manager_summary_task = summary_task
-            self._append_runtime_message({"role": "user", "content": WAKE_MEMORY_MANAGER_FLAG})
+            self._append_runtime_message({"role": "user", "content": WAKE_MM_SUMMARY_FLAG})
             self._memory_manager_summary_awaken_count = summary_round
             self._persist_memory_manager_state()
 
@@ -436,6 +436,10 @@ class Agent(AgentBase):
         should_reset_context = await judge_task
         logger.info("Agent[%s] memory manager judge 结果（should_reset_context=%s）", self.name, should_reset_context)
         if should_reset_context:
+            # 这里不需要额外 request_pause()：
+            # 当前 run() 正在 await _maybe_wake_memory_manager()，后面的 drain queue / 下一轮 stream 都不会继续执行；
+            # 同时 AgentRunner 会防止并发 run()，summary/judge 也只操作快照，不会回写 self._messages。
+            # 所以从这里开始到 reset 完成，worker messages 已经处于“隐式冻结”状态。
             summary_task = self._memory_manager_summary_task
             if summary_task is not None and not summary_task.done():
                 try:
@@ -450,8 +454,45 @@ class Agent(AgentBase):
                         type(exc).__name__,
                         exc,
                     )
-            logger.info("Agent[%s] 开始 reset_context（keep_last_n=10）", self.name)
-            self._reset_context_keep_last_worker_messages(keep_last_n=10)
+            await self._run_memory_manager_summary_before_reset()
+            logger.info("Agent[%s] 开始 reset_context", self.name)
+            self._reset_context()
+
+    async def _run_memory_manager_summary_before_reset(self) -> None:
+        if not any(message.get("content") == WAKE_MM_SUMMARY_FLAG for message in self._messages):
+            logger.warning("Agent[%s] reset 前未找到 %s，跳过收尾 summary", self.name, WAKE_MM_SUMMARY_FLAG)
+            return
+
+        summary_round = self._memory_manager_summary_awaken_count + 1
+        logger.info(
+            "Agent[%s] reset 前执行收尾 memory_manager_summary_task（round=%s messages=%s）",
+            self.name,
+            summary_round,
+            len(self._messages),
+        )
+        # 注意FLAG是为下一次summary唤醒而留的，当次summary用的是上一个summary唤起时留下的flag
+        # 如果这里再插一个新 flag，会变成：
+        # ......旧内容...... [旧 flag] ......新内容...... [新 flag]
+        #                                               ^ 最近一条 flag
+        # 那 summary 就会认为“新 flag 之前都已经摘要过了”，结果真正该补的 旧 flag -> 新 flag 这一段反而被跳过。
+        try:
+            await self._memory_manager_summary_runner.run(
+                worker_messages=[dict(message) for message in self._messages],
+                model_config=self._model_config,
+                tools=build_memory_manager_summary_tools(provider=self._model_config.provider),
+                is_first_time_awaken=False,
+                conversation_file_name=self._require_conversation_store().conversation_file_name,
+                awaken_round=summary_round,
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.exception(
+                "Agent[%s] reset 前收尾 summary 失败，仍继续 reset：%s: %s",
+                self.name,
+                type(exc).__name__,
+                exc,
+            )
 
 
     def _append_runtime_message(self, message: dict[str, Any]) -> None:
@@ -487,7 +528,7 @@ class Agent(AgentBase):
                             on_ai_tool_call_arguments_delta=on_ai_tool_call_arguments_delta,
                             on_ai_tool_call_finished=on_ai_tool_call_finished)
 
-    def _reset_context_keep_last_worker_messages(self, *, keep_last_n: int) -> None:
+    def _reset_context(self) -> None:
         from src.core.init_prompts import (
             build_system_level_instruction_zh,
             build_user_level_instruction_zh,
@@ -495,22 +536,6 @@ class Agent(AgentBase):
 
         if self._conversation_store is None:
             raise RuntimeError("conversation_store 未初始化，无法 reset_context")
-
-        if keep_last_n < 0:
-            raise ValueError("keep_last_n 不能为负数")
-        worker_messages = [dict(m) for m in self._messages[2:]]
-        max_to_keep = min(len(worker_messages), keep_last_n)
-        kept_messages = []
-        for take_n in range(max_to_keep, -1, -1):
-            candidate = worker_messages[-take_n:] if take_n else []
-            if not candidate:
-                kept_messages = []
-                break
-            if candidate[0].get("role") == "assistant":
-                kept_messages = candidate
-                break
-        if keep_last_n and not kept_messages and worker_messages:
-            logger.warning("reset-context 无法保留末尾 %s 条且以 assistant 开头，改为不保留", keep_last_n)
 
         self._system_instruction = build_system_level_instruction_zh()
         self._user_instruction = build_user_level_instruction_zh()
@@ -524,8 +549,11 @@ class Agent(AgentBase):
             user_instruction=self._user_instruction,
         )
         self._conversation_store = conversation_store
-        conversation_store.start_with_messages(messages=kept_messages)
-        self._messages = conversation_store.build_messages_from_history()
+        self._messages = [
+            {"role": "system", "content": self._system_instruction},
+            {"role": "user", "content": self._user_instruction},
+        ]
+        conversation_store.start_with_messages(messages=[])
         # reset-context 会创建一份全新的 conversation 文件；如果不初始化阈值，
         # 下一轮 run() 里会立刻再次触发 memory manager 唤醒（因为 used_percent 可能依然很高），
         # 造成同一轮里重复唤醒/甚至重复 reset 的“抖动”。
@@ -598,8 +626,8 @@ class Agent(AgentBase):
             for tool_message in tool_messages:
                 self._append_runtime_message(tool_message)
 
-            # 在这里maybe wake memory manager，当前msg是tool result msg
-            # 这个格式是合法的。
+            # 在这里maybe wake memory manager，最后一条msg是tool result msg
+            # 这个格式是合法的，可以在这个基础上跑 summary、judge任务
             await self._maybe_wake_memory_manager()
 
             if self._pause_requested:
