@@ -1,5 +1,6 @@
 from typing import Any
 
+from commons import MEMORY_TODO_MD
 from src.commons import MEMORY_MAIN_MD, WAKE_MM_SUMMARY_FLAG, SUMMARIES_DIR
 from src.core.init_prompts import read_main_memory
 
@@ -203,9 +204,13 @@ class MemoryManagerJudgeResetContextRunner:
 
 def build_memory_manager_summary_prompt(is_first_time_awaken: bool) -> str:
     if is_first_time_awaken:
-        memory_operation_history_prompt = f"这是你第一次在当前会话中被唤醒，“磁盘中的{MEMORY_MAIN_MD}”和“上下文中的{MEMORY_MAIN_MD}”是一致的，没有被之前的你修改过"
+        memory_operation_history_prompt = (f"<summary_operation_history_info>"
+                                           f"这是你第一次在当前会话中被唤醒，"
+                                           f"“磁盘中的{MEMORY_MAIN_MD}”和“上下文中的{MEMORY_MAIN_MD}”是一致的，没有被之前的你修改过"
+                                           "</summary_operation_history_info>")
     else:
         memory_operation_history_prompt = f"""
+<summary_operation_history_info>
 这不是你第一次在当前会话中被唤醒，你之前已经处理过记忆文档。
 
 你上一次被唤醒的地方是*最近的*那条 {WAKE_MM_SUMMARY_FLAG} 消息，在那之前的内容都已经被之前的你摘要过了。
@@ -214,6 +219,7 @@ def build_memory_manager_summary_prompt(is_first_time_awaken: bool) -> str:
 <{MEMORY_MAIN_MD}>
 {read_main_memory()}
 </{MEMORY_MAIN_MD}>
+</summary_operation_history_info>
 """
 
     return f"""
@@ -223,7 +229,7 @@ def build_memory_manager_summary_prompt(is_first_time_awaken: bool) -> str:
 
 **你的角色是memory manager，你刚从worker的上下文中被 fork 出来。**
 
-你现在要做的事情就是处理记忆文档，比如对当前上下文做摘要然后放到记忆文档中、整理记忆文档等等（会有另外一个 memory manager 来负责做重置上下文的决策）
+你现在要做的事情就是处理记忆文档，比如对当前上下文做摘要然后放到记忆文档中、整理记忆文档等等
 
 你要达成的目标是：让worker拥有像人类一样的记忆。
 
@@ -251,6 +257,8 @@ def build_memory_manager_summary_prompt(is_first_time_awaken: bool) -> str:
 
 你当前的工作目录（Bash工具）已经被改为 {SUMMARIES_DIR}
 
+另外再次提醒，你不能修改 {MEMORY_TODO_MD} 
+
 </roles_change_notice>
 """
 
@@ -262,7 +270,7 @@ def build_memory_manager_judge_whether_reset_context_prompt() -> str:
 
 **你的角色是memory manager，你刚从worker的上下文中被 fork 出来**
 
-你现在要做的事情就是判断当前是否要重置上下文（会有另外一个memory manager负责做摘要）
+你现在要做的事情就是判断当前是否要重置上下文
 
 **判断是否要重置上下文的标准：如果当前上下文中有50%以上的内容都是对当前任务不重要的，那通常就要重置。（这里的50%是按token估算）**
 
@@ -273,6 +281,8 @@ def build_memory_manager_judge_whether_reset_context_prompt() -> str:
 如果判断出要重置上下文，你就输出 {RESET_CONTEXT_MAGIC_WORD} ，系统检测到后，就会重置
 
 你可能会在上下文中看到 {WAKE_MM_SUMMARY_FLAG}，你不需要去管这个
+
+你会看到一些工具，但是你不能去使用它们，因为判断是否需要重置上下文并不需要工具
 
 </roles_change_notice>
 """
