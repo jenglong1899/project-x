@@ -1,7 +1,6 @@
 from typing import Any
 
-from commons import MEMORY_TODO_MD
-from src.commons import MEMORY_MAIN_MD, WAKE_MM_SUMMARY_FLAG, SUMMARIES_DIR
+from src.commons import MEMORY_MAIN_MD, MEMORY_TODO_MD, WAKE_MM_SUMMARY_FLAG, SUMMARIES_DIR
 from src.core.init_prompts import read_main_memory
 
 from src.commons import noop

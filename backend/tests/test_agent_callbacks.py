@@ -83,6 +83,43 @@ class _BlockingSummaryRunner:
         return None
 
 
+async def _wait_for_memory_manager_background_tasks(agent: Agent) -> None:
+    settled_rounds = 0
+    for _ in range(10):
+        await asyncio.sleep(0)
+
+        pending_tasks = [
+            task
+            for task in (
+                agent._memory_manager_summary_task,
+                agent._memory_manager_judge_task,
+                agent._memory_manager_reset_task,
+            )
+            if task is not None and not task.done()
+        ]
+        if not pending_tasks:
+            settled_rounds += 1
+            if settled_rounds >= 2:
+                return
+            continue
+
+        settled_rounds = 0
+
+        for task in pending_tasks:
+            await task
+
+
+async def _wait_for_memory_manager_reset_task(agent: Agent) -> None:
+    for _ in range(10):
+        await asyncio.sleep(0)
+        reset_task = agent._memory_manager_reset_task
+        if reset_task is None:
+            continue
+        await reset_task
+        await asyncio.sleep(0)
+        return
+
+
 def _threshold_for_messages(*, message_count: int, context_window: int, token_per_message: int) -> int:
     used_percent = int(message_count * token_per_message * 100 / context_window)
     return (used_percent // 3) * 3
@@ -472,17 +509,19 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     agent.enqueue_user_message(frontend_msg_id="u1", user_message="hello")
                     agent._safe_drain_user_message_queue()
                     result = await agent.run()
+                    await _wait_for_memory_manager_background_tasks(agent)
+                    await _wait_for_memory_manager_reset_task(agent)
 
                 stored_files = list(Path(temp_dir).glob("*.json"))
                 self.assertEqual(len(stored_files), 2)
 
         self.assertEqual(result, final_ai_msg)
-        self.assertEqual(len(summary_runner.calls), 3)
-        self.assertEqual(len(judge_runner.calls), 2)
+        self.assertEqual(len(summary_runner.calls), 2)
+        self.assertEqual(len(judge_runner.calls), 1)
         self.assertEqual(switch_events[-1], [])
         self.assertEqual(agent._messages[0], {"role": "user", "content": "user-2"})
-        self.assertEqual(agent._memory_manager_summary_awaken_count, 1)
-        self.assertEqual(agent._memory_manager_judge_awaken_count, 1)
+        self.assertEqual(agent._memory_manager_summary_awaken_count, 0)
+        self.assertEqual(agent._memory_manager_judge_awaken_count, 0)
 
     async def test_memory_manager_does_not_awaken_below_context_growth_threshold(self) -> None:
         summary_runner = _StaticSummaryRunner()
@@ -555,14 +594,14 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     agent.enqueue_user_message(frontend_msg_id="u1", user_message="hello")
                     agent._safe_drain_user_message_queue()
                     result = await agent.run()
+                    await _wait_for_memory_manager_background_tasks(agent)
 
         self.assertEqual(result, final_ai_msg)
-        self.assertEqual(len(summary_runner.calls), 2)
+        self.assertEqual(len(summary_runner.calls), 1)
         self.assertTrue(summary_runner.calls[0]["is_first_time_awaken"])
-        self.assertFalse(summary_runner.calls[1]["is_first_time_awaken"])
-        self.assertEqual(len(judge_runner.calls), 2)
-        self.assertEqual(agent._memory_manager_summary_awaken_count, 2)
-        self.assertEqual(agent._memory_manager_judge_awaken_count, 2)
+        self.assertEqual(len(judge_runner.calls), 1)
+        self.assertEqual(agent._memory_manager_summary_awaken_count, 1)
+        self.assertEqual(agent._memory_manager_judge_awaken_count, 1)
 
     async def test_judge_reset_waits_for_summary_before_switching_conversation(self) -> None:
         switch_events: list[list[dict[str, object]]] = []
@@ -611,10 +650,12 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(switch_events, [[]])
                     summary_runner.allow_finish.set()
                     result = await run_task
+                    await _wait_for_memory_manager_background_tasks(agent)
+                    await _wait_for_memory_manager_reset_task(agent)
 
         self.assertEqual(result, final_ai_msg)
-        self.assertEqual(len(summary_runner.calls), 3)
-        self.assertEqual(len(judge_runner.calls), 2)
+        self.assertEqual(len(summary_runner.calls), 2)
+        self.assertEqual(len(judge_runner.calls), 1)
         self.assertEqual(len(switch_events), 2)
         self.assertEqual(switch_events[1], [])
         self.assertEqual(agent._messages[0], {"role": "user", "content": "user-2"})
@@ -662,13 +703,13 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     result = await agent.run()
 
                 summary_runner.allow_finish.set()
-                await agent._memory_manager_summary_task
+                await _wait_for_memory_manager_background_tasks(agent)
 
         self.assertEqual(result, final_ai_msg)
         self.assertEqual(len(summary_runner.calls), 1)
-        self.assertEqual(len(judge_runner.calls), 3)
+        self.assertEqual(len(judge_runner.calls), 1)
         self.assertEqual(agent._memory_manager_summary_awaken_count, 1)
-        self.assertEqual(agent._memory_manager_judge_awaken_count, 3)
+        self.assertEqual(agent._memory_manager_judge_awaken_count, 1)
         self.assertEqual(
             sum(1 for m in agent._messages if m.get("role") == "user" and m.get("content") == WAKE_MM_SUMMARY_FLAG),
             1,

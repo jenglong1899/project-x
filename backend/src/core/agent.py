@@ -114,6 +114,8 @@ class Agent(AgentBase):
         self._token_counter = token_counter or TokenCounter()
         self._pause_requested = False
         self._paused = False
+        self._run_in_progress = False
+        self._memory_manager_reset_task: asyncio.Task[None] | None = None
 
         # self._conversation_store 会在start_conversation()中被初始化。
         self._conversation_store: ConversationStore | None = None
@@ -214,7 +216,8 @@ class Agent(AgentBase):
         self._paused = False
         self._persist_pause_state()
         if was_paused or was_pause_requested:
-            logger.info("Agent[%s].resume：已恢复（was_paused=%s was_pause_requested=%s）", self.name, was_paused, was_pause_requested)
+            logger.info("Agent[%s].resume：已恢复（was_paused=%s was_pause_requested=%s）", self.name, was_paused,
+                        was_pause_requested)
             self._on_resumed()
 
     def is_paused(self) -> bool:
@@ -302,7 +305,7 @@ class Agent(AgentBase):
         )
 
     @staticmethod
-    def _observe_background_task_exceptions(*, task: asyncio.Task[Any], task_name: str, agent_name: str) -> None:
+    def _attach_background_task_exception_logger(*, task: asyncio.Task[Any], task_name: str, agent_name: str) -> None:
         """
         目的：确保后台 task 的异常一定会被观察到，否则 asyncio 会报：
         "Task exception was never retrieved"
@@ -332,15 +335,103 @@ class Agent(AgentBase):
 
         task.add_done_callback(_on_done)
 
+    def _attach_memory_manager_summary_task_callbacks(self, *, task: asyncio.Task[None]) -> None:
+        self._attach_background_task_exception_logger(
+            task=task,
+            task_name="memory_manager_summary_task",
+            agent_name=self.name,
+        )
+
+    def _attach_memory_manager_judge_result_handler(self, *, task: asyncio.Task[bool]) -> None:
+        self._attach_background_task_exception_logger(
+            task=task,
+            task_name="memory_manager_judge_task",
+            agent_name=self.name,
+        )
+
+        def _on_done(done_task: asyncio.Task[bool]) -> None:
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                logger.warning("Agent[%s] judge task 完成时事件循环不可用，跳过结果处理", self.name)
+                return
+            loop.create_task(self._sync_memory_manager_judge_result(done_task))
+
+        task.add_done_callback(_on_done)
+
+    async def _sync_memory_manager_judge_result(self, judge_task: asyncio.Task[bool]) -> None:
+        try:
+            should_reset_context = await judge_task
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # 异常已经在回调里打过日志，这里只负责阻断后续 reset 流程。
+            return
+
+        logger.info("Agent[%s] memory manager judge 结果（should_reset_context=%s）", self.name, should_reset_context)
+        if not should_reset_context:
+            return
+
+        reset_task = self._memory_manager_reset_task
+        if reset_task is not None and not reset_task.done():
+            logger.info("Agent[%s] memory manager reset 流程已在进行中，跳过重复启动", self.name)
+            return
+
+        self._memory_manager_reset_task = asyncio.create_task(self._handle_memory_manager_reset_request())
+        self._attach_background_task_exception_logger(
+            task=self._memory_manager_reset_task,
+            task_name="memory_manager_reset_task",
+            agent_name=self.name,
+        )
+
+    async def _wait_until_worker_paused_for_reset(self) -> None:
+        while not self._paused:
+            if not self._run_in_progress and self._pause_requested:
+                self._enter_paused_state(log_reason="judge 结果返回时 worker 已空闲，直接进入 paused")
+                return
+            await asyncio.sleep(0.05)
+
+    def _enter_paused_state(self, *, log_reason: str) -> None:
+        self._pause_requested = False
+        self._paused = True
+        self._persist_pause_state()
+        logger.info("Agent[%s].run：%s", self.name, log_reason)
+        self._on_paused()
+
+    async def _finalize_memory_manager_reset(self) -> None:
+        summary_task = self._memory_manager_summary_task
+        if summary_task is not None and not summary_task.done():
+            try:
+                await summary_task
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.exception(
+                    "Agent[%s] 等待 memory_manager_summary_task 时失败，仍继续 reset_context：%s: %s",
+                    self.name,
+                    type(exc).__name__,
+                    exc,
+                )
+
+        await self._run_memory_manager_summary_before_reset()
+        logger.info("Agent[%s] 开始 reset_context", self.name)
+        self._reset_context()
+
+    async def _handle_memory_manager_reset_request(self) -> None:
+        self.request_pause()
+        await self._wait_until_worker_paused_for_reset()
+        await self._finalize_memory_manager_reset()
 
     async def _maybe_wake_memory_manager(self) -> None:
         conversation_store = self._require_conversation_store()
         context_limit = self._token_counter.context_window(self._model_config.model)
-        current_tokens, _is_estimate = self._token_counter.count_messages_tokens(self._model_config.model, self._messages)
+        current_tokens, _is_estimate = self._token_counter.count_messages_tokens(self._model_config.model,
+                                                                                 self._messages)
         last_triggered_threshold = conversation_store.memory_manager_last_triggered_threshold
 
         used_percent = int(current_tokens * 100 / context_limit)
-        current_threshold = (used_percent // MEMORY_MANAGER_CONTEXT_USED_THRESHOLD_STEP_PERCENT) * MEMORY_MANAGER_CONTEXT_USED_THRESHOLD_STEP_PERCENT
+        current_threshold = (
+                                        used_percent // MEMORY_MANAGER_CONTEXT_USED_THRESHOLD_STEP_PERCENT) * MEMORY_MANAGER_CONTEXT_USED_THRESHOLD_STEP_PERCENT
         if current_threshold <= last_triggered_threshold:
             return
 
@@ -377,11 +468,7 @@ class Agent(AgentBase):
                     awaken_round=summary_round,
                 )
             )
-            self._observe_background_task_exceptions(
-                task=summary_task,
-                task_name="memory_manager_summary_task",
-                agent_name=self.name,
-            )
+            self._attach_memory_manager_summary_task_callbacks(task=summary_task)
             self._memory_manager_summary_task = summary_task
             self._append_runtime_message({"role": "user", "content": WAKE_MM_SUMMARY_FLAG})
             self._memory_manager_summary_awaken_count = summary_round
@@ -407,36 +494,12 @@ class Agent(AgentBase):
                     awaken_round=judge_round,
                 )
             )
+            self._attach_memory_manager_judge_result_handler(task=self._memory_manager_judge_task)
             judge_task = self._memory_manager_judge_task
             self._memory_manager_judge_awaken_count = judge_round
             self._persist_memory_manager_state()
         if judge_task is None:
             logger.warning("memory manager judge task 未初始化，本次跳过 judge")
-            return
-        should_reset_context = await judge_task
-        logger.info("Agent[%s] memory manager judge 结果（should_reset_context=%s）", self.name, should_reset_context)
-        if should_reset_context:
-            # 这里不需要额外 request_pause()：
-            # 当前 run() 正在 await _maybe_wake_memory_manager()，后面的 drain queue / 下一轮 stream 都不会继续执行；
-            # 同时 AgentRunner 会防止并发 run()，summary/judge 也只操作快照，不会回写 self._messages。
-            # 所以从这里开始到 reset 完成，worker messages 已经处于“隐式冻结”状态。
-            summary_task = self._memory_manager_summary_task
-            if summary_task is not None and not summary_task.done():
-                try:
-                    await summary_task
-                except asyncio.CancelledError:
-                    raise
-                except Exception as exc:
-                    # reset_context 的用户体验优先于 summary 完整性；summary 失败只打日志，不阻断主流程。
-                    logger.exception(
-                        "Agent[%s] 等待 memory_manager_summary_task 时失败，仍继续 reset_context：%s: %s",
-                        self.name,
-                        type(exc).__name__,
-                        exc,
-                    )
-            await self._run_memory_manager_summary_before_reset()
-            logger.info("Agent[%s] 开始 reset_context", self.name)
-            self._reset_context()
 
     async def _run_memory_manager_summary_before_reset(self) -> None:
         if not any(message.get("content") == WAKE_MM_SUMMARY_FLAG for message in self._messages):
@@ -473,7 +536,6 @@ class Agent(AgentBase):
                 type(exc).__name__,
                 exc,
             )
-
 
     def _append_runtime_message(self, message: dict[str, Any]) -> None:
         # 这个函数被用的地方都是在 run 函数的后方，
@@ -530,9 +592,11 @@ class Agent(AgentBase):
         # 下一轮 run() 里会立刻再次触发 memory manager 唤醒（因为 used_percent 可能依然很高），
         # 造成同一轮里重复唤醒/甚至重复 reset 的“抖动”。
         context_limit = self._token_counter.context_window(self._model_config.model)
-        current_tokens, _is_estimate = self._token_counter.count_messages_tokens(self._model_config.model, self._messages)
+        current_tokens, _is_estimate = self._token_counter.count_messages_tokens(self._model_config.model,
+                                                                                 self._messages)
         used_percent = int(current_tokens * 100 / context_limit)
-        current_threshold = (used_percent // MEMORY_MANAGER_CONTEXT_USED_THRESHOLD_STEP_PERCENT) * MEMORY_MANAGER_CONTEXT_USED_THRESHOLD_STEP_PERCENT
+        current_threshold = (
+                                        used_percent // MEMORY_MANAGER_CONTEXT_USED_THRESHOLD_STEP_PERCENT) * MEMORY_MANAGER_CONTEXT_USED_THRESHOLD_STEP_PERCENT
         conversation_store.update_memory_manager_last_triggered_threshold(last_triggered_threshold=current_threshold)
         self._persist_pause_state()
         self._notify_switch_conversation(messages=self._messages)
@@ -547,75 +611,63 @@ class Agent(AgentBase):
             # 否则会进入 _append_runtime_message -> ConversationStore.append_message，最终抛出更隐晦的异常。
             raise RuntimeError("conversation 尚未开始：没有待处理的 user message，请先 enqueue_user_message()")
 
-        while True:
-            logger.info(
-                "Agent[%s].run：开始模型调用（messages=%s tools=%s paused=%s pause_requested=%s）",
-                self.name,
-                len(self._messages),
-                len(self._tools),
-                self._paused,
-                self._pause_requested,
-            )
-            ai_msg_dict = await self._safe_stream(model_config=self._model_config,
-                                                  messages=self._messages,
-                                                  tools=self._tools,
-                                                  on_ai_content_delta=self._on_ai_content_delta,
-                                                  on_ai_reasoning_delta=self._on_ai_reasoning_delta,
-                                                  on_ai_tool_call_started=self._on_ai_tool_call_started,
-                                                  on_ai_tool_call_arguments_delta=self._on_ai_tool_call_arguments_delta,
-                                                  on_ai_tool_call_finished=self._on_ai_tool_call_finished,
-                                                  )
-            # 这个判断条件对应 _safe_stream 中的：“agent被突然中断
-            # 导致 message 数组最后一个可能是 AI message with tool call”
-            # todo 这个_safe_stream应该能设计得更好一点？比如改成 _safe_steam_and_append?
-            if ai_msg_dict is not self._messages[-1]:
-                self._append_runtime_message(ai_msg_dict)
-            if not ai_msg_dict.get("tool_calls"):
-                # 即使本轮没有工具调用，也需要按上下文阈值唤醒 memory manager，
-                # 否则“纯聊天”场景永远不会触发摘要/重置判断。
+        self._run_in_progress = True
+        try:
+            while True:
+                logger.info(
+                    "Agent[%s].run：开始模型调用（messages=%s tools=%s paused=%s pause_requested=%s）",
+                    self.name,
+                    len(self._messages),
+                    len(self._tools),
+                    self._paused,
+                    self._pause_requested,
+                )
+                ai_msg_dict = await self._safe_stream(model_config=self._model_config,
+                                                      messages=self._messages,
+                                                      tools=self._tools,
+                                                      on_ai_content_delta=self._on_ai_content_delta,
+                                                      on_ai_reasoning_delta=self._on_ai_reasoning_delta,
+                                                      on_ai_tool_call_started=self._on_ai_tool_call_started,
+                                                      on_ai_tool_call_arguments_delta=self._on_ai_tool_call_arguments_delta,
+                                                      on_ai_tool_call_finished=self._on_ai_tool_call_finished,
+                                                      )
+                # 这个判断条件对应 _safe_stream 中的：“agent被突然中断
+                # 导致 message 数组最后一个可能是 AI message with tool call”
+                # todo 这个_safe_stream应该能设计得更好一点？比如改成 _safe_steam_and_append?
+                if ai_msg_dict is not self._messages[-1]:
+                    self._append_runtime_message(ai_msg_dict)
+                if not ai_msg_dict.get("tool_calls"):
+                    # 即使本轮没有工具调用，也需要按上下文阈值唤醒 memory manager，
+                    # 否则“纯聊天”场景永远不会触发摘要/重置判断。
+                    await self._maybe_wake_memory_manager()
+                    if self._pause_requested:
+                        # 为了让“暂停”在有pending user message的场景下也可靠生效：
+                        # 即使本轮没有 tool_calls，只要本轮模型调用已经结束，
+                        # 我们也要在回合边界暂停，阻止 runner 立刻进入下一轮模型调用。
+                        self._enter_paused_state(log_reason="在回合边界进入 paused")
+                    return ai_msg_dict
+
+                logger.info("Agent[%s].run：收到 tool_calls（n=%s）", self.name, len(ai_msg_dict.get("tool_calls") or []))
+                tool_messages = await execute_tool_calls(ai_msg_dict=ai_msg_dict, tools=self._tools,
+                                                         on_tool_result=self._on_tool_result)
+                for tool_message in tool_messages:
+                    self._append_runtime_message(tool_message)
+
+                # 在这里maybe wake memory manager，最后一条msg是tool result msg
+                # 这个格式是合法的，可以在这个基础上跑 summary、judge任务
                 await self._maybe_wake_memory_manager()
                 if self._pause_requested:
-                    # 为了让“暂停”在有pending user message的场景下也可靠生效：
-                    # 即使本轮没有 tool_calls，只要本轮模型调用已经结束，
-                    # 我们也要在回合边界暂停，阻止 runner 立刻进入下一轮模型调用。
-                    self._pause_requested = False
-                    self._paused = True
-                    self._persist_pause_state()
-                    logger.info("Agent[%s].run：在回合边界进入 paused", self.name)
-                    self._on_paused()
-                return ai_msg_dict
+                    # 用户点击暂停，可能是想看一会，然后恢复运行之前，还要输入一些内容，
+                    # 所以暂停检查点应该在 drain user msg 之前。
+                    # 同时必须在 tool_messages 已经 append/persist 且 memory manager 唤醒结束之后，
+                    # 否则会造成“用户看到了工具结果，但 memory manager 状态没有同步”的错觉。
+                    self._enter_paused_state(log_reason="在工具执行后进入 paused")
+                    return ai_msg_dict
 
-            logger.info(
-                "Agent[%s].run：收到 tool_calls（n=%s）",
-                self.name,
-                len(ai_msg_dict.get("tool_calls") or []),
-            )
-            tool_messages = await execute_tool_calls(
-                ai_msg_dict=ai_msg_dict,
-                tools=self._tools,
-                on_tool_result=self._on_tool_result,
-            )
-            for tool_message in tool_messages:
-                self._append_runtime_message(tool_message)
-
-            # 在这里maybe wake memory manager，最后一条msg是tool result msg
-            # 这个格式是合法的，可以在这个基础上跑 summary、judge任务
-            await self._maybe_wake_memory_manager()
-
-            if self._pause_requested:
-                # 用户点击暂停，可能是想看一会，然后恢复运行之前，还要输入一些内容，
-                # 所以暂停检查点应该在 drain user msg 之前。
-                # 同时必须在 tool_messages 已经 append/persist 且 memory manager 唤醒结束之后，
-                # 否则会造成“用户看到了工具结果，但 memory manager 状态没有同步”的错觉。
-                self._pause_requested = False
-                self._paused = True
-                self._persist_pause_state()
-                logger.info("Agent[%s].run：在工具执行后进入 paused", self.name)
-                self._on_paused()
-                return ai_msg_dict
-
-            # steer message 注入点。在执行完toolcall后注入最符合直觉
-            # 另外注意，我们是在 memory manager reset-context 之后才注入，
-            # 因为上下文越精简，ai表现越好，reset context的优先级应高于steer conversation
-            self._safe_drain_user_message_queue()
-            continue
+                # steer message 注入点。在执行完toolcall后注入最符合直觉
+                # 另外注意，我们是在 memory manager reset-context 之后才注入，
+                # 因为上下文越精简，ai表现越好，reset context的优先级应高于steer conversation
+                self._safe_drain_user_message_queue()
+                continue
+        finally:
+            self._run_in_progress = False
