@@ -3,6 +3,7 @@ import os
 import json
 from collections.abc import AsyncIterable, Sequence
 from typing import Any, Protocol, cast
+from dataclasses import dataclass
 from litellm import acompletion
 
 from src.core.model_config import ModelConfig
@@ -47,6 +48,19 @@ class OnAiToolCallFinished(Protocol):
             tool_name: str | None,
             arguments: str,
     ) -> None: ...
+
+
+@dataclass(frozen=True)
+class TurnUsage:
+    prompt_tokens: int | None = None
+    completion_tokens: int | None = None
+    total_tokens: int | None = None
+
+
+@dataclass(frozen=True)
+class TurnResult:
+    assistant_message: dict[str, Any]
+    usage: TurnUsage
 
 
 
@@ -230,7 +244,7 @@ async def _stream_with_codex(*,
                              on_ai_reasoning_delta: OnAiReasoningDelta,
                              on_ai_tool_call_started: OnAiToolCallStarted,
                              on_ai_tool_call_arguments_delta: OnAiToolCallArgumentsDelta,
-                             on_ai_tool_call_finished: OnAiToolCallFinished) -> dict[str, Any]:
+                             on_ai_tool_call_finished: OnAiToolCallFinished) -> TurnResult:
     from src.pkg.handrolled_codex.client import CodexClient
 
     client = CodexClient(base_url=model_config.base_url)
@@ -263,6 +277,7 @@ async def _stream_with_codex(*,
         on_reasoning_delta=lambda delta: on_ai_reasoning_delta(reasoning_delta=delta),
         on_tool_call_delta=_on_tool_call_delta,
     )
+    usage = _extract_turn_usage(assistant_message.pop("usage", None))
 
     _merge_final_tool_calls_into_indexed_aggregation(
         tool_calls_by_index=tool_calls_by_index,
@@ -275,7 +290,7 @@ async def _stream_with_codex(*,
         on_ai_tool_call_started=on_ai_tool_call_started,
         on_ai_tool_call_finished=on_ai_tool_call_finished,
     )
-    return assistant_message
+    return TurnResult(assistant_message=assistant_message, usage=usage)
 
 
 def _build_litellm_completion_kwargs(*,
@@ -289,7 +304,18 @@ def _build_litellm_completion_kwargs(*,
         "api_base": model_config.base_url,
         "api_key": model_config.api_key,
         "stream": True,
+        "stream_options": {"include_usage": True},
     }
+
+
+def _extract_turn_usage(raw_usage: Any) -> TurnUsage:
+    if raw_usage is None:
+        return TurnUsage()
+    return TurnUsage(
+        prompt_tokens=_get_field(raw_usage, "prompt_tokens"),
+        completion_tokens=_get_field(raw_usage, "completion_tokens"),
+        total_tokens=_get_field(raw_usage, "total_tokens"),
+    )
 
 
 def _handle_litellm_delta(*,
@@ -345,7 +371,7 @@ async def _stream_with_litellm(*,
                                on_ai_reasoning_delta: OnAiReasoningDelta,
                                on_ai_tool_call_started: OnAiToolCallStarted,
                                on_ai_tool_call_arguments_delta: OnAiToolCallArgumentsDelta,
-                               on_ai_tool_call_finished: OnAiToolCallFinished) -> dict[str, Any]:
+                               on_ai_tool_call_finished: OnAiToolCallFinished) -> TurnResult:
     completion_kwargs = _build_litellm_completion_kwargs(
         model_config=model_config,
         messages=messages,
@@ -357,9 +383,14 @@ async def _stream_with_litellm(*,
     tool_calls_by_index: dict[int, dict[str, Any]] = {}
     started_tool_call_indexes: set[int] = set()
     assistant_role = "assistant"
+    usage = TurnUsage()
 
     response_stream = cast(AsyncIterable[Any], await acompletion(**completion_kwargs))
     async for chunk in response_stream:
+        chunk_usage = _get_field(chunk, "usage")
+        if chunk_usage is not None:
+            usage = _extract_turn_usage(chunk_usage)
+
         choices = _get_field(chunk, "choices", [])
         if not choices:
             continue
@@ -404,7 +435,7 @@ async def _stream_with_litellm(*,
     if reasoning_parts:
         assistant_message["reasoning_content"] = "".join(reasoning_parts)
 
-    return assistant_message
+    return TurnResult(assistant_message=assistant_message, usage=usage)
 
 
 async def stream(*, model_config: ModelConfig,
@@ -414,7 +445,7 @@ async def stream(*, model_config: ModelConfig,
                  on_ai_reasoning_delta: OnAiReasoningDelta,
                  on_ai_tool_call_started: OnAiToolCallStarted,
                  on_ai_tool_call_arguments_delta: OnAiToolCallArgumentsDelta,
-                 on_ai_tool_call_finished: OnAiToolCallFinished) -> dict[str, Any]:
+                 on_ai_tool_call_finished: OnAiToolCallFinished) -> TurnResult:
     if model_config.provider == "openai-codex":
         return await _stream_with_codex(
             model_config=model_config,
@@ -441,10 +472,13 @@ async def stream(*, model_config: ModelConfig,
 
         content = "（mock 回复）"
         on_ai_content_delta(content_delta=content)
-        return {
-            "role": "assistant",
-            "content": content,
-        }
+        return TurnResult(
+            assistant_message={
+                "role": "assistant",
+                "content": content,
+            },
+            usage=TurnUsage(),
+        )
 
     return await _stream_with_litellm(
         model_config=model_config,

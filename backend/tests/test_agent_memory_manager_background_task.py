@@ -6,19 +6,8 @@ from unittest import mock
 
 from src.core.agent import Agent
 from src.conversation_store import ConversationStore
+from src.core.agent_turn import TurnUsage
 from src.core.model_config import ModelConfig
-
-
-class _FakeTokenCounter:
-    def __init__(self, *, context_window: int = 100, token_per_message: int = 10) -> None:
-        self._context_window = context_window
-        self._token_per_message = token_per_message
-
-    def context_window(self, model: str) -> int:  # noqa: ARG002
-        return self._context_window
-
-    def count_messages_tokens(self, model: str, messages: list[dict[str, object]]) -> tuple[int, bool]:  # noqa: ARG002
-        return len(messages) * self._token_per_message, True
 
 
 class _BlockingSummaryRunner:
@@ -57,7 +46,6 @@ class AgentMemoryManagerBackgroundTaskTests(unittest.IsolatedAsyncioTestCase):
                     model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
                     init_messages=[{"role": "user", "content": "user instruction"}],
                     tools=[],
-                    token_counter=_FakeTokenCounter(),
                 )
                 agent.start_conversation()
                 agent.enqueue_user_message(frontend_msg_id="1", user_message="hi")
@@ -68,7 +56,7 @@ class AgentMemoryManagerBackgroundTaskTests(unittest.IsolatedAsyncioTestCase):
                 agent._memory_manager_judge_runner.run = mock.AsyncMock(return_value=False)  # type: ignore[method-assign]
 
                 with mock.patch("src.core.agent.logger") as fake_logger:
-                    await agent._maybe_wake_memory_manager()
+                    await agent._maybe_wake_memory_manager(prompt_tokens=10_000)
                     await asyncio.sleep(0)
                     await asyncio.sleep(0)
 
@@ -86,7 +74,6 @@ class AgentMemoryManagerBackgroundTaskTests(unittest.IsolatedAsyncioTestCase):
                     model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
                     init_messages=[{"role": "user", "content": "user instruction"}],
                     tools=[],
-                    token_counter=_FakeTokenCounter(),
                 )
                 agent.start_conversation()
                 agent.enqueue_user_message(frontend_msg_id="1", user_message="hi")
@@ -98,7 +85,7 @@ class AgentMemoryManagerBackgroundTaskTests(unittest.IsolatedAsyncioTestCase):
                 agent._memory_manager_summary_runner = summary_runner
                 agent._memory_manager_judge_runner = judge_runner
 
-                await agent._maybe_wake_memory_manager()
+                await agent._maybe_wake_memory_manager(prompt_tokens=10_000)
                 await asyncio.sleep(0)
 
                 self.assertTrue(summary_runner.started.is_set())
@@ -125,7 +112,6 @@ class AgentMemoryManagerBackgroundTaskTests(unittest.IsolatedAsyncioTestCase):
                     init_messages=[{"role": "user", "content": "user instruction"}],
                     tools=[],
                     on_paused=lambda: paused_events.append("paused"),
-                    token_counter=_FakeTokenCounter(),
                 )
                 agent.start_conversation()
                 agent.enqueue_user_message(frontend_msg_id="1", user_message="hi")
@@ -139,7 +125,7 @@ class AgentMemoryManagerBackgroundTaskTests(unittest.IsolatedAsyncioTestCase):
                 agent._reset_context = lambda: (reset_observations.append(agent.is_paused()), original_reset_context())[-1]  # type: ignore[method-assign]
 
                 with mock.patch("src.core.init_prompts.build_init_messages", return_value=[{"role": "user", "content": "reset init"}]):
-                    await agent._maybe_wake_memory_manager()
+                    await agent._maybe_wake_memory_manager(prompt_tokens=10_000)
                     judge_runner.allow_finish.set()
                     await asyncio.sleep(0)
                     await asyncio.sleep(0.1)

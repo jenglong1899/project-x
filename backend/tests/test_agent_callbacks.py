@@ -10,20 +10,8 @@ from unittest import mock
 from src.conversation_store import ConversationStore
 from src.commons import WAKE_MM_SUMMARY_FLAG
 from src.core.agent import Agent
-from src.core.agent_turn import Tool, execute_tool_calls
+from src.core.agent_turn import Tool, TurnResult, TurnUsage, execute_tool_calls
 from src.core.model_config import ModelConfig
-
-
-class _FakeTokenCounter:
-    def __init__(self, *, context_window: int = 100, token_per_message: int = 10) -> None:
-        self._context_window = context_window
-        self._token_per_message = token_per_message
-
-    def context_window(self, model: str) -> int:  # noqa: ARG002
-        return self._context_window
-
-    def count_messages_tokens(self, model: str, messages: list[dict[str, object]]) -> tuple[int, bool]:  # noqa: ARG002
-        return len(messages) * self._token_per_message, True
 
 
 async def _echo_handler(*, arguments: dict[str, object]) -> dict[str, object]:
@@ -120,9 +108,11 @@ async def _wait_for_memory_manager_reset_task(agent: Agent) -> None:
         return
 
 
-def _threshold_for_messages(*, message_count: int, context_window: int, token_per_message: int) -> int:
-    used_percent = int(message_count * token_per_message * 100 / context_window)
-    return (used_percent // 3) * 3
+def _turn_result(message: dict[str, object], *, prompt_tokens: int | None = None) -> TurnResult:
+    return TurnResult(
+        assistant_message=message,
+        usage=TurnUsage(prompt_tokens=prompt_tokens),
+    )
 
 
 @contextmanager
@@ -400,8 +390,13 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                 with mock.patch.object(
                     Agent,
                     "_safe_stream",
-                    new=mock.AsyncMock(side_effect=[ai_msg_with_tool_call, final_ai_msg]),
-                ):
+                    new=mock.AsyncMock(
+                        side_effect=[
+                            _turn_result(ai_msg_with_tool_call, prompt_tokens=10_000),
+                            _turn_result(final_ai_msg, prompt_tokens=10_000),
+                        ]
+                    ),
+                ), mock.patch.object(Agent, "_maybe_wake_memory_manager", new=mock.AsyncMock()):
                     result = await agent.run()
 
                 stored_files = list(Path(temp_dir).glob("*.json"))
@@ -479,7 +474,6 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     init_messages=[{"role": "user", "content": "user-1"}],
                     tools=[self._echo_tool()],
                     on_switch_conversation=lambda *, visible_messages: switch_events.append(visible_messages),
-                    token_counter=_FakeTokenCounter(),
                 )
                 agent._memory_manager_summary_runner = summary_runner
                 agent._memory_manager_judge_runner = judge_runner
@@ -501,7 +495,12 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                 with mock.patch.object(
                     Agent,
                     "_safe_stream",
-                    new=mock.AsyncMock(side_effect=[ai_msg_with_tool_call, final_ai_msg]),
+                    new=mock.AsyncMock(
+                        side_effect=[
+                            _turn_result(ai_msg_with_tool_call, prompt_tokens=10_000),
+                            _turn_result(final_ai_msg, prompt_tokens=10_000),
+                        ]
+                    ),
                 ), mock.patch(
                     "src.core.init_prompts.build_init_messages",
                     return_value=[{"role": "user", "content": "user-2"}],
@@ -534,7 +533,6 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
                     init_messages=[{"role": "user", "content": "user"}],
                     tools=[self._echo_tool()],
-                    token_counter=_FakeTokenCounter(context_window=100, token_per_message=1),
                 )
                 agent._memory_manager_summary_runner = summary_runner
                 agent._memory_manager_judge_runner = judge_runner
@@ -547,7 +545,8 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                 # current_threshold=0；将 last_triggered_threshold 设为 0，确保不会被唤醒。
                 store.update_memory_manager_last_triggered_threshold(last_triggered_threshold=0)
 
-                await agent._maybe_wake_memory_manager()
+                with mock.patch("src.core.agent.get_model_context_window_tokens", return_value=100):
+                    await agent._maybe_wake_memory_manager(prompt_tokens=2)
 
         self.assertEqual(summary_runner.calls, [])
         self.assertEqual(judge_runner.calls, [])
@@ -565,7 +564,6 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
                     init_messages=[{"role": "user", "content": "user"}],
                     tools=[self._echo_tool()],
-                    token_counter=_FakeTokenCounter(context_window=100, token_per_message=10),
                 )
                 agent._memory_manager_summary_runner = summary_runner
                 agent._memory_manager_judge_runner = judge_runner
@@ -589,8 +587,13 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                 with mock.patch.object(
                     Agent,
                     "_safe_stream",
-                    new=mock.AsyncMock(side_effect=[*ai_msgs_with_tool_call, final_ai_msg]),
-                ):
+                    new=mock.AsyncMock(
+                        side_effect=[
+                            _turn_result(ai_msgs_with_tool_call[0], prompt_tokens=10),
+                            _turn_result(final_ai_msg, prompt_tokens=10),
+                        ]
+                    ),
+                ), mock.patch("src.core.agent.get_model_context_window_tokens", return_value=100):
                     agent.enqueue_user_message(frontend_msg_id="u1", user_message="hello")
                     agent._safe_drain_user_message_queue()
                     result = await agent.run()
@@ -616,7 +619,6 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     init_messages=[{"role": "user", "content": "user-1"}],
                     tools=[self._echo_tool()],
                     on_switch_conversation=lambda *, visible_messages: switch_events.append(visible_messages),
-                    token_counter=_FakeTokenCounter(),
                 )
                 agent._memory_manager_summary_runner = summary_runner
                 agent._memory_manager_judge_runner = judge_runner
@@ -638,7 +640,12 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                 with mock.patch.object(
                     Agent,
                     "_safe_stream",
-                    new=mock.AsyncMock(side_effect=[ai_msg_with_tool_call, final_ai_msg]),
+                    new=mock.AsyncMock(
+                        side_effect=[
+                            _turn_result(ai_msg_with_tool_call, prompt_tokens=10_000),
+                            _turn_result(final_ai_msg, prompt_tokens=10_000),
+                        ]
+                    ),
                 ), mock.patch(
                     "src.core.init_prompts.build_init_messages",
                     return_value=[{"role": "user", "content": "user-2"}],
@@ -671,7 +678,6 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
                     init_messages=[{"role": "user", "content": "user-1"}],
                     tools=[self._echo_tool()],
-                    token_counter=_FakeTokenCounter(),
                 )
                 agent._memory_manager_summary_runner = summary_runner
                 agent._memory_manager_judge_runner = judge_runner
@@ -696,7 +702,13 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                 with mock.patch.object(
                     Agent,
                     "_safe_stream",
-                    new=mock.AsyncMock(side_effect=[*ai_msgs_with_tool_call, final_ai_msg]),
+                    new=mock.AsyncMock(
+                        side_effect=[
+                            _turn_result(ai_msgs_with_tool_call[0], prompt_tokens=10_000),
+                            _turn_result(ai_msgs_with_tool_call[1], prompt_tokens=10_000),
+                            _turn_result(final_ai_msg, prompt_tokens=10_000),
+                        ]
+                    ),
                 ):
                     agent.enqueue_user_message(frontend_msg_id="u1", user_message="hello")
                     agent._safe_drain_user_message_queue()
@@ -726,7 +738,6 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
                     init_messages=[{"role": "user", "content": "user-1"}],
                     tools=[self._echo_tool()],
-                    token_counter=_FakeTokenCounter(),
                 )
                 agent._memory_manager_summary_runner = summary_runner
                 agent._memory_manager_judge_runner = judge_runner

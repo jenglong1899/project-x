@@ -434,6 +434,7 @@ class CodexClient:
         content_parts: list[str] = []
         reasoning_parts: list[str] = []
         output_items: list[dict[str, Any]] = []
+        usage: dict[str, Any] | None = None
         tool_call_index_by_id: dict[str, int] = {}
         next_tool_call_index = 0
 
@@ -537,6 +538,9 @@ class CodexClient:
                                     output = response_obj.get("output")
                                     if isinstance(output, list) and output:
                                         output_items = [o for o in output if isinstance(o, dict)]
+                                    raw_usage = response_obj.get("usage")
+                                    if isinstance(raw_usage, dict):
+                                        usage = raw_usage
                                 break
                 break
             except (
@@ -619,4 +623,6 @@ class CodexClient:
             assistant_msg["tool_calls"] = tool_calls
         if reasoning_parts:
             assistant_msg["reasoning_content"] = "".join(reasoning_parts)
+        if usage is not None:
+            assistant_msg["usage"] = usage
         return assistant_msg

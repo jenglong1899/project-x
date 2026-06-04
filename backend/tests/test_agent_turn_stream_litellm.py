@@ -95,7 +95,7 @@ class AgentTurnStreamLiteLLMTests(unittest.IsolatedAsyncioTestCase):
             return _gen()
 
         with mock.patch("src.core.agent_turn.acompletion", _fake_acompletion):
-            msg = await stream(
+            result = await stream(
                 model_config=model_config,
                 messages=[{"role": "user", "content": "x"}],
                 tools=[self._echo_tool()],
@@ -111,10 +111,12 @@ class AgentTurnStreamLiteLLMTests(unittest.IsolatedAsyncioTestCase):
                     (index, tool_call_id, tool_name, arguments)
                 ),
             )
+        msg = result.assistant_message
 
         self.assertEqual(msg["role"], "assistant")
         self.assertEqual(msg["content"], "hi")
         self.assertEqual(msg["reasoning_content"], "r1")
+        self.assertIsNone(result.usage.prompt_tokens)
 
         self.assertIn("tool_calls", msg)
         tool_calls = msg["tool_calls"]

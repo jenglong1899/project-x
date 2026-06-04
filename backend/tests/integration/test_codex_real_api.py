@@ -108,7 +108,7 @@ def test_codex_real_api_tool_call_roundtrip() -> None:
         def _noop(*args, **kwargs) -> None:
             return None
 
-        first_ai = await stream(
+        first_turn_result = await stream(
             model_config=model_config,
             messages=messages,
             tools=tools,
@@ -118,6 +118,7 @@ def test_codex_real_api_tool_call_roundtrip() -> None:
             on_ai_tool_call_arguments_delta=_noop,
             on_ai_tool_call_finished=_noop,
         )
+        first_ai = first_turn_result.assistant_message
 
         tool_calls = first_ai.get("tool_calls") or []
         if not isinstance(tool_calls, list) or not tool_calls:
@@ -132,7 +133,7 @@ def test_codex_real_api_tool_call_roundtrip() -> None:
         messages.extend(tool_messages)
 
         second_content_deltas: list[str] = []
-        second_ai = await stream(
+        second_turn_result = await stream(
             model_config=model_config,
             messages=messages,
             tools=tools,
@@ -142,6 +143,7 @@ def test_codex_real_api_tool_call_roundtrip() -> None:
             on_ai_tool_call_arguments_delta=_noop,
             on_ai_tool_call_finished=_noop,
         )
+        second_ai = second_turn_result.assistant_message
 
         final_text = str(second_ai.get("content") or "").strip()
         assert final_text == "TOOL_RESULT: ping"

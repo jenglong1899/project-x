@@ -1,15 +1,19 @@
 import asyncio
+import json
 import logging
 from collections import deque
 from typing import Any, Protocol
 from dataclasses import dataclass
+from math import ceil
 
-from src.commons import noop
+from src.commons import get_model_context_window_tokens, noop
 from src.conversation_store import ConversationStore
 from src.core.agent_base import AgentBase, DriveDecision, DriveReason
 from src.core.agent_turn import (
     stream,
     execute_tool_calls,
+    TurnResult,
+    TurnUsage,
     OnAiContentDelta,
     OnAiReasoningDelta,
     OnAiToolCallStarted,
@@ -24,7 +28,6 @@ from src.core.memory_manager import (
     MemoryManagerSummaryRunner,
 )
 from src.core.model_config import ModelConfig
-from src.pkg.token_counter import TokenCounter
 from src.toolkits import build_memory_manager_summary_tools
 
 MEMORY_MANAGER_CONTEXT_USED_THRESHOLD_STEP_PERCENT = 3
@@ -79,7 +82,6 @@ class Agent(AgentBase):
                  on_pause_requested: OnPauseRequested | None = None,
                  on_paused: OnPaused | None = None,
                  on_resumed: OnResumed | None = None,
-                 token_counter: TokenCounter | None = None,
                  ) -> None:
         self.name = name
         self._model_config = model_config
@@ -111,7 +113,6 @@ class Agent(AgentBase):
         self._memory_manager_judge_task: asyncio.Task[bool] | None = None
         self._memory_manager_summary_awaken_count = 0
         self._memory_manager_judge_awaken_count = 0
-        self._token_counter = token_counter or TokenCounter()
         self._pause_requested = False
         self._paused = False
         self._run_in_progress = False
@@ -422,11 +423,28 @@ class Agent(AgentBase):
         await self._wait_until_worker_paused_for_reset()
         await self._finalize_memory_manager_reset()
 
-    async def _maybe_wake_memory_manager(self) -> None:
+    @staticmethod
+    def _estimate_prompt_tokens_from_messages(messages: list[dict[str, Any]]) -> int:
+        packed = json.dumps(messages, ensure_ascii=False, separators=(",", ":"))
+        return ceil(len(packed.encode("utf-8")) / 4)
+
+    def _resolve_prompt_tokens(self, *, usage: TurnUsage) -> int:
+        prompt_tokens = usage.prompt_tokens
+        if prompt_tokens is not None:
+            return prompt_tokens
+
+        estimated_tokens = self._estimate_prompt_tokens_from_messages(self._messages)
+        logger.info(
+            "Agent[%s] 本轮缺少 usage.prompt_tokens，回退为本地估算（estimated_tokens=%s）",
+            self.name,
+            estimated_tokens,
+        )
+        return estimated_tokens
+
+    async def _maybe_wake_memory_manager(self, *, prompt_tokens: int) -> None:
         conversation_store = self._require_conversation_store()
-        context_limit = self._token_counter.context_window(self._model_config.model)
-        current_tokens, _is_estimate = self._token_counter.count_messages_tokens(self._model_config.model,
-                                                                                 self._messages)
+        context_limit = get_model_context_window_tokens(model=self._model_config.model)
+        current_tokens = prompt_tokens
         last_triggered_threshold = conversation_store.memory_manager_last_triggered_threshold
 
         used_percent = int(current_tokens * 100 / context_limit)
@@ -551,15 +569,15 @@ class Agent(AgentBase):
                            on_ai_reasoning_delta: OnAiReasoningDelta,
                            on_ai_tool_call_started: OnAiToolCallStarted,
                            on_ai_tool_call_arguments_delta: OnAiToolCallArgumentsDelta,
-                           on_ai_tool_call_finished: OnAiToolCallFinished) -> dict[str, Any]:
+                           on_ai_tool_call_finished: OnAiToolCallFinished) -> TurnResult:
         """
-        :return: ai message dict
+        :return: 单轮模型结果
         """
         # 如果 Agent 之前正在运行，然后结果突然被中断了，
         # 那就可能导致 message 数组最后一个可能是 AI message with tool call，
         # 这种情况下就应该再续上之前的对话，不应该再调用 stream 以获得 AI message 了
         if messages[-1] is not None and messages[-1].get("role") == "assistant" and messages[-1].get("tool_calls"):
-            return messages[-1]
+            return TurnResult(assistant_message=messages[-1], usage=TurnUsage())
 
         # 最后一条消息是user message
         return await stream(model_config=model_config, messages=messages,
@@ -588,16 +606,7 @@ class Agent(AgentBase):
         self._conversation_store = conversation_store
         self._messages = [dict(message) for message in self._init_messages]
         conversation_store.start_with_messages(messages=[])
-        # reset-context 会创建一份全新的 conversation 文件；如果不初始化阈值，
-        # 下一轮 run() 里会立刻再次触发 memory manager 唤醒（因为 used_percent 可能依然很高），
-        # 造成同一轮里重复唤醒/甚至重复 reset 的“抖动”。
-        context_limit = self._token_counter.context_window(self._model_config.model)
-        current_tokens, _is_estimate = self._token_counter.count_messages_tokens(self._model_config.model,
-                                                                                 self._messages)
-        used_percent = int(current_tokens * 100 / context_limit)
-        current_threshold = (
-                                        used_percent // MEMORY_MANAGER_CONTEXT_USED_THRESHOLD_STEP_PERCENT) * MEMORY_MANAGER_CONTEXT_USED_THRESHOLD_STEP_PERCENT
-        conversation_store.update_memory_manager_last_triggered_threshold(last_triggered_threshold=current_threshold)
+        conversation_store.update_memory_manager_last_triggered_threshold(last_triggered_threshold=0)
         self._persist_pause_state()
         self._notify_switch_conversation(messages=self._messages)
         self._on_resumed()
@@ -622,7 +631,7 @@ class Agent(AgentBase):
                     self._paused,
                     self._pause_requested,
                 )
-                ai_msg_dict = await self._safe_stream(model_config=self._model_config,
+                turn_result = await self._safe_stream(model_config=self._model_config,
                                                       messages=self._messages,
                                                       tools=self._tools,
                                                       on_ai_content_delta=self._on_ai_content_delta,
@@ -631,6 +640,7 @@ class Agent(AgentBase):
                                                       on_ai_tool_call_arguments_delta=self._on_ai_tool_call_arguments_delta,
                                                       on_ai_tool_call_finished=self._on_ai_tool_call_finished,
                                                       )
+                ai_msg_dict = turn_result.assistant_message
                 # 这个判断条件对应 _safe_stream 中的：“agent被突然中断
                 # 导致 message 数组最后一个可能是 AI message with tool call”
                 # todo 这个_safe_stream应该能设计得更好一点？比如改成 _safe_steam_and_append?
@@ -639,7 +649,9 @@ class Agent(AgentBase):
                 if not ai_msg_dict.get("tool_calls"):
                     # 即使本轮没有工具调用，也需要按上下文阈值唤醒 memory manager，
                     # 否则“纯聊天”场景永远不会触发摘要/重置判断。
-                    await self._maybe_wake_memory_manager()
+                    await self._maybe_wake_memory_manager(
+                        prompt_tokens=self._resolve_prompt_tokens(usage=turn_result.usage)
+                    )
                     if self._pause_requested:
                         # 为了让“暂停”在有pending user message的场景下也可靠生效：
                         # 即使本轮没有 tool_calls，只要本轮模型调用已经结束，
@@ -655,7 +667,9 @@ class Agent(AgentBase):
 
                 # 在这里maybe wake memory manager，最后一条msg是tool result msg
                 # 这个格式是合法的，可以在这个基础上跑 summary、judge任务
-                await self._maybe_wake_memory_manager()
+                await self._maybe_wake_memory_manager(
+                    prompt_tokens=self._resolve_prompt_tokens(usage=turn_result.usage)
+                )
                 if self._pause_requested:
                     # 用户点击暂停，可能是想看一会，然后恢复运行之前，还要输入一些内容，
                     # 所以暂停检查点应该在 drain user msg 之前。

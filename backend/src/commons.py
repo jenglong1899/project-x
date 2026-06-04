@@ -9,6 +9,14 @@ DEFAULT_WORKER_CWD = Path(os.getenv("PROJECT_X_DEFAULT_CWD", "~/x-space")).expan
 CWD_STATE_FILEPATH = BASE_ROOT / "cwd_state.json"
 MEMORIES_ROOT = Path(os.getenv("PROJECT_X_MEMORIES_ROOT", str(BASE_ROOT / "memories"))).expanduser()
 SUMMARIES_DIR = MEMORIES_ROOT / "summaries"
+DEFAULT_CONTEXT_WINDOW_TOKENS = 128_000
+MODEL_CONTEXT_WINDOWS: dict[str, int] = {
+    "openai-codex": 258_000,
+    "openai/deepseek-v4-flash": 1_000_000,
+    "openai/deepseek-v4-pro": 1_000_000,
+    "openai/qwen3.5-flash": 256_000,
+    "openai/qwen3.5-plus": 256_000,
+}
 
 # 用MD而不是FILENAME，是因为容易和FILEPATH弄混
 MEMORY_MAIN_MD = "MAIN.md"
@@ -63,3 +71,8 @@ def assert_allowed_summaries_write(*, caller_kind: ToolCallerKind, target_path: 
 
 def noop(*args: Any, **kwargs: Any) -> None:
     return None
+
+
+def get_model_context_window_tokens(*, model: str) -> int:
+    # todo: 对于没有识别出的模型，这里要打一个警告日志。
+    return MODEL_CONTEXT_WINDOWS.get(model, DEFAULT_CONTEXT_WINDOW_TOKENS)

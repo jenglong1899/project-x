@@ -45,6 +45,6 @@ def test_agent_turn_codex_uses_model_config_base_url(monkeypatch) -> None:
             on_ai_tool_call_finished=_noop,
         )
 
-    msg = asyncio.run(_run())
-    assert msg.get("content") == "ok"
+    turn_result = asyncio.run(_run())
+    assert turn_result.assistant_message.get("content") == "ok"
     assert captured["base_url"] == model_config.base_url
