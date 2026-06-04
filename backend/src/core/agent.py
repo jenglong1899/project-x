@@ -25,10 +25,10 @@ from src.tools.tool import Tool
 from src.commons import WAKE_MM_SUMMARY_FLAG
 from src.core.memory_manager import (
     MemoryManagerJudgeResetContextRunner,
-    MemoryManagerSummaryRunner,
+    MemoryManagerSummarizerRunner,
 )
 from src.core.model_config import ModelConfig
-from src.toolkits import build_memory_manager_summary_tools
+from src.toolkits import build_memory_manager_summarizer_tools
 
 MEMORY_MANAGER_CONTEXT_USED_THRESHOLD_STEP_PERCENT = 3
 
@@ -107,11 +107,11 @@ class Agent(AgentBase):
         self._on_resumed = on_resumed or noop
 
         self._user_msg_queue: deque[QueuedUserMessage] = deque()
-        self._memory_manager_summary_runner = MemoryManagerSummaryRunner()
+        self._memory_manager_summarizer_runner = MemoryManagerSummarizerRunner()
         self._memory_manager_judge_runner = MemoryManagerJudgeResetContextRunner()
-        self._memory_manager_summary_task: asyncio.Task[None] | None = None
+        self._memory_manager_summarizer_task: asyncio.Task[None] | None = None
         self._memory_manager_judge_task: asyncio.Task[bool] | None = None
-        self._memory_manager_summary_awaken_count = 0
+        self._memory_manager_summarizer_awaken_count = 0
         self._memory_manager_judge_awaken_count = 0
         self._pause_requested = False
         self._paused = False
@@ -145,7 +145,7 @@ class Agent(AgentBase):
         store = ConversationStore.load_from_conversation_file_name(conversation_file_name=conversation_file_name)
         messages = store.build_messages_from_history()
         self._init_messages = store.init_messages
-        self._memory_manager_summary_awaken_count = store.memory_manager_summary_awaken_count
+        self._memory_manager_summarizer_awaken_count = store.memory_manager_summarizer_awaken_count
         self._memory_manager_judge_awaken_count = store.memory_manager_judge_awaken_count
         self._pause_requested = store.pause_requested
         self._paused = store.paused
@@ -301,7 +301,7 @@ class Agent(AgentBase):
         if self._conversation_store is None:
             return
         self._conversation_store.update_memory_manager_state(
-            summary_awaken_count=self._memory_manager_summary_awaken_count,
+            summarizer_awaken_count=self._memory_manager_summarizer_awaken_count,
             judge_awaken_count=self._memory_manager_judge_awaken_count,
         )
 
@@ -336,10 +336,10 @@ class Agent(AgentBase):
 
         task.add_done_callback(_on_done)
 
-    def _attach_memory_manager_summary_task_callbacks(self, *, task: asyncio.Task[None]) -> None:
+    def _attach_memory_manager_summarizer_task_callbacks(self, *, task: asyncio.Task[None]) -> None:
         self._attach_background_task_exception_logger(
             task=task,
-            task_name="memory_manager_summary_task",
+            task_name="memory_manager_summarizer_task",
             agent_name=self.name,
         )
 
@@ -400,21 +400,21 @@ class Agent(AgentBase):
         self._on_paused()
 
     async def _finalize_memory_manager_reset(self) -> None:
-        summary_task = self._memory_manager_summary_task
-        if summary_task is not None and not summary_task.done():
+        summarizer_task = self._memory_manager_summarizer_task
+        if summarizer_task is not None and not summarizer_task.done():
             try:
-                await summary_task
+                await summarizer_task
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 logger.exception(
-                    "Agent[%s] 等待 memory_manager_summary_task 时失败，仍继续 reset_context：%s: %s",
+                    "Agent[%s] 等待 memory_manager_summarizer_task 时失败，仍继续 reset_context：%s: %s",
                     self.name,
                     type(exc).__name__,
                     exc,
                 )
 
-        await self._run_memory_manager_summary_before_reset()
+        await self._run_memory_manager_summarizer_before_reset()
         logger.info("Agent[%s] 开始 reset_context", self.name)
         self._reset_context()
 
@@ -465,38 +465,38 @@ class Agent(AgentBase):
         )
         conversation_store.update_memory_manager_last_triggered_threshold(last_triggered_threshold=current_threshold)
 
-        summary_task = self._memory_manager_summary_task
-        if summary_task is None or summary_task.done():
-            summary_round = self._memory_manager_summary_awaken_count + 1
+        summarizer_task = self._memory_manager_summarizer_task
+        if summarizer_task is None or summarizer_task.done():
+            summarizer_round = self._memory_manager_summarizer_awaken_count + 1
             worker_messages_snapshot = [dict(message) for message in self._messages]
-            summary_tools = build_memory_manager_summary_tools(provider=self._model_config.provider)
+            summarizer_tools = build_memory_manager_summarizer_tools(provider=self._model_config.provider)
             logger.info(
-                "Agent[%s] 启动 memory_manager_summary_task（round=%s messages=%s）",
+                "Agent[%s] 启动 memory_manager_summarizer_task（round=%s messages=%s）",
                 self.name,
-                summary_round,
+                summarizer_round,
                 len(worker_messages_snapshot),
             )
-            summary_task = asyncio.create_task(
-                self._memory_manager_summary_runner.run(
+            summarizer_task = asyncio.create_task(
+                self._memory_manager_summarizer_runner.run(
                     worker_messages=worker_messages_snapshot,
                     model_config=self._model_config,
-                    tools=summary_tools,
-                    is_first_time_awaken=self._memory_manager_summary_awaken_count == 0,
+                    tools=summarizer_tools,
+                    is_first_time_awaken=self._memory_manager_summarizer_awaken_count == 0,
                     conversation_file_name=conversation_store.conversation_file_name,
-                    awaken_round=summary_round,
+                    awaken_round=summarizer_round,
                 )
             )
-            self._attach_memory_manager_summary_task_callbacks(task=summary_task)
-            self._memory_manager_summary_task = summary_task
+            self._attach_memory_manager_summarizer_task_callbacks(task=summarizer_task)
+            self._memory_manager_summarizer_task = summarizer_task
             self._append_runtime_message({"role": "user", "content": WAKE_MM_SUMMARY_FLAG})
-            self._memory_manager_summary_awaken_count = summary_round
+            self._memory_manager_summarizer_awaken_count = summarizer_round
             self._persist_memory_manager_state()
 
         judge_task = self._memory_manager_judge_task
         if judge_task is None or judge_task.done():
             judge_round = self._memory_manager_judge_awaken_count + 1
             worker_messages_snapshot = [dict(message) for message in self._messages]
-            judge_tools = build_memory_manager_summary_tools(provider=self._model_config.provider)
+            judge_tools = build_memory_manager_summarizer_tools(provider=self._model_config.provider)
             logger.info(
                 "Agent[%s] 启动 memory_manager_judge_task（round=%s messages=%s）",
                 self.name,
@@ -519,37 +519,37 @@ class Agent(AgentBase):
         if judge_task is None:
             logger.warning("memory manager judge task 未初始化，本次跳过 judge")
 
-    async def _run_memory_manager_summary_before_reset(self) -> None:
+    async def _run_memory_manager_summarizer_before_reset(self) -> None:
         if not any(message.get("content") == WAKE_MM_SUMMARY_FLAG for message in self._messages):
-            logger.warning("Agent[%s] reset 前未找到 %s，跳过收尾 summary", self.name, WAKE_MM_SUMMARY_FLAG)
+            logger.warning("Agent[%s] reset 前未找到 %s，跳过收尾 summarizer", self.name, WAKE_MM_SUMMARY_FLAG)
             return
 
-        summary_round = self._memory_manager_summary_awaken_count + 1
+        summarizer_round = self._memory_manager_summarizer_awaken_count + 1
         logger.info(
-            "Agent[%s] reset 前执行收尾 memory_manager_summary_task（round=%s messages=%s）",
+            "Agent[%s] reset 前执行收尾 memory_manager_summarizer_task（round=%s messages=%s）",
             self.name,
-            summary_round,
+            summarizer_round,
             len(self._messages),
         )
-        # 注意FLAG是为下一次summary唤醒而留的，当次summary用的是上一个summary唤起时留下的flag
+        # 注意 FLAG 是为下一次 summarizer 唤醒而留的，当次 summarizer 用的是上一个 summarizer 唤起时留下的 flag
         # 如果这里再插一个新 flag，会变成：
         # ......旧内容...... [旧 flag] ......新内容...... [新 flag]
         #                                               ^ 最近一条 flag
-        # 那 summary 就会认为“新 flag 之前都已经摘要过了”，结果真正该补的 旧 flag -> 新 flag 这一段反而被跳过。
+        # 那 summarizer 就会认为“新 flag 之前都已经摘要过了”，结果真正该补的 旧 flag -> 新 flag 这一段反而被跳过。
         try:
-            await self._memory_manager_summary_runner.run(
+            await self._memory_manager_summarizer_runner.run(
                 worker_messages=[dict(message) for message in self._messages],
                 model_config=self._model_config,
-                tools=build_memory_manager_summary_tools(provider=self._model_config.provider),
+                tools=build_memory_manager_summarizer_tools(provider=self._model_config.provider),
                 is_first_time_awaken=False,
                 conversation_file_name=self._require_conversation_store().conversation_file_name,
-                awaken_round=summary_round,
+                awaken_round=summarizer_round,
             )
         except asyncio.CancelledError:
             raise
         except Exception as exc:
             logger.exception(
-                "Agent[%s] reset 前收尾 summary 失败，仍继续 reset：%s: %s",
+                "Agent[%s] reset 前收尾 summarizer 失败，仍继续 reset：%s: %s",
                 self.name,
                 type(exc).__name__,
                 exc,
@@ -597,7 +597,7 @@ class Agent(AgentBase):
             raise RuntimeError("conversation_store 未初始化，无法 reset_context")
 
         self._init_messages = build_init_messages(provider=self._model_config.provider)
-        self._memory_manager_summary_awaken_count = 0
+        self._memory_manager_summarizer_awaken_count = 0
         self._memory_manager_judge_awaken_count = 0
         self._pause_requested = False
         self._paused = False

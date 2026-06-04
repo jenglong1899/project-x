@@ -42,9 +42,6 @@ class BashTool:
         )
 
     async def run(self, *, arguments: dict[str, Any]) -> dict[str, Any]:
-        if self._caller_kind == "memory_manager_summary":
-            raise ValueError("memory manager (summary) 禁止调用 bash；请改用 read_file/replace_text/insert_text")
-
         tool_input = BashToolInput.model_validate(arguments)
         with TemporaryDirectory() as temp_dir:
             state_path = Path(temp_dir) / "bash-state"

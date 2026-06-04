@@ -12,7 +12,7 @@ from src.core.model_config import ModelConfig
 RESET_CONTEXT_MAGIC_WORD = "PROJECT-X-RESET-CONTEXT"
 
 
-class MemoryManagerSummaryRunner:
+class MemoryManagerSummarizerRunner:
     async def run(
             self,
             *,
@@ -26,7 +26,7 @@ class MemoryManagerSummaryRunner:
         forked_messages = [dict(message) for message in worker_messages]
         logger = MemoryManagerRunLogger(
             conversation_file_name=conversation_file_name,
-            runner_kind="summary",
+            runner_kind="summarizer",
             awaken_round=awaken_round,
         )
         logger.append_event(
@@ -41,7 +41,7 @@ class MemoryManagerSummaryRunner:
         )
         user_prompt = {
             "role": "user",
-            "content": build_memory_manager_summary_prompt(
+            "content": build_memory_manager_summarizer_prompt(
                 is_first_time_awaken=is_first_time_awaken,
             ),
         }
@@ -189,7 +189,7 @@ class MemoryManagerJudgeResetContextRunner:
         return should_reset
 
 
-def build_memory_manager_summary_prompt(is_first_time_awaken: bool) -> str:
+def build_memory_manager_summarizer_prompt(is_first_time_awaken: bool) -> str:
     if is_first_time_awaken:
         memory_operation_history_prompt = (f"<summary_operation_history_info>"
                                            f"这是你第一次在当前会话中被唤醒，"
@@ -214,7 +214,7 @@ def build_memory_manager_summary_prompt(is_first_time_awaken: bool) -> str:
 
 **先停下你手头上的事，阅读下面的消息**
 
-**你的角色是memory manager，你刚从worker的上下文中被 fork 出来。**
+**你的角色是 summarizer，你刚从worker的上下文中被 fork 出来。**
 
 你现在要做的事情就是处理记忆文档，比如对当前上下文做摘要然后放到记忆文档中、整理记忆文档等等
 
@@ -242,7 +242,7 @@ def build_memory_manager_summary_prompt(is_first_time_awaken: bool) -> str:
 
 {memory_operation_history_prompt}
 
-你当前的工作目录（Bash工具）已经被改为 {SUMMARIES_DIR}
+你当前的工作目录已经被改为 {SUMMARIES_DIR}
 
 另外再次提醒，你不能修改 {MEMORY_TODO_MD} 
 
@@ -256,7 +256,7 @@ def build_memory_manager_judge_whether_reset_context_prompt() -> str:
 
 **先停下你手头上的事，阅读下面的消息**
 
-**你的角色是memory manager，你刚从worker的上下文中被 fork 出来**
+**你的角色是 judge，你刚从worker的上下文中被 fork 出来**
 
 你现在要做的事情就是判断当前是否要重置上下文
 

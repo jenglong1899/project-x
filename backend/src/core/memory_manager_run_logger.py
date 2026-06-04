@@ -15,11 +15,11 @@ def _now_utc_iso_ms() -> str:
 @dataclass(frozen=True)
 class MemoryManagerRunLogger:
     conversation_file_name: str
-    runner_kind: Literal["summary", "judge"]
+    runner_kind: Literal["summarizer", "judge"]
     awaken_round: int
 
     def __post_init__(self) -> None:
-        if self.runner_kind not in {"summary", "judge"}:
+        if self.runner_kind not in {"summarizer", "judge"}:
             raise ValueError("runner_kind 非法")
         if self.awaken_round <= 0:
             raise ValueError("awaken_round 必须为正数")

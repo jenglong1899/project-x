@@ -51,7 +51,7 @@ class SummariesWriteGuardTests(unittest.IsolatedAsyncioTestCase):
                     )
                 self.assertIn("你是 worker", str(ctx.exception))
 
-    async def test_summary_cannot_edit_todo_in_summaries_dir(self) -> None:
+    async def test_summarizer_cannot_edit_todo_in_summaries_dir(self) -> None:
         with TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
             summaries_dir = root / "summaries"
@@ -66,7 +66,7 @@ class SummariesWriteGuardTests(unittest.IsolatedAsyncioTestCase):
                 mock.patch("src.commons.TODO_MEMORY_FILEPATH", todo_path),
                 mock.patch("src.commons.MAIN_MEMORY_FILEPATH", main_path),
             ):
-                tool = create_insert_text_tool(cwd_provider=_CwdProvider(summaries_dir), caller_kind="memory_manager_summary")
+                tool = create_insert_text_tool(cwd_provider=_CwdProvider(summaries_dir), caller_kind="summarizer")
                 with self.assertRaises(ValueError) as ctx:
                     await tool.handler(
                         arguments={
@@ -76,9 +76,9 @@ class SummariesWriteGuardTests(unittest.IsolatedAsyncioTestCase):
                             "text": "x",
                         }
                     )
-                self.assertIn("memory manager (summary)", str(ctx.exception))
+                self.assertIn("你是 summarizer", str(ctx.exception))
 
-                tool2 = create_insert_text_tool(cwd_provider=_CwdProvider(summaries_dir), caller_kind="memory_manager_summary")
+                tool2 = create_insert_text_tool(cwd_provider=_CwdProvider(summaries_dir), caller_kind="summarizer")
                 await tool2.handler(
                     arguments={
                         "filepath": str(main_path),
@@ -91,4 +91,3 @@ class SummariesWriteGuardTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

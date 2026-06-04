@@ -4,16 +4,16 @@
 
 ## 核心心智模型
 
-本 Agent 系统的重点是记忆机制，有 worker 和 memory manager 两个角色，任务执行和记忆分离，从而减轻 AI 的注意力负担，达到更好的工作效果和记忆效果。
+本 Agent 系统的重点是记忆机制，有 `worker`、`summarizer`、`judge` 三个角色，任务执行和记忆分离，从而减轻 AI 的注意力负担，达到更好的工作效果和记忆效果。
 
-上下文每增长 3%，系统就从 worker 中 fork 两个 memory manager 出来异步工作，一个负责总结，一个负责决定是否要重置上下文。（等模型决定重置后再统一总结会导致遗漏）
+上下文每增长 3%，系统就从 worker 中 fork 出 `summarizer` 和 `judge` 两个角色异步工作，一个负责总结，一个负责决定是否要重置上下文。（等模型决定重置后再统一总结会导致遗漏）
 
 - **核心抽象是 `Agent`**：`backend/src/core/agent.py` 对外暴露一个最小接口（排队 user message → `async run()` 生成 → 工具调用 → 持久化）；其他模块基本都在为它服务。
 - **`AgentRunner` 是驱动层**：`backend/src/core/agent_runner.py` 负责“提交消息 + 确保后台运行 + 防重入 + 跑到 idle”，适配层（如 WebSocket）只和它交互，避免直接操作 `Agent`。
 - **`WebSocketChatSession` 是适配层**：`backend/src/websocket_chat_session.py` 通过 `AgentRunner` 驱动 agent（busy/idle/turn 完成回调），并把回调投影成前端事件（assistant delta / tool card / committed 等）。
 - **`ConversationStore` 是持久化层**：`backend/src/conversation_store.py` 把对话落地到 `~/.project-x/memories/originals/*.json`，并负责追加消息与恢复历史 messages。
-- **Memory Manager 是双 runner**：触发点在 `Agent._maybe_wake_memory_manager()`；`summary runner` 维护 `~/.project-x/memories/summaries/MAIN.md` 等记忆文档，`judge runner` 只判断是否 reset-context（两者实现见 `backend/src/core/memory_manager.py`）。
-- **reset-context 的关键约束**：当 judge 判定 reset 时必须先等待 in-flight summary 结束；reset 后会尽量保留 worker 最近 10 条消息且第一条必须是 `assistant`（落盘通过 `ConversationStore.start_with_messages()`）。
+- **Memory Manager 是双 runner**：触发点在 `Agent._maybe_wake_memory_manager()`；`summarizer runner` 维护 `~/.project-x/memories/summaries/MAIN.md` 等记忆文档，`judge runner` 只判断是否 reset-context（两者实现见 `backend/src/core/memory_manager.py`）。
+- **工具缓存约束**：AI 看到的 tools 集合/顺序对 provider 缓存敏感。即使 judge 逻辑上“不需要用工具”，也不要轻易改掉它暴露给模型的 tools 形状；若必须调整，优先最小化变更，并确认不会破坏缓存命中。
 - src/commons.py 含有项目里面常用的变量、函数，必读
 
 数据流（大致）：
@@ -90,7 +90,7 @@
 - `backend/src/tools/cwd_state.py`：`CwdState` 是 bash 与 read_file 共享 cwd 的小状态对象；默认 Agent 每次创建独立 `CwdState`，不能复用全局单例。
 - `backend/src/tools/reset_context.py`：`RESET_CONTEXT_TOOL`（工具本身只返回 hint；真正的 reset 编排由 Agent 内部的 reset 流程完成）
 补充约束（很容易踩坑）：
-- 记忆目录写入守卫在 `backend/src/commons.py`：worker **只能**编辑 `~/.project-x/memories/summaries/TODO.md`；memory manager (summary) 不能编辑 `TODO.md`，应编辑 `MAIN.md` 或其他摘要文件。
+- 记忆目录写入守卫在 `backend/src/commons.py`：worker **只能**编辑 `~/.project-x/memories/summaries/TODO.md`；summarizer 不能编辑 `TODO.md`，应编辑 `MAIN.md` 或其他摘要文件。
 - `replace_text/insert_text` 在失败时可能把大段内容落到 `/tmp/...` 并返回 `*_from_file` 路径供下一次调用复用（避免重复粘贴占 token）；这是工具的正常行为。
 
 ### 3) 持久化（`backend/src/conversation_store.py`）
@@ -140,4 +140,3 @@
 # 用户开发环境
 
 用户通常是在 WSL2 中进行开发（你也在WSL2）中，用户通常是在 Windows 上用 Jetbrain Gateway 连接 WSL2 上的 Pycharm 后端进行开发，用户也会用 Windows Terminal 连 WSL2
-

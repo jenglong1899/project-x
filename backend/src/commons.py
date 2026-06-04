@@ -30,7 +30,7 @@ ORIGINALS_DIR = MEMORIES_ROOT / "originals"
 WAKE_MM_SUMMARY_FLAG = "<flag>WAKE_MM_SUMMARY_FLAG_POINT</flag>"
 # RESET_CONTEXT_DECISION_MADE_FLAG="<flag>RESET_CONTEXT_DECISION_MADE_POINT</flag>"
 
-ToolCallerKind = Literal["worker", "memory_manager_summary"]
+ToolCallerKind = Literal["worker", "summarizer", "judge"]
 
 
 def is_path_in_summaries_dir(*, path: Path) -> bool:
@@ -58,11 +58,11 @@ def assert_allowed_summaries_write(*, caller_kind: ToolCallerKind, target_path: 
             )
         return
 
-    if caller_kind == "memory_manager_summary":
+    if caller_kind == "summarizer":
         if resolved_target == resolved_todo:
             raise ValueError(
-                f"你是 memory manager (summary)：禁止编辑 {resolved_todo.name}（它只允许 worker 编辑）。"
-                f"请改为编辑 {MAIN_MEMORY_FILEPATH.resolve()} 或其他 summaries 下的摘要文件。"
+                f"你是 summarizer：禁止编辑 {resolved_todo.name}（它只允许 worker 编辑）。"
+                f"请改为编辑 {MAIN_MEMORY_FILEPATH.resolve()} 或其他 summaries/ 下的摘要文件。"
             )
         return
 

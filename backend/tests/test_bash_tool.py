@@ -46,10 +46,9 @@ class BashToolTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaises(ValidationError):
             await create_bash_tool().handler(arguments={})
 
-    async def test_bash_tool_rejects_all_commands_for_summary_runner(self) -> None:
-        with self.assertRaises(ValueError) as ctx:
-            await create_bash_tool(caller_kind="memory_manager_summary").handler(arguments={"command": "pwd"})
-        self.assertIn("禁止调用 bash", str(ctx.exception))
+    async def test_bash_tool_allows_summarizer_to_run_commands(self) -> None:
+        result = await create_bash_tool(caller_kind="summarizer").handler(arguments={"command": "pwd"})
+        self.assertEqual(result["returncode"], 0)
 
     async def test_bash_tool_exposes_pydantic_schema(self) -> None:
         bash_tool = create_bash_tool()

@@ -10,7 +10,7 @@ from src.core.agent_turn import TurnUsage
 from src.core.model_config import ModelConfig
 
 
-class _BlockingSummaryRunner:
+class _BlockingSummarizerRunner:
     def __init__(self) -> None:
         self.started = asyncio.Event()
         self.allow_finish = asyncio.Event()
@@ -33,7 +33,7 @@ class _DelayedJudgeRunner:
 
 
 class AgentMemoryManagerBackgroundTaskTests(unittest.IsolatedAsyncioTestCase):
-    async def test_summary_task_exception_is_observed_and_logged(self) -> None:
+    async def test_summarizer_task_exception_is_observed_and_logged(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             with mock.patch("src.core.agent.ConversationStore") as store_cls:
                 store_cls.find_latest_conversation_file_name.return_value = None
@@ -52,7 +52,7 @@ class AgentMemoryManagerBackgroundTaskTests(unittest.IsolatedAsyncioTestCase):
                 agent._safe_drain_user_message_queue()
                 agent._require_conversation_store().update_memory_manager_last_triggered_threshold(last_triggered_threshold=0)
 
-                agent._memory_manager_summary_runner.run = mock.AsyncMock(side_effect=RuntimeError("boom"))  # type: ignore[method-assign]
+                agent._memory_manager_summarizer_runner.run = mock.AsyncMock(side_effect=RuntimeError("boom"))  # type: ignore[method-assign]
                 agent._memory_manager_judge_runner.run = mock.AsyncMock(return_value=False)  # type: ignore[method-assign]
 
                 with mock.patch("src.core.agent.logger") as fake_logger:
@@ -60,11 +60,11 @@ class AgentMemoryManagerBackgroundTaskTests(unittest.IsolatedAsyncioTestCase):
                     await asyncio.sleep(0)
                     await asyncio.sleep(0)
 
-                    self.assertIsNotNone(agent._memory_manager_summary_task)
-                    self.assertTrue(agent._memory_manager_summary_task.done())
+                    self.assertIsNotNone(agent._memory_manager_summarizer_task)
+                    self.assertTrue(agent._memory_manager_summarizer_task.done())
                     fake_logger.error.assert_called()
 
-    async def test_maybe_wake_memory_manager_does_not_wait_for_summary_or_judge(self) -> None:
+    async def test_maybe_wake_memory_manager_does_not_wait_for_summarizer_or_judge(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             with mock.patch("src.core.agent.ConversationStore") as store_cls:
                 store_cls.find_latest_conversation_file_name.return_value = None
@@ -80,22 +80,22 @@ class AgentMemoryManagerBackgroundTaskTests(unittest.IsolatedAsyncioTestCase):
                 agent._safe_drain_user_message_queue()
                 agent._require_conversation_store().update_memory_manager_last_triggered_threshold(last_triggered_threshold=0)
 
-                summary_runner = _BlockingSummaryRunner()
+                summarizer_runner = _BlockingSummarizerRunner()
                 judge_runner = _DelayedJudgeRunner(should_reset_context=False)
-                agent._memory_manager_summary_runner = summary_runner
+                agent._memory_manager_summarizer_runner = summarizer_runner
                 agent._memory_manager_judge_runner = judge_runner
 
                 await agent._maybe_wake_memory_manager(prompt_tokens=10_000)
                 await asyncio.sleep(0)
 
-                self.assertTrue(summary_runner.started.is_set())
+                self.assertTrue(summarizer_runner.started.is_set())
                 self.assertTrue(judge_runner.started.is_set())
-                self.assertFalse(agent._memory_manager_summary_task.done())
+                self.assertFalse(agent._memory_manager_summarizer_task.done())
                 self.assertFalse(agent._memory_manager_judge_task.done())
 
-                summary_runner.allow_finish.set()
+                summarizer_runner.allow_finish.set()
                 judge_runner.allow_finish.set()
-                await agent._memory_manager_summary_task
+                await agent._memory_manager_summarizer_task
                 await agent._memory_manager_judge_task
 
     async def test_delayed_judge_reset_pauses_worker_before_reset_when_worker_is_idle(self) -> None:
@@ -119,7 +119,7 @@ class AgentMemoryManagerBackgroundTaskTests(unittest.IsolatedAsyncioTestCase):
                 agent._require_conversation_store().update_memory_manager_last_triggered_threshold(last_triggered_threshold=0)
 
                 judge_runner = _DelayedJudgeRunner(should_reset_context=True)
-                agent._memory_manager_summary_runner.run = mock.AsyncMock(return_value=None)  # type: ignore[method-assign]
+                agent._memory_manager_summarizer_runner.run = mock.AsyncMock(return_value=None)  # type: ignore[method-assign]
                 agent._memory_manager_judge_runner = judge_runner
                 original_reset_context = agent._reset_context
                 agent._reset_context = lambda: (reset_observations.append(agent.is_paused()), original_reset_context())[-1]  # type: ignore[method-assign]
