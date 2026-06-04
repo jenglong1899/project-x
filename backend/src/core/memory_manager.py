@@ -31,7 +31,6 @@ class MemoryManagerSummaryRunner:
         )
         logger.append_event(
             {
-                "kind": "runner.started",
                 "worker_messages": len(worker_messages),
                 "forked_messages": len(forked_messages),
                 "tools": [tool.name for tool in tools],
@@ -54,7 +53,7 @@ class MemoryManagerSummaryRunner:
         logger.append_event(user_prompt)
 
         while True:
-            assistant_message = await stream(
+            turn_result = await stream(
                 model_config=model_config,
                 messages=forked_messages,
                 tools=tools,
@@ -64,13 +63,14 @@ class MemoryManagerSummaryRunner:
                 on_ai_tool_call_arguments_delta=noop,
                 on_ai_tool_call_finished=noop,
             )
+            assistant_message = turn_result.assistant_message
             forked_messages.append(assistant_message)
             logger.append_event(
                 {
-                    "kind": "assistant.message",
                     "role": "assistant",
                     "content": "\n".join(
-                        s for s in [assistant_message.get("reasoning_content"), assistant_message.get("content")] if isinstance(s, str) and s
+                        s for s in [assistant_message.get("reasoning_content"), assistant_message.get("content")] if
+                        isinstance(s, str) and s
                     ),
                     "tool_calls": assistant_message.get("tool_calls") or [],
                 }
@@ -85,18 +85,11 @@ class MemoryManagerSummaryRunner:
             )
             forked_messages.extend(tool_messages)
             for tool_message in tool_messages:
-                logger.append_event(
-                    {
-                        "kind": "tool.message",
-                        "role": "tool",
-                        "content": tool_message.get("content"),
-                        "tool_call_id": tool_message.get("tool_call_id"),
-                    }
-                )
+                logger.append_event(tool_message)
 
         logger.append_event(
             {
-                "kind": "runner.finished",
+                "hint": "runner.finished",
                 "forked_messages": len(forked_messages),
             }
         )
@@ -121,7 +114,7 @@ class MemoryManagerJudgeResetContextRunner:
         )
         logger.append_event(
             {
-                "kind": "runner.started",
+                "hint": "runner.started",
                 "worker_messages": len(worker_messages),
                 "forked_messages": len(forked_messages),
                 "tools": [tool.name for tool in tools],
@@ -141,7 +134,7 @@ class MemoryManagerJudgeResetContextRunner:
         logger.append_event(user_prompt)
 
         while True:
-            assistant_message = await stream(
+            turn_result = await stream(
                 model_config=model_config,
                 messages=forked_messages,
                 tools=tools,
@@ -151,13 +144,14 @@ class MemoryManagerJudgeResetContextRunner:
                 on_ai_tool_call_arguments_delta=noop,
                 on_ai_tool_call_finished=noop,
             )
+            assistant_message = turn_result.assistant_message
             forked_messages.append(assistant_message)
             logger.append_event(
                 {
-                    "kind": "assistant.message",
                     "role": "assistant",
                     "content": "\n".join(
-                        s for s in [assistant_message.get("reasoning_content"), assistant_message.get("content")] if isinstance(s, str) and s
+                        s for s in [assistant_message.get("reasoning_content"), assistant_message.get("content")] if
+                        isinstance(s, str) and s
                     ),
                     "tool_calls": assistant_message.get("tool_calls") or [],
                 }
@@ -177,23 +171,17 @@ class MemoryManagerJudgeResetContextRunner:
                 tool_message = {
                     "role": "tool",
                     "tool_call_id": tool_call_id,
-                    "content": "判断是否需要重置上下文，不需要工具调用",
+                    "content": "判断是否需要重置上下文不需要工具调用",
                 }
                 tool_messages.append(tool_message)
-                logger.append_event(
-                    {
-                        "role": "tool",
-                        "content": tool_message["content"],
-                        "tool_call_id": tool_call_id,
-                    }
-                )
+                logger.append_event(tool_message)
             forked_messages.extend(tool_messages)
 
         content = assistant_message.get("content")
         should_reset = isinstance(content, str) and RESET_CONTEXT_MAGIC_WORD in content.splitlines()
         logger.append_event(
             {
-                "kind": "runner.finished",
+                "hint": "runner.finished",
                 "forked_messages": len(forked_messages),
                 "should_reset_context": should_reset,
             }
@@ -261,6 +249,7 @@ def build_memory_manager_summary_prompt(is_first_time_awaken: bool) -> str:
 </roles_change_notice>
 """
 
+
 def build_memory_manager_judge_whether_reset_context_prompt() -> str:
     return f"""
 <roles_change_notice>
@@ -286,9 +275,6 @@ def build_memory_manager_judge_whether_reset_context_prompt() -> str:
 </roles_change_notice>
 """
 
-
-# todo 不要提供无用的信息？还是尽可能提供信息？
-# AI似乎可以自己估算出来个大概（至少gpt5是这样），所以先不用 _build_context_token_detail ？
 
 def _build_context_token_detail(messages: dict[str, Any]) -> str:
     # 打印以下消息占据的上下文百分比窗口
