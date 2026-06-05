@@ -27,6 +27,10 @@ async def _boom_handler(*, arguments: dict[str, object]) -> object:
     raise RuntimeError("boom")
 
 
+async def _escalate_handler(*, arguments: dict[str, object]) -> dict[str, object]:
+    return {"reason": arguments["reason"], "escalated": True}
+
+
 class _StaticSummarizerRunner:
     def __init__(self) -> None:
         self.calls: list[dict[str, object]] = []
@@ -141,6 +145,21 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                 "required": ["value"],
             },
             handler=_echo_handler,
+        )
+
+    @staticmethod
+    def _escalate_tool() -> Tool:
+        return Tool(
+            name="escalate_to_human",
+            description="转人工",
+            parameters_json_schema={
+                "type": "object",
+                "properties": {
+                    "reason": {"type": "string"},
+                },
+                "required": ["reason"],
+            },
+            handler=_escalate_handler,
         )
 
     async def test_enqueue_user_message_uses_frontend_msg_id(self) -> None:
@@ -351,6 +370,31 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("boom", parsed["error"])
         self.assertEqual(len(tool_results), 1)
 
+    async def test_execute_tool_calls_rejects_escalate_to_human_with_other_tools(self) -> None:
+        ai_msg_dict = {
+            "role": "assistant",
+            "content": None,
+            "tool_calls": [
+                {
+                    "id": "call_escalate",
+                    "type": "function",
+                    "function": {"name": "escalate_to_human", "arguments": "{\"reason\":\"复杂问题\"}"},
+                },
+                {
+                    "id": "call_echo",
+                    "type": "function",
+                    "function": {"name": "echo", "arguments": "{\"value\": 1}"},
+                },
+            ],
+        }
+
+        with self.assertRaisesRegex(ValueError, "不能和其他工具一起调用"):
+            await execute_tool_calls(
+                ai_msg_dict=ai_msg_dict,
+                tools=[self._escalate_tool(), self._echo_tool()],
+                on_tool_result=lambda **kwargs: None,
+            )
+
     async def test_run_passes_on_tool_result_through_agent(self) -> None:
         tool_results: list[dict[str, object]] = []
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -422,6 +466,40 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(stored_payload["messages"][3]["content"], "{\"echoed\": 7}")
         self.assertTrue(all("meta" not in message for message in stored_payload["messages"]))
+
+    async def test_run_stops_after_escalate_to_human(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with _patch_agent_conversation_store_without_history(temp_dir):
+                agent = Agent(
+                    name="demo",
+                    model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
+                    init_messages=[{"role": "user", "content": "hello"}],
+                    tools=[self._escalate_tool()],
+                )
+                agent.start_conversation()
+                agent.enqueue_user_message(frontend_msg_id="frontend-1", user_message="需要人工")
+
+                ai_msg_with_escalate = {
+                    "role": "assistant",
+                    "content": None,
+                    "tool_calls": [
+                        {
+                            "id": "call_escalate",
+                            "type": "function",
+                            "function": {
+                                "name": "escalate_to_human",
+                                "arguments": json.dumps({"reason": "需要人工处理"}, ensure_ascii=False),
+                            },
+                        }
+                    ],
+                }
+
+                with mock.patch.object(Agent, "_safe_stream", new=mock.AsyncMock(return_value=_turn_result(ai_msg_with_escalate))):
+                    result = await agent.run()
+
+        self.assertEqual(result, ai_msg_with_escalate)
+        self.assertEqual(agent._messages[-1]["role"], "tool")
+        self.assertEqual(json.loads(agent._messages[-1]["content"]), {"reason": "需要人工处理", "escalated": True})
 
     async def test_append_runtime_message_requires_persisted_conversation(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

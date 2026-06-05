@@ -10,6 +10,7 @@ from src.commons import get_model_context_window_tokens, noop
 from src.conversation_store import ConversationStore
 from src.core.agent_base import AgentBase, DriveDecision, DriveReason
 from src.core.agent_turn import (
+    ESCALATE_TO_HUMAN_TOOL_NAME,
     stream,
     execute_tool_calls,
     TurnResult,
@@ -33,6 +34,15 @@ from src.toolkits import build_memory_manager_summarizer_tools
 MEMORY_MANAGER_CONTEXT_USED_THRESHOLD_STEP_PERCENT = 3
 
 logger = logging.getLogger(__name__)
+
+
+def _has_escalate_to_human_tool_call(ai_msg_dict: dict[str, Any]) -> bool:
+    tool_calls = ai_msg_dict.get("tool_calls") or []
+    for tool_call in tool_calls:
+        function_payload = tool_call.get("function") or {}
+        if function_payload.get("name") == ESCALATE_TO_HUMAN_TOOL_NAME:
+            return True
+    return False
 
 
 @dataclass(frozen=True)
@@ -649,9 +659,9 @@ class Agent(AgentBase):
                 if not ai_msg_dict.get("tool_calls"):
                     # 即使本轮没有工具调用，也需要按上下文阈值唤醒 memory manager，
                     # 否则“纯聊天”场景永远不会触发摘要/重置判断。
-                    await self._maybe_wake_memory_manager(
-                        prompt_tokens=self._resolve_prompt_tokens(usage=turn_result.usage)
-                    )
+                    # await self._maybe_wake_memory_manager(
+                    #     prompt_tokens=self._resolve_prompt_tokens(usage=turn_result.usage)
+                    # )
                     if self._pause_requested:
                         # 为了让“暂停”在有pending user message的场景下也可靠生效：
                         # 即使本轮没有 tool_calls，只要本轮模型调用已经结束，
@@ -665,11 +675,15 @@ class Agent(AgentBase):
                 for tool_message in tool_messages:
                     self._append_runtime_message(tool_message)
 
+                if _has_escalate_to_human_tool_call(ai_msg_dict):
+                    logger.info("Agent[%s].run：命中 escalate_to_human，结束当前 agent 循环", self.name)
+                    return ai_msg_dict
+
                 # 在这里maybe wake memory manager，最后一条msg是tool result msg
                 # 这个格式是合法的，可以在这个基础上跑 summary、judge任务
-                await self._maybe_wake_memory_manager(
-                    prompt_tokens=self._resolve_prompt_tokens(usage=turn_result.usage)
-                )
+                # await self._maybe_wake_memory_manager(
+                #     prompt_tokens=self._resolve_prompt_tokens(usage=turn_result.usage)
+                # )
                 if self._pause_requested:
                     # 用户点击暂停，可能是想看一会，然后恢复运行之前，还要输入一些内容，
                     # 所以暂停检查点应该在 drain user msg 之前。

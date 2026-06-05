@@ -63,6 +63,8 @@ class TurnResult:
     usage: TurnUsage
 
 
+ESCALATE_TO_HUMAN_TOOL_NAME = "escalate_to_human"
+
 
 
 def _get_field(obj: Any, field_name: str, default: Any = None) -> Any:
@@ -521,6 +523,13 @@ async def execute_tool_calls(*, ai_msg_dict: dict[str, Any],
         raise ValueError("tools 里存在重复的 name")
 
     tool_calls = ai_msg_dict.get("tool_calls", [])
+    tool_call_names = [
+        _get_field(_get_field(tool_call, "function", {}), "name")
+        for tool_call in tool_calls
+    ]
+    if ESCALATE_TO_HUMAN_TOOL_NAME in tool_call_names and len(tool_calls) > 1:
+        raise ValueError("escalate_to_human 不能和其他工具一起调用")
+
     tool_messages: list[dict[str, Any]] = []
     for index, tool_call in enumerate(tool_calls):
         function_payload = _get_field(tool_call, "function", {})

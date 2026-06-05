@@ -19,41 +19,27 @@ from src.commons import MAIN_MEMORY_FILEPATH, SUMMARIES_DIR, TODO_MEMORY_FILEPAT
 INITIAL_MAIN_MEMORY_CONTENT_ZH = "用户刚完成 project-x 的安装，还没让我做什么事情"
 INITIAL_TODO_MEMORY_CONTENT_ZH = ""
 
+def _build_codex_wanbaolu_interview_instruction()->str:
+    return f"""
+背景：你在一个基于codex封装的AI客服系统中。
+
+- 回答要简短，能用一句话说清楚的事就不要用两句话。
+- 如果你感觉用户说的话很奇怪、缺少信息，随时都可以继续追问以获取更多信息。比如用户问“我的快递到哪了”，而没有说是哪个订单，请追问是哪个订单。
+
+<refund_policy>
+1. 调用get_order_status确认订单状态
+2. 调用check_refund_policy查看退货政策
+3. 对于7天无理由退货政策的产品，执行date命令查看当前时间，看看是不是距离签收7天以内。
+</refund_policy>
+"""
+
 def _build_codex_user_level_instruction() -> str:
     """
     codex逆向出来的没法设置system prompt
     :return:
     """
     return f"""
-<project_x_instruction>
-你运行在一个基于 Codex 封装的，名为 project-x 的 Agent 系统中。如果你收到了被xml包裹的user-role message，你需要知道这并不是用户输入的，而是系统自动输入的。
-
-Codex提供的multi_tool_use.parallel在本系统中不存在，不要调用这个。
-
-{_build_memory_mechanism_instruction()}
-
-<todo_mechanism>
-codex提供的`update_plan`工具在 project-x 中并不存在
-
-worker 只能在 {MEMORY_TODO_MD} 记录 todo
-
-格式示例如下：
-```
-- [x] 一个完成了的todo
-- [] 一个todo
-```
-</todo_mechanism>
-
-以下是记忆文档的内容：
-
-<{MEMORY_MAIN_MD}>
-{read_main_memory()}
-</{MEMORY_MAIN_MD}>
-
-<{MEMORY_TODO_MD}>
-{read_todo_memory()}
-</{MEMORY_TODO_MD}>
-</project_x_instruction>
+{_build_codex_wanbaolu_interview_instruction()}
 """
 
 
