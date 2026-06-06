@@ -1,5 +1,6 @@
 from typing import Any
 
+from core.init_prompts import TAG_PROJECT_X_INSTRUCTION
 from src.commons import MEMORY_MAIN_MD, MEMORY_TODO_MD, WAKE_MM_SUMMARY_FLAG, SUMMARIES_DIR
 from src.core.init_prompts import read_main_memory
 
@@ -238,7 +239,7 @@ def build_memory_manager_summarizer_prompt(is_first_time_awaken: bool) -> str:
 
 </heuristic_rules>
 
-不要对上下文中前面的 system/developer-role 指令以及 <project_x_instruction> 做摘要，因为这些信息在重置后系统会自动注入
+不要对上下文中<{TAG_PROJECT_X_INSTRUCTION}>以及这之前的指令做摘要，因为这些信息在重置后系统会自动注入
 
 {memory_operation_history_prompt}
 

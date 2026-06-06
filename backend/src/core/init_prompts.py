@@ -19,13 +19,15 @@ from src.commons import MAIN_MEMORY_FILEPATH, SUMMARIES_DIR, TODO_MEMORY_FILEPAT
 INITIAL_MAIN_MEMORY_CONTENT_ZH = "用户刚完成 project-x 的安装，还没让我做什么事情"
 INITIAL_TODO_MEMORY_CONTENT_ZH = ""
 
+TAG_PROJECT_X_INSTRUCTION="project_x_instruction"
+
 def _build_codex_user_level_instruction() -> str:
     """
     codex逆向出来的没法设置system prompt
     :return:
     """
     return f"""
-<project_x_instruction>
+<{TAG_PROJECT_X_INSTRUCTION}>
 你运行在一个基于 Codex 封装的，名为 project-x 的 Agent 系统中。如果你收到了被xml包裹的user-role message，你需要知道这并不是用户输入的，而是系统自动输入的。
 
 Codex提供的multi_tool_use.parallel在本系统中不存在，不要调用这个。
@@ -53,7 +55,7 @@ worker 只能在 {MEMORY_TODO_MD} 记录 todo
 <{MEMORY_TODO_MD}>
 {read_todo_memory()}
 </{MEMORY_TODO_MD}>
-</project_x_instruction>
+</{TAG_PROJECT_X_INSTRUCTION}>
 """
 
 
