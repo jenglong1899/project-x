@@ -47,4 +47,5 @@ chmod +x dev.sh
 ./dev.sh
 ```
 
-如果用Codex订阅，想在Pycharm中跑断点、codex订阅的集成测试，要在 run configuration 里面加环境变量，key是`PROJECT_X_CODEX_HTTP_PROXY`，value是`socks5h://172.17.16.1:7890`（如果你的vpn是7890端口）
+用Codex可能需要设置环境变量来走代理，但Pycharm的run configuration不会展开环境变量里面的字面量，所以会导致代理设置失效，
+可以run configuration里面设置这个环境变量：key是`PROJECT_X_CODEX_HTTP_PROXY`，value是`socks5h://172.17.16.1:7890`（如果你的vpn是7890端口）
