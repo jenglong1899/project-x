@@ -34,7 +34,7 @@ Worker 自己也维护了一个 todo。
 
 比如到了一个 Memory Manager 的触发点，开始了一个摘要任务，然后开始了一个重置决策任务。然后worker继续运行，然后这个时候worker完成了一个东西，然后划掉了一个 to do， 但是做摘要那个 memory manager 他还没有这方面的上下文，他会认为那个还没完成。
 
-所以问题解决方案其实是，当决定重置后，worker要暂停，然后这时候再次触发一次 summary。
+所以问题解决方案其实是，当决定重置后，worker要暂停，然后这时候再次触发一次 summarizer。
 
 ## 先开始judge，然后再summary？
 
@@ -42,6 +42,10 @@ Worker 自己也维护了一个 todo。
 要不要先唤起judge（不留flag），然后等5秒，然后唤起summary（留flag）
 把这个 flag 改名一下，得改成 WAKE_MM_SUMMARY_FLAG ，这样才符合实际。
 不过可能也没有必要先做这个了，这个功能有最好，但没有也可以？
+
+## 方法2
+决定重置后，worker要暂停，但是不要再触发一次summarizer，而是把上次summary的位置和当前这个位置的内容保留下来，在下一次重置后加载。
+judge判断重置应该不会需要很久，可能5-10秒左右，这个时间段内，worker的上下文大概率不会增长太多，这个时候触发summary会有点浪费。
 
 # memory manager的prompt太长了？
 好歹还是利用了缓存的，比 Hermes 那种压缩好多了。
