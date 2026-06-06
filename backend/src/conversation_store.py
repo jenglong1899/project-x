@@ -13,6 +13,7 @@ MEMORY_MANAGER_SUMMARIZER_AWAKEN_COUNT_KEY = "summarizer-awaken-count"
 LEGACY_MEMORY_MANAGER_SUMMARY_AWAKEN_COUNT_KEY = "summary-awaken-count"
 MEMORY_MANAGER_JUDGE_AWAKEN_COUNT_KEY = "judge-awaken-count"
 MEMORY_MANAGER_LAST_TRIGGERED_THRESHOLD_KEY = "last-triggered-threshold"
+MEMORY_MANAGER_RESET_CARRYOVER_MESSAGES_KEY = "reset-carryover-messages"
 PAUSE_META_KEY = "pause"
 PAUSE_REQUESTED_KEY = "requested"
 PAUSE_PAUSED_KEY = "paused"
@@ -70,6 +71,7 @@ class ConversationStore:
         self._memory_manager_summarizer_awaken_count = 0
         self._memory_manager_judge_awaken_count = 0
         self._memory_manager_last_triggered_threshold = 0
+        self._memory_manager_reset_carryover_messages: list[dict[str, Any]] = []
         self._pause_requested = False
         self._paused = False
 
@@ -101,6 +103,10 @@ class ConversationStore:
         return self._memory_manager_last_triggered_threshold
 
     @property
+    def memory_manager_reset_carryover_messages(self) -> list[dict[str, Any]]:
+        return [dict(message) for message in self._memory_manager_reset_carryover_messages]
+
+    @property
     def pause_requested(self) -> bool:
         return self._pause_requested
 
@@ -120,6 +126,13 @@ class ConversationStore:
         if last_triggered_threshold < 0:
             raise ValueError("last_triggered_threshold 不能为负数")
         self._memory_manager_last_triggered_threshold = last_triggered_threshold
+        if self.has_persisted_conversation():
+            self._write_json_atomically()
+
+    def update_memory_manager_reset_carryover_messages(self, *, messages: list[dict[str, Any]]) -> None:
+        if not all(isinstance(message, dict) for message in messages):
+            raise ValueError("reset carryover messages 必须全部是对象")
+        self._memory_manager_reset_carryover_messages = [dict(message) for message in messages]
         if self.has_persisted_conversation():
             self._write_json_atomically()
 
@@ -145,10 +158,6 @@ class ConversationStore:
     def start_with_messages(self, *, messages: list[dict[str, Any]]) -> None:
         """
         用于 reset-context 等场景：希望直接把一段已有对话片段落到新会话中。
-
-        约束：
-        - 不要求 messages 的第一条必须是 user；可以是 assistant/tool。
-        - 调用方需自行保证 messages 不包含 system/user instruction（这里只会自动补前两条指令）。
         """
         if self.has_persisted_conversation():
             raise RuntimeError("conversation 已开始，不能重复创建")
@@ -210,12 +219,17 @@ class ConversationStore:
                 summarizer_awaken_count = memory_manager_meta.get(LEGACY_MEMORY_MANAGER_SUMMARY_AWAKEN_COUNT_KEY)
             judge_awaken_count = memory_manager_meta.get(MEMORY_MANAGER_JUDGE_AWAKEN_COUNT_KEY)
             last_triggered_threshold = memory_manager_meta.get(MEMORY_MANAGER_LAST_TRIGGERED_THRESHOLD_KEY)
+            reset_carryover_messages = memory_manager_meta.get(MEMORY_MANAGER_RESET_CARRYOVER_MESSAGES_KEY)
             if isinstance(summarizer_awaken_count, int) and summarizer_awaken_count >= 0:
                 store._memory_manager_summarizer_awaken_count = summarizer_awaken_count
             if isinstance(judge_awaken_count, int) and judge_awaken_count >= 0:
                 store._memory_manager_judge_awaken_count = judge_awaken_count
             if isinstance(last_triggered_threshold, int) and last_triggered_threshold >= 0:
                 store._memory_manager_last_triggered_threshold = last_triggered_threshold
+            if isinstance(reset_carryover_messages, list) and all(
+                isinstance(message, dict) for message in reset_carryover_messages
+            ):
+                store._memory_manager_reset_carryover_messages = [dict(message) for message in reset_carryover_messages]
 
         pause_meta = meta.get(PAUSE_META_KEY)
         if isinstance(pause_meta, dict):
@@ -279,6 +293,7 @@ class ConversationStore:
                     MEMORY_MANAGER_SUMMARIZER_AWAKEN_COUNT_KEY: self._memory_manager_summarizer_awaken_count,
                     MEMORY_MANAGER_JUDGE_AWAKEN_COUNT_KEY: self._memory_manager_judge_awaken_count,
                     MEMORY_MANAGER_LAST_TRIGGERED_THRESHOLD_KEY: self._memory_manager_last_triggered_threshold,
+                    MEMORY_MANAGER_RESET_CARRYOVER_MESSAGES_KEY: self._memory_manager_reset_carryover_messages,
                 },
                 PAUSE_META_KEY: {
                     PAUSE_REQUESTED_KEY: self._pause_requested,

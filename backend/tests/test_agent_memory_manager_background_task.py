@@ -122,7 +122,10 @@ class AgentMemoryManagerBackgroundTaskTests(unittest.IsolatedAsyncioTestCase):
                 agent._memory_manager_summarizer_runner.run = mock.AsyncMock(return_value=None)  # type: ignore[method-assign]
                 agent._memory_manager_judge_runner = judge_runner
                 original_reset_context = agent._reset_context
-                agent._reset_context = lambda: (reset_observations.append(agent.is_paused()), original_reset_context())[-1]  # type: ignore[method-assign]
+                agent._reset_context = lambda *, carryover_messages: (  # type: ignore[method-assign]
+                    reset_observations.append(agent.is_paused()),
+                    original_reset_context(carryover_messages=carryover_messages),
+                )[-1]
 
                 with mock.patch("src.core.init_prompts.build_init_messages", return_value=[{"role": "user", "content": "reset init"}]):
                     await agent._maybe_wake_memory_manager(prompt_tokens=10_000)
@@ -132,6 +135,35 @@ class AgentMemoryManagerBackgroundTaskTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(paused_events, ["paused"])
         self.assertEqual(reset_observations, [True])
+
+    async def test_reset_carryover_keeps_messages_after_latest_summary_flag(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with mock.patch("src.core.agent.ConversationStore") as store_cls:
+                store_cls.find_latest_conversation_file_name.return_value = None
+                store_cls.side_effect = lambda *, init_messages: ConversationStore(init_messages=init_messages, originals_dir=Path(temp_dir))
+                agent = Agent(
+                    name="demo-agent",
+                    model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
+                    init_messages=[{"role": "user", "content": "user instruction"}],
+                    tools=[],
+                )
+                agent.start_conversation()
+                agent.enqueue_user_message(frontend_msg_id="1", user_message="before-flag")
+                agent._safe_drain_user_message_queue()
+                agent._append_runtime_message({"role": "user", "content": "WAKE_MM_SUMMARY_FLAG"})
+                agent._append_runtime_message({"role": "assistant", "content": "after-flag"})
+                agent._append_runtime_message({"role": "tool", "tool_call_id": "call_1", "content": "tool-result"})
+
+                with mock.patch("src.core.agent.WAKE_MM_SUMMARY_FLAG", "WAKE_MM_SUMMARY_FLAG"):
+                    carryover_messages = agent._build_reset_carryover_messages()
+
+                self.assertEqual(
+                    carryover_messages,
+                    [
+                        {"role": "assistant", "content": "after-flag"},
+                        {"role": "tool", "tool_call_id": "call_1", "content": "tool-result"},
+                    ],
+                )
 
 
 if __name__ == "__main__":

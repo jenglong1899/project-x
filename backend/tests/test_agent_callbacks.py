@@ -515,9 +515,9 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(len(stored_files), 2)
 
         self.assertEqual(result, final_ai_msg)
-        self.assertEqual(len(summarizer_runner.calls), 2)
+        self.assertEqual(len(summarizer_runner.calls), 1)
         self.assertEqual(len(judge_runner.calls), 1)
-        self.assertEqual(switch_events[-1], [])
+        self.assertEqual(switch_events[-1], [{"role": "assistant", "content": "done after reset"}])
         self.assertEqual(agent._messages[0], {"role": "user", "content": "user-2"})
         self.assertEqual(agent._memory_manager_summarizer_awaken_count, 0)
         self.assertEqual(agent._memory_manager_judge_awaken_count, 0)
@@ -669,10 +669,10 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     await _wait_for_memory_manager_reset_task(agent)
 
         self.assertEqual(result, final_ai_msg)
-        self.assertEqual(len(summarizer_runner.calls), 2)
+        self.assertEqual(len(summarizer_runner.calls), 1)
         self.assertEqual(len(judge_runner.calls), 1)
         self.assertEqual(len(switch_events), 2)
-        self.assertEqual(switch_events[1], [])
+        self.assertEqual(switch_events[1], [{"role": "assistant", "content": "done"}])
         self.assertEqual(agent._messages[0], {"role": "user", "content": "user-2"})
 
     async def test_summarizer_does_not_reenter_while_in_flight(self) -> None:
@@ -735,10 +735,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
             1,
         )
 
-    async def test_reset_tail_summarizer_reuses_existing_summary_flag_boundary(self) -> None:
-        summarizer_runner = _StaticSummarizerRunner()
-        judge_runner = _StaticJudgeRunner(should_reset_context=True)
-
+    async def test_reset_carryover_reuses_existing_summary_flag_boundary(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             with _patch_agent_conversation_store_without_history(temp_dir):
                 agent = Agent(
@@ -747,26 +744,15 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     init_messages=[{"role": "user", "content": "user-1"}],
                     tools=[self._echo_tool()],
                 )
-                agent._memory_manager_summarizer_runner = summarizer_runner
-                agent._memory_manager_judge_runner = judge_runner
                 agent.start_conversation()
                 agent.enqueue_user_message(frontend_msg_id="u1", user_message="hello")
                 agent._safe_drain_user_message_queue()
                 agent._append_runtime_message({"role": "user", "content": WAKE_MM_SUMMARY_FLAG})
                 agent._append_runtime_message({"role": "assistant", "content": "after-flag"})
-
-                with mock.patch(
-                    "src.core.init_prompts.build_init_messages",
-                    return_value=[{"role": "user", "content": "user-2"}],
-                ):
-                    await agent._run_memory_manager_summarizer_before_reset()
-                    agent._reset_context()
-
-        self.assertEqual(len(summarizer_runner.calls), 1)
-        worker_messages = summarizer_runner.calls[0]["worker_messages"]
-        self.assertEqual(worker_messages[-2]["content"], WAKE_MM_SUMMARY_FLAG)
-        self.assertEqual(worker_messages[-1], {"role": "assistant", "content": "after-flag"})
-        self.assertEqual(agent._messages, [{"role": "user", "content": "user-2"}])
+                self.assertEqual(
+                    agent._build_reset_carryover_messages(),
+                    [{"role": "assistant", "content": "after-flag"}],
+                )
 
 
 if __name__ == "__main__":

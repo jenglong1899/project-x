@@ -1,6 +1,6 @@
 from typing import Any
 
-from core.init_prompts import TAG_PROJECT_X_INSTRUCTION
+from src.core.init_prompts import TAG_PROJECT_X_INSTRUCTION
 from src.commons import MEMORY_MAIN_MD, MEMORY_TODO_MD, WAKE_MM_SUMMARY_FLAG, SUMMARIES_DIR
 from src.core.init_prompts import read_main_memory
 

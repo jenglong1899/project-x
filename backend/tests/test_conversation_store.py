@@ -104,6 +104,32 @@ class ConversationStoreTests(unittest.TestCase):
             self.assertTrue(loaded_store.pause_requested)
             self.assertFalse(loaded_store.paused)
 
+    def test_reset_carryover_messages_are_persisted_and_loaded(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            originals_dir = Path(temp_dir)
+            store = ConversationStore(init_messages=INIT_MESSAGES, originals_dir=originals_dir)
+
+            store.start_with_first_user_message(user_content="hello")
+            store.update_memory_manager_reset_carryover_messages(
+                messages=[
+                    {"role": "assistant", "content": "a"},
+                    {"role": "tool", "content": "b", "tool_call_id": "call_1"},
+                ]
+            )
+
+            loaded_store = ConversationStore.load_from_conversation_file_name(
+                conversation_file_name=store.conversation_file_name,
+                originals_dir=originals_dir,
+            )
+
+            self.assertEqual(
+                loaded_store.memory_manager_reset_carryover_messages,
+                [
+                    {"role": "assistant", "content": "a"},
+                    {"role": "tool", "content": "b", "tool_call_id": "call_1"},
+                ],
+            )
+
     def test_find_latest_conversation_file_name_returns_none_when_no_history_exists(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             self.assertIsNone(

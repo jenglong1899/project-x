@@ -399,29 +399,26 @@ class Agent(AgentBase):
         logger.info("Agent[%s].run：%s", self.name, log_reason)
         self._on_paused()
 
-    async def _finalize_memory_manager_reset(self) -> None:
-        summarizer_task = self._memory_manager_summarizer_task
-        if summarizer_task is not None and not summarizer_task.done():
-            try:
-                await summarizer_task
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                logger.exception(
-                    "Agent[%s] 等待 memory_manager_summarizer_task 时失败，仍继续 reset_context：%s: %s",
-                    self.name,
-                    type(exc).__name__,
-                    exc,
-                )
+    def _build_reset_carryover_messages(self) -> list[dict[str, Any]]:
+        business_messages = self._messages[len(self._init_messages):]
+        last_summary_flag_index: int | None = None
+        for index, message in enumerate(business_messages):
+            if message.get("role") == "user" and message.get("content") == WAKE_MM_SUMMARY_FLAG:
+                last_summary_flag_index = index
 
-        await self._run_memory_manager_summarizer_before_reset()
-        logger.info("Agent[%s] 开始 reset_context", self.name)
-        self._reset_context()
+        if last_summary_flag_index is None:
+            return [dict(message) for message in business_messages]
+
+        carryover_messages = business_messages[last_summary_flag_index + 1:]
+        return [dict(message) for message in carryover_messages]
 
     async def _handle_memory_manager_reset_request(self) -> None:
         self.request_pause()
         await self._wait_until_worker_paused_for_reset()
-        await self._finalize_memory_manager_reset()
+        conversation_store = self._require_conversation_store()
+        carryover_messages = self._build_reset_carryover_messages()
+        conversation_store.update_memory_manager_reset_carryover_messages(messages=carryover_messages)
+        self._reset_context(carryover_messages=carryover_messages)
 
     @staticmethod
     def _estimate_prompt_tokens_from_messages(messages: list[dict[str, Any]]) -> int:
@@ -449,7 +446,7 @@ class Agent(AgentBase):
 
         used_percent = int(current_tokens * 100 / context_limit)
         current_threshold = (
-                                        used_percent // MEMORY_MANAGER_CONTEXT_USED_THRESHOLD_STEP_PERCENT) * MEMORY_MANAGER_CONTEXT_USED_THRESHOLD_STEP_PERCENT
+                                    used_percent // MEMORY_MANAGER_CONTEXT_USED_THRESHOLD_STEP_PERCENT) * MEMORY_MANAGER_CONTEXT_USED_THRESHOLD_STEP_PERCENT
         if current_threshold <= last_triggered_threshold:
             return
 
@@ -519,42 +516,6 @@ class Agent(AgentBase):
         if judge_task is None:
             logger.warning("memory manager judge task 未初始化，本次跳过 judge")
 
-    async def _run_memory_manager_summarizer_before_reset(self) -> None:
-        if not any(message.get("content") == WAKE_MM_SUMMARY_FLAG for message in self._messages):
-            logger.warning("Agent[%s] reset 前未找到 %s，跳过收尾 summarizer", self.name, WAKE_MM_SUMMARY_FLAG)
-            return
-
-        summarizer_round = self._memory_manager_summarizer_awaken_count + 1
-        logger.info(
-            "Agent[%s] reset 前执行收尾 memory_manager_summarizer_task（round=%s messages=%s）",
-            self.name,
-            summarizer_round,
-            len(self._messages),
-        )
-        # 注意 FLAG 是为下一次 summarizer 唤醒而留的，当次 summarizer 用的是上一个 summarizer 唤起时留下的 flag
-        # 如果这里再插一个新 flag，会变成：
-        # ......旧内容...... [旧 flag] ......新内容...... [新 flag]
-        #                                               ^ 最近一条 flag
-        # 那 summarizer 就会认为“新 flag 之前都已经摘要过了”，结果真正该补的 旧 flag -> 新 flag 这一段反而被跳过。
-        try:
-            await self._memory_manager_summarizer_runner.run(
-                worker_messages=[dict(message) for message in self._messages],
-                model_config=self._model_config,
-                tools=build_memory_manager_summarizer_tools(provider=self._model_config.provider),
-                is_first_time_awaken=False,
-                conversation_file_name=self._require_conversation_store().conversation_file_name,
-                awaken_round=summarizer_round,
-            )
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            logger.exception(
-                "Agent[%s] reset 前收尾 summarizer 失败，仍继续 reset：%s: %s",
-                self.name,
-                type(exc).__name__,
-                exc,
-            )
-
     def _append_runtime_message(self, message: dict[str, Any]) -> None:
         # 这个函数被用的地方都是在 run 函数的后方，
         # run开头就drain user message，这函数出来之后一定是已经有持久化文件了。
@@ -588,7 +549,7 @@ class Agent(AgentBase):
                             on_ai_tool_call_arguments_delta=on_ai_tool_call_arguments_delta,
                             on_ai_tool_call_finished=on_ai_tool_call_finished)
 
-    def _reset_context(self) -> None:
+    def _reset_context(self, *, carryover_messages: list[dict[str, Any]]) -> None:
         from src.core.init_prompts import (
             build_init_messages,
         )
@@ -604,8 +565,12 @@ class Agent(AgentBase):
 
         conversation_store = ConversationStore(init_messages=self._init_messages)
         self._conversation_store = conversation_store
-        self._messages = [dict(message) for message in self._init_messages]
-        conversation_store.start_with_messages(messages=[])
+        self._messages = [
+            *[dict(message) for message in self._init_messages],
+            *[dict(message) for message in carryover_messages],
+        ]
+        conversation_store.start_with_messages(messages=carryover_messages)
+        conversation_store.update_memory_manager_reset_carryover_messages(messages=[])
         conversation_store.update_memory_manager_last_triggered_threshold(last_triggered_threshold=0)
         self._persist_pause_state()
         self._notify_switch_conversation(messages=self._messages)
