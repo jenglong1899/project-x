@@ -36,7 +36,7 @@ class _StaticSummarizerRunner:
         return None
 
 
-class _StaticJudgeRunner:
+class _StaticDeciderRunner:
     def __init__(self, *, should_reset_context: bool) -> None:
         self.should_reset_context = should_reset_context
         self.calls: list[dict[str, object]] = []
@@ -46,7 +46,7 @@ class _StaticJudgeRunner:
         return self.should_reset_context
 
 
-class _SequenceJudgeRunner:
+class _SequenceDeciderRunner:
     def __init__(self, results: list[bool]) -> None:
         self._results = list(results)
         self.calls: list[dict[str, object]] = []
@@ -79,8 +79,8 @@ async def _wait_for_memory_manager_background_tasks(agent: Agent) -> None:
         pending_tasks = [
             task
             for task in (
-                agent._memory_manager_summarizer_task,
-                agent._memory_manager_judge_task,
+                agent._summarizer_task,
+                agent._decider_task,
                 agent._memory_manager_reset_task,
             )
             if task is not None and not task.done()
@@ -464,7 +464,7 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
     async def test_memory_manager_magic_word_switches_conversation(self) -> None:
         switch_events: list[list[dict[str, object]]] = []
         summarizer_runner = _StaticSummarizerRunner()
-        judge_runner = _SequenceJudgeRunner([True, False])
+        decider_runner = _SequenceDeciderRunner([True, False])
 
         with tempfile.TemporaryDirectory() as temp_dir:
             with _patch_agent_conversation_store_without_history(temp_dir):
@@ -475,8 +475,8 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     tools=[self._echo_tool()],
                     on_switch_conversation=lambda *, visible_messages: switch_events.append(visible_messages),
                 )
-                agent._memory_manager_summarizer_runner = summarizer_runner
-                agent._memory_manager_judge_runner = judge_runner
+                agent._summarizer_runner = summarizer_runner
+                agent._decider_runner = decider_runner
                 agent.start_conversation()
 
                 ai_msg_with_tool_call = {
@@ -516,15 +516,15 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, final_ai_msg)
         self.assertEqual(len(summarizer_runner.calls), 1)
-        self.assertEqual(len(judge_runner.calls), 1)
+        self.assertEqual(len(decider_runner.calls), 1)
         self.assertEqual(switch_events[-1], [{"role": "assistant", "content": "done after reset"}])
         self.assertEqual(agent._messages[0], {"role": "user", "content": "user-2"})
-        self.assertEqual(agent._memory_manager_summarizer_awaken_count, 0)
-        self.assertEqual(agent._memory_manager_judge_awaken_count, 0)
+        self.assertEqual(agent._summarizer_awaken_count, 0)
+        self.assertEqual(agent._decider_awaken_count, 0)
 
     async def test_memory_manager_does_not_awaken_below_context_growth_threshold(self) -> None:
         summarizer_runner = _StaticSummarizerRunner()
-        judge_runner = _StaticJudgeRunner(should_reset_context=False)
+        decider_runner = _StaticDeciderRunner(should_reset_context=False)
 
         with tempfile.TemporaryDirectory() as temp_dir:
             with _patch_agent_conversation_store_without_history(temp_dir):
@@ -534,8 +534,8 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     init_messages=[{"role": "user", "content": "user"}],
                     tools=[self._echo_tool()],
                 )
-                agent._memory_manager_summarizer_runner = summarizer_runner
-                agent._memory_manager_judge_runner = judge_runner
+                agent._summarizer_runner = summarizer_runner
+                agent._decider_runner = decider_runner
                 agent.start_conversation()
 
                 agent.enqueue_user_message(frontend_msg_id="u1", user_message="hello")
@@ -549,13 +549,13 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     await agent._maybe_wake_memory_manager(prompt_tokens=2)
 
         self.assertEqual(summarizer_runner.calls, [])
-        self.assertEqual(judge_runner.calls, [])
-        self.assertEqual(agent._memory_manager_summarizer_awaken_count, 0)
-        self.assertEqual(agent._memory_manager_judge_awaken_count, 0)
+        self.assertEqual(decider_runner.calls, [])
+        self.assertEqual(agent._summarizer_awaken_count, 0)
+        self.assertEqual(agent._decider_awaken_count, 0)
 
     async def test_memory_manager_awakes_when_context_growth_threshold_is_reached(self) -> None:
         summarizer_runner = _StaticSummarizerRunner()
-        judge_runner = _StaticJudgeRunner(should_reset_context=False)
+        decider_runner = _StaticDeciderRunner(should_reset_context=False)
 
         with tempfile.TemporaryDirectory() as temp_dir:
             with _patch_agent_conversation_store_without_history(temp_dir):
@@ -565,8 +565,8 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     init_messages=[{"role": "user", "content": "user"}],
                     tools=[self._echo_tool()],
                 )
-                agent._memory_manager_summarizer_runner = summarizer_runner
-                agent._memory_manager_judge_runner = judge_runner
+                agent._summarizer_runner = summarizer_runner
+                agent._decider_runner = decider_runner
                 agent.start_conversation()
 
                 ai_msgs_with_tool_call = [
@@ -606,18 +606,18 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
             [tool.name for tool in summarizer_runner.calls[0]["tools"]],
             ["bash", "read_file", "replace_text", "insert_text"],
         )
-        self.assertEqual(len(judge_runner.calls), 1)
+        self.assertEqual(len(decider_runner.calls), 1)
         self.assertEqual(
-            [tool.name for tool in judge_runner.calls[0]["tools"]],
+            [tool.name for tool in decider_runner.calls[0]["tools"]],
             ["bash", "read_file", "replace_text", "insert_text"],
         )
-        self.assertEqual(agent._memory_manager_summarizer_awaken_count, 1)
-        self.assertEqual(agent._memory_manager_judge_awaken_count, 1)
+        self.assertEqual(agent._summarizer_awaken_count, 1)
+        self.assertEqual(agent._decider_awaken_count, 1)
 
-    async def test_judge_reset_waits_for_summarizer_before_switching_conversation(self) -> None:
+    async def test_decider_reset_waits_for_summarizer_before_switching_conversation(self) -> None:
         switch_events: list[list[dict[str, object]]] = []
         summarizer_runner = _BlockingSummarizerRunner()
-        judge_runner = _SequenceJudgeRunner([True, False])
+        decider_runner = _SequenceDeciderRunner([True, False])
 
         with tempfile.TemporaryDirectory() as temp_dir:
             with _patch_agent_conversation_store_without_history(temp_dir):
@@ -628,8 +628,8 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     tools=[self._echo_tool()],
                     on_switch_conversation=lambda *, visible_messages: switch_events.append(visible_messages),
                 )
-                agent._memory_manager_summarizer_runner = summarizer_runner
-                agent._memory_manager_judge_runner = judge_runner
+                agent._summarizer_runner = summarizer_runner
+                agent._decider_runner = decider_runner
                 agent.start_conversation()
 
                 ai_msg_with_tool_call = {
@@ -670,14 +670,14 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, final_ai_msg)
         self.assertEqual(len(summarizer_runner.calls), 1)
-        self.assertEqual(len(judge_runner.calls), 1)
+        self.assertEqual(len(decider_runner.calls), 1)
         self.assertEqual(len(switch_events), 2)
         self.assertEqual(switch_events[1], [{"role": "assistant", "content": "done"}])
         self.assertEqual(agent._messages[0], {"role": "user", "content": "user-2"})
 
     async def test_summarizer_does_not_reenter_while_in_flight(self) -> None:
         summarizer_runner = _BlockingSummarizerRunner()
-        judge_runner = _StaticJudgeRunner(should_reset_context=False)
+        decider_runner = _StaticDeciderRunner(should_reset_context=False)
 
         with tempfile.TemporaryDirectory() as temp_dir:
             with _patch_agent_conversation_store_without_history(temp_dir):
@@ -687,8 +687,8 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     init_messages=[{"role": "user", "content": "user-1"}],
                     tools=[self._echo_tool()],
                 )
-                agent._memory_manager_summarizer_runner = summarizer_runner
-                agent._memory_manager_judge_runner = judge_runner
+                agent._summarizer_runner = summarizer_runner
+                agent._decider_runner = decider_runner
                 agent.start_conversation()
 
                 ai_msgs_with_tool_call = [
@@ -727,9 +727,9 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(result, final_ai_msg)
         self.assertEqual(len(summarizer_runner.calls), 1)
-        self.assertEqual(len(judge_runner.calls), 1)
-        self.assertEqual(agent._memory_manager_summarizer_awaken_count, 1)
-        self.assertEqual(agent._memory_manager_judge_awaken_count, 1)
+        self.assertEqual(len(decider_runner.calls), 1)
+        self.assertEqual(agent._summarizer_awaken_count, 1)
+        self.assertEqual(agent._decider_awaken_count, 1)
         self.assertEqual(
             sum(1 for m in agent._messages if m.get("role") == "user" and m.get("content") == WAKE_MM_SUMMARY_FLAG),
             1,

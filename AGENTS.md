@@ -4,16 +4,16 @@
 
 ## 核心心智模型
 
-本 Agent 系统的重点是记忆机制，有 `worker`、`summarizer`、`judge` 三个角色，任务执行和记忆分离，从而减轻 AI 的注意力负担，达到更好的工作效果和记忆效果。
+本 Agent 系统的重点是记忆机制，有 `worker`、`summarizer`、`decider` 三个角色，任务执行和记忆分离，从而减轻 AI 的注意力负担，达到更好的工作效果和记忆效果。 `summarizer`和`decider`被统称为`memory_manager`。
 
-上下文每增长 3%，系统就从 worker 中 fork 出 `summarizer` 和 `judge` 两个角色异步工作，一个负责总结，一个负责决定是否要重置上下文。（等模型决定重置后再统一总结会导致遗漏）
+上下文每增长 3%，系统就从 worker 中 fork 出 `summarizer` 和 `decider` 两个角色异步工作，一个负责总结，一个负责决定是否要重置上下文。（等模型决定重置后再统一总结会导致遗漏）
 
 - **核心抽象是 `Agent`**：`backend/src/core/agent.py` 对外暴露一个最小接口（排队 user message → `async run()` 生成 → 工具调用 → 持久化）；其他模块基本都在为它服务。
 - **`AgentRunner` 是驱动层**：`backend/src/core/agent_runner.py` 负责“提交消息 + 确保后台运行 + 防重入 + 跑到 idle”，适配层（如 WebSocket）只和它交互，避免直接操作 `Agent`。
 - **`WebSocketChatSession` 是适配层**：`backend/src/websocket_chat_session.py` 通过 `AgentRunner` 驱动 agent（busy/idle/turn 完成回调），并把回调投影成前端事件（assistant delta / tool card / committed 等）。
 - **`ConversationStore` 是持久化层**：`backend/src/conversation_store.py` 把对话落地到 `~/.project-x/memories/originals/*.json`，并负责追加消息与恢复历史 messages。
-- **Memory Manager 是双 runner**：触发点在 `Agent._maybe_wake_memory_manager()`；`summarizer runner` 维护 `~/.project-x/memories/summaries/MAIN.md` 等记忆文档，`judge runner` 只判断是否 reset-context（两者实现见 `backend/src/core/memory_manager.py`）。
-- **工具缓存约束**：AI 看到的 tools 集合/顺序对 provider 缓存敏感。即使 judge 逻辑上“不需要用工具”，也不要轻易改掉它暴露给模型的 tools 形状；若必须调整，优先最小化变更，并确认不会破坏缓存命中。
+- **Memory Manager 是双 runner**：触发点在 `Agent._maybe_wake_memory_manager()`；`summarizer runner` 维护 `~/.project-x/memories/summaries/MAIN.md` 等记忆文档，`decider runner` 只判断是否 reset-context（两者实现见 `backend/src/core/memory_manager.py`）。
+- **工具缓存约束**：AI 看到的 tools 集合/顺序对 provider 缓存敏感。即使 decider 逻辑上“不需要用工具”，也不要轻易改掉它暴露给模型的 tools 形状；若必须调整，优先最小化变更，并确认不会破坏缓存命中。
 - **provider 分叉**：`openai-codex` 走手写 Codex client、单条 user-role init prompt、`apply_patch` 工具；其他 provider 走 LiteLLM 路径、system+user init messages、`replace_text/insert_text` 工具。排查行为差异时先确认当前 provider。
 - src/commons.py 含有项目里面常用的变量、函数，必读
 
@@ -78,7 +78,7 @@
 - `reset_context`：工具执行阶段可能返回重置指令（见 `backend/src/tools/reset_context.py` 与 `backend/src/core/agent_turn.py` 的特判）；真正的 reset 会在 Agent 内部重建会话并触发 `conversation.switched`
 - `run()` 在本轮没有 tool_calls 时也会按上下文阈值唤醒 memory manager，避免“纯聊天永远不摘要”
 - provider 如果没返回 `usage.prompt_tokens`，会退回到本地按消息 JSON 大小粗估 token
-- 如果 memory manager judge 判定要 reset，Agent 会先请求 pause，等 worker 在回合边界停住，再把“最近一次 `WAKE_MM_SUMMARY_FLAG` 之后”的业务消息作为 carryover 写进新 segment
+- 如果 decider 判定要 reset，Agent 会先请求 pause，等 worker 在回合边界停住，再把“最近一次 `WAKE_MM_SUMMARY_FLAG` 之后”的业务消息作为 carryover 写进新 segment
 
 回调（适配层用来投影前端事件）：
 - AI 流式：`on_ai_content_delta` / `on_ai_reasoning_delta`
@@ -105,7 +105,7 @@
 补充约束（很容易踩坑）：
 - 记忆目录写入守卫在 `backend/src/commons.py`：worker **只能**编辑 `~/.project-x/memories/summaries/TODO.md`；summarizer 不能编辑 `TODO.md`，应编辑 `MAIN.md` 或其他摘要文件。
 - `replace_text/insert_text` 在失败时可能把大段内容落到 `/tmp/...` 并返回 `*_from_file` 路径供下一次调用复用（避免重复粘贴占 token）；这是工具的正常行为。
-- judge 虽然逻辑上“不该用工具”，但仍会看到同一组 tools；如果它真发了 tool_calls，系统会回一个假的 tool result 继续对话，以保住 provider 的工具缓存形状。
+- decider 虽然逻辑上“不该用工具”，但仍会看到同一组 tools；如果它真发了 tool_calls，系统会回一个假的 tool result 继续对话，以保住 provider 的工具缓存形状。
 
 ### 3) 持久化（`backend/src/conversation_store.py`）
 - 落地目录：`~/.project-x/memories/originals/`（可用 `PROJECT_X_MEMORIES_ROOT` 覆盖根目录，见 `backend/src/commons.py`）
@@ -113,7 +113,7 @@
 - JSON 结构：`{ init_messages: [...], meta: { "memory-manager": {...}, "pause": {...} }, messages: [ {role, content, ...} ] }`
 - 给模型用的 runtime messages 会 strip 掉每条 message 的 `meta`（目前消息本身不带 meta）
 补充：
-- memory manager meta 里除了 `summarizer-awaken-count` / `judge-awaken-count`，还有 `last-triggered-threshold` 和 `reset-carryover-messages`
+- memory manager meta 里除了 `summarizer-awaken-count` / `decider-awaken-count`，还有 `last-triggered-threshold` 和 `reset-carryover-messages`
 - pause meta 里会持久化 `requested` / `paused`
 - 兼容旧字段 `summary-awaken-count`
 - memory manager 的运行日志会写到 `~/.project-x/memories/logs/*.jsonl`（见 `backend/src/core/memory_manager_run_logger.py`）。

@@ -30,7 +30,7 @@ ORIGINALS_DIR = MEMORIES_ROOT / "originals"
 WAKE_MM_SUMMARY_FLAG = "<flag>WAKE_MM_SUMMARY_FLAG_POINT</flag>"
 # RESET_CONTEXT_DECISION_MADE_FLAG="<flag>RESET_CONTEXT_DECISION_MADE_POINT</flag>"
 
-ToolCallerKind = Literal["worker", "summarizer", "judge"]
+ToolCallerKind = Literal["worker", "summarizer", "decider"]
 
 
 def is_path_in_summaries_dir(*, path: Path) -> bool:

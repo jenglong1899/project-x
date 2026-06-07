@@ -13,7 +13,7 @@ from src.core.model_config import ModelConfig
 RESET_CONTEXT_MAGIC_WORD = "PROJECT-X-RESET-CONTEXT"
 
 
-class MemoryManagerSummarizerRunner:
+class SummarizerRunner:
     async def run(
             self,
             *,
@@ -42,7 +42,7 @@ class MemoryManagerSummarizerRunner:
         )
         user_prompt = {
             "role": "user",
-            "content": build_memory_manager_summarizer_prompt(
+            "content": build_summarizer_instruction(
                 is_first_time_awaken=is_first_time_awaken,
             ),
         }
@@ -97,7 +97,7 @@ class MemoryManagerSummarizerRunner:
         return None
 
 
-class MemoryManagerJudgeResetContextRunner:
+class DeciderRunner:
     async def run(
             self,
             *,
@@ -110,7 +110,7 @@ class MemoryManagerJudgeResetContextRunner:
         forked_messages = [dict(message) for message in worker_messages]
         logger = MemoryManagerRunLogger(
             conversation_file_name=conversation_file_name,
-            runner_kind="judge",
+            runner_kind="decider",
             awaken_round=awaken_round,
         )
         logger.append_event(
@@ -125,7 +125,7 @@ class MemoryManagerJudgeResetContextRunner:
         )
         user_prompt = {
             "role": "user",
-            "content": build_memory_manager_judge_whether_reset_context_prompt(),
+            "content": build_decider_instruction(),
         }
         forked_messages.append(
             {
@@ -161,7 +161,7 @@ class MemoryManagerJudgeResetContextRunner:
             if not tool_calls:
                 break
 
-            # judge runner 只判断是否 reset-context，不允许真正执行工具。
+            # decider runner 只判断是否 reset-context，不允许真正执行工具。
             # 但为了不破坏 provider 的“工具缓存”，我们依然把 tools 透传给 stream，
             # 并对 tool_calls 统一回一个不可执行的 tool result，让对话继续走到结束。
             tool_messages: list[dict[str, Any]] = []
@@ -190,15 +190,15 @@ class MemoryManagerJudgeResetContextRunner:
         return should_reset
 
 
-def build_memory_manager_summarizer_prompt(is_first_time_awaken: bool) -> str:
+def build_summarizer_instruction(is_first_time_awaken: bool) -> str:
     if is_first_time_awaken:
-        memory_operation_history_prompt = (f"<summary_operation_history_info>"
+        summarizer_operation_history_prompt = (f"<summarizer_operation_history_info>"
                                            f"这是你第一次在当前会话中被唤醒，"
                                            f"“磁盘中的{MEMORY_MAIN_MD}”和“上下文中的{MEMORY_MAIN_MD}”是一致的，没有被之前的你修改过"
-                                           "</summary_operation_history_info>")
+                                           "</summarizer_operation_history_info>")
     else:
-        memory_operation_history_prompt = f"""
-<summary_operation_history_info>
+        summarizer_operation_history_prompt = f"""
+<summarizer_operation_history_info>
 这不是你第一次在当前会话中被唤醒，你之前已经处理过记忆文档。
 
 你上一次被唤醒的地方是*最近的*那条 {WAKE_MM_SUMMARY_FLAG} 消息，在那之前的内容都已经被之前的你摘要过了。
@@ -207,7 +207,7 @@ def build_memory_manager_summarizer_prompt(is_first_time_awaken: bool) -> str:
 <{MEMORY_MAIN_MD}>
 {read_main_memory()}
 </{MEMORY_MAIN_MD}>
-</summary_operation_history_info>
+</summarizer_operation_history_info>
 """
 
     return f"""
@@ -241,7 +241,7 @@ def build_memory_manager_summarizer_prompt(is_first_time_awaken: bool) -> str:
 
 不要对上下文中<{TAG_PROJECT_X_INSTRUCTION}>以及这之前的指令做摘要，因为这些信息在重置后系统会自动注入
 
-{memory_operation_history_prompt}
+{summarizer_operation_history_prompt}
 
 你当前的工作目录已经被改为 {SUMMARIES_DIR}
 
@@ -251,13 +251,13 @@ def build_memory_manager_summarizer_prompt(is_first_time_awaken: bool) -> str:
 """
 
 
-def build_memory_manager_judge_whether_reset_context_prompt() -> str:
+def build_decider_instruction() -> str:
     return f"""
 <roles_change_notice>
 
 **先停下你手头上的事，阅读下面的消息**
 
-**你的角色是 judge，你刚从worker的上下文中被 fork 出来**
+**你的角色是 decider，你刚从worker的上下文中被 fork 出来**
 
 你现在要做的事情就是判断当前是否要重置上下文
 

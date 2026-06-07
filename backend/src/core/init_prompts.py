@@ -113,13 +113,13 @@ def _build_memory_mechanism_instruction()->str:
  
 2. memory manager
     - 由系统定期从 worker 的当前上下文创建出来（fork），随后会收到专门的记忆处理指令。 
-    - 其中一个memory manager负责更新摘要记忆、整理长期记忆（简称summarizer），另一个memory manager负责判定是否需要重置上下文（简称judge）。
+    - 其中一个memory manager负责更新摘要记忆、整理长期记忆（简称summarizer），另一个memory manager负责判定是否需要重置上下文（简称decider）。
     - 除了 {MEMORY_TODO_MD} 之外，其他的记忆文件都可以编辑。
 
 **如果你没有收到处理记忆的 user-role msg（会用<roles_change_notice>包裹住），你就是 worker。**
 **如果你收到了处理记忆的指令，你就是 memory manager。**
 
-当系统创建出 summarizer 之后，系统会在 worker 的上下文中插入 {WAKE_MM_SUMMARY_FLAG} (user-role msg) 作为辅助标记，worker和judge都不需要关注这个。
+当系统创建出 summarizer 之后，系统会在 worker 的上下文中插入 {WAKE_MM_SUMMARY_FLAG} (user-role msg) 作为辅助标记，worker和decider都不需要关注这个。
 
 worker可以做一些“联想”，比如怀疑自己可能接触过某些信息的时候，worker可以去 {ORIGINALS_DIR} 里面搜索相关的关键词，这个文件夹里面存放的是worker的所有完整记忆。
 

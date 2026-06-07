@@ -10,8 +10,7 @@ from src.commons import ORIGINALS_DIR
 
 MEMORY_MANAGER_META_KEY = "memory-manager"
 MEMORY_MANAGER_SUMMARIZER_AWAKEN_COUNT_KEY = "summarizer-awaken-count"
-LEGACY_MEMORY_MANAGER_SUMMARY_AWAKEN_COUNT_KEY = "summary-awaken-count"
-MEMORY_MANAGER_JUDGE_AWAKEN_COUNT_KEY = "judge-awaken-count"
+MEMORY_MANAGER_DECIDER_AWAKEN_COUNT_KEY = "decider-awaken-count"
 MEMORY_MANAGER_LAST_TRIGGERED_THRESHOLD_KEY = "last-triggered-threshold"
 MEMORY_MANAGER_RESET_CARRYOVER_MESSAGES_KEY = "reset-carryover-messages"
 PAUSE_META_KEY = "pause"
@@ -68,8 +67,8 @@ class ConversationStore:
         self._file_path: Path | None = None
         self._conversation_file_name = ""
         self._messages: list[dict[str, Any]] = []
-        self._memory_manager_summarizer_awaken_count = 0
-        self._memory_manager_judge_awaken_count = 0
+        self._summarizer_awaken_count = 0
+        self._decider_awaken_count = 0
         self._memory_manager_last_triggered_threshold = 0
         self._memory_manager_reset_carryover_messages: list[dict[str, Any]] = []
         self._pause_requested = False
@@ -91,12 +90,12 @@ class ConversationStore:
         return [dict(message) for message in self._init_messages]
 
     @property
-    def memory_manager_summarizer_awaken_count(self) -> int:
-        return self._memory_manager_summarizer_awaken_count
+    def summarizer_awaken_count(self) -> int:
+        return self._summarizer_awaken_count
 
     @property
-    def memory_manager_judge_awaken_count(self) -> int:
-        return self._memory_manager_judge_awaken_count
+    def decider_awaken_count(self) -> int:
+        return self._decider_awaken_count
 
     @property
     def memory_manager_last_triggered_threshold(self) -> int:
@@ -114,11 +113,11 @@ class ConversationStore:
     def paused(self) -> bool:
         return self._paused
 
-    def update_memory_manager_state(self, *, summarizer_awaken_count: int, judge_awaken_count: int) -> None:
-        if summarizer_awaken_count < 0 or judge_awaken_count < 0:
+    def update_memory_manager_state(self, *, summarizer_awaken_count: int, decider_awaken_count: int) -> None:
+        if summarizer_awaken_count < 0 or decider_awaken_count < 0:
             raise ValueError("memory manager 状态不能为负数")
-        self._memory_manager_summarizer_awaken_count = summarizer_awaken_count
-        self._memory_manager_judge_awaken_count = judge_awaken_count
+        self._summarizer_awaken_count = summarizer_awaken_count
+        self._decider_awaken_count = decider_awaken_count
         if self.has_persisted_conversation():
             self._write_json_atomically()
 
@@ -215,15 +214,13 @@ class ConversationStore:
         memory_manager_meta = meta.get(MEMORY_MANAGER_META_KEY)
         if isinstance(memory_manager_meta, dict):
             summarizer_awaken_count = memory_manager_meta.get(MEMORY_MANAGER_SUMMARIZER_AWAKEN_COUNT_KEY)
-            if not isinstance(summarizer_awaken_count, int):
-                summarizer_awaken_count = memory_manager_meta.get(LEGACY_MEMORY_MANAGER_SUMMARY_AWAKEN_COUNT_KEY)
-            judge_awaken_count = memory_manager_meta.get(MEMORY_MANAGER_JUDGE_AWAKEN_COUNT_KEY)
+            decider_awaken_count = memory_manager_meta.get(MEMORY_MANAGER_DECIDER_AWAKEN_COUNT_KEY)
             last_triggered_threshold = memory_manager_meta.get(MEMORY_MANAGER_LAST_TRIGGERED_THRESHOLD_KEY)
             reset_carryover_messages = memory_manager_meta.get(MEMORY_MANAGER_RESET_CARRYOVER_MESSAGES_KEY)
             if isinstance(summarizer_awaken_count, int) and summarizer_awaken_count >= 0:
-                store._memory_manager_summarizer_awaken_count = summarizer_awaken_count
-            if isinstance(judge_awaken_count, int) and judge_awaken_count >= 0:
-                store._memory_manager_judge_awaken_count = judge_awaken_count
+                store._summarizer_awaken_count = summarizer_awaken_count
+            if isinstance(decider_awaken_count, int) and decider_awaken_count >= 0:
+                store._decider_awaken_count = decider_awaken_count
             if isinstance(last_triggered_threshold, int) and last_triggered_threshold >= 0:
                 store._memory_manager_last_triggered_threshold = last_triggered_threshold
             if isinstance(reset_carryover_messages, list) and all(
@@ -290,8 +287,8 @@ class ConversationStore:
             "init_messages": self._init_messages,
             "meta": {
                 MEMORY_MANAGER_META_KEY: {
-                    MEMORY_MANAGER_SUMMARIZER_AWAKEN_COUNT_KEY: self._memory_manager_summarizer_awaken_count,
-                    MEMORY_MANAGER_JUDGE_AWAKEN_COUNT_KEY: self._memory_manager_judge_awaken_count,
+                    MEMORY_MANAGER_SUMMARIZER_AWAKEN_COUNT_KEY: self._summarizer_awaken_count,
+                    MEMORY_MANAGER_DECIDER_AWAKEN_COUNT_KEY: self._decider_awaken_count,
                     MEMORY_MANAGER_LAST_TRIGGERED_THRESHOLD_KEY: self._memory_manager_last_triggered_threshold,
                     MEMORY_MANAGER_RESET_CARRYOVER_MESSAGES_KEY: self._memory_manager_reset_carryover_messages,
                 },

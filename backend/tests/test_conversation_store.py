@@ -54,7 +54,7 @@ class ConversationStoreTests(unittest.TestCase):
             store.start_with_first_user_message(user_content="hello")
             store.update_memory_manager_state(
                 summarizer_awaken_count=2,
-                judge_awaken_count=3,
+                decider_awaken_count=3,
             )
             store.update_memory_manager_last_triggered_threshold(last_triggered_threshold=12)
 
@@ -63,30 +63,9 @@ class ConversationStoreTests(unittest.TestCase):
                 originals_dir=originals_dir,
             )
 
-            self.assertEqual(loaded_store.memory_manager_summarizer_awaken_count, 2)
-            self.assertEqual(loaded_store.memory_manager_judge_awaken_count, 3)
+            self.assertEqual(loaded_store.summarizer_awaken_count, 2)
+            self.assertEqual(loaded_store.decider_awaken_count, 3)
             self.assertEqual(loaded_store.memory_manager_last_triggered_threshold, 12)
-
-    def test_legacy_summary_awaken_count_is_still_loaded(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            originals_dir = Path(temp_dir)
-            store = ConversationStore(init_messages=INIT_MESSAGES, originals_dir=originals_dir)
-            store.start_with_first_user_message(user_content="hello")
-
-            payload = json.loads((originals_dir / store.conversation_file_name).read_text(encoding="utf-8"))
-            payload["meta"]["memory-manager"]["summary-awaken-count"] = 7
-            payload["meta"]["memory-manager"].pop("summarizer-awaken-count", None)
-            (originals_dir / store.conversation_file_name).write_text(
-                json.dumps(payload, ensure_ascii=False, indent=2) + "\n",
-                encoding="utf-8",
-            )
-
-            loaded_store = ConversationStore.load_from_conversation_file_name(
-                conversation_file_name=store.conversation_file_name,
-                originals_dir=originals_dir,
-            )
-
-            self.assertEqual(loaded_store.memory_manager_summarizer_awaken_count, 7)
 
     def test_pause_state_is_persisted_and_loaded(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:

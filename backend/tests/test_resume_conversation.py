@@ -89,7 +89,7 @@ class StartConversationTests(unittest.TestCase):
             store.start_with_first_user_message(user_content="hello")
             store.update_memory_manager_state(
                 summarizer_awaken_count=2,
-                judge_awaken_count=3,
+                decider_awaken_count=3,
             )
             store.update_memory_manager_last_triggered_threshold(last_triggered_threshold=33)
 
@@ -103,8 +103,8 @@ class StartConversationTests(unittest.TestCase):
             with mock.patch("src.conversation_store.ORIGINALS_DIR", originals_dir):
                 agent.start_conversation()
 
-        self.assertEqual(agent._memory_manager_summarizer_awaken_count, 2)
-        self.assertEqual(agent._memory_manager_judge_awaken_count, 3)
+        self.assertEqual(agent._summarizer_awaken_count, 2)
+        self.assertEqual(agent._decider_awaken_count, 3)
         self.assertEqual(agent._conversation_store.memory_manager_last_triggered_threshold, 33)  # type: ignore[union-attr]
 
 

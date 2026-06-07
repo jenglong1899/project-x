@@ -1,14 +1,14 @@
 import unittest
 from unittest import mock
 
-from src.core.memory_manager import MemoryManagerJudgeResetContextRunner, RESET_CONTEXT_MAGIC_WORD
+from src.core.memory_manager import DeciderRunner, RESET_CONTEXT_MAGIC_WORD
 from src.core.agent_turn import TurnResult, TurnUsage
 from src.core.model_config import ModelConfig
 
 
-class MemoryManagerJudgeRunnerTests(unittest.IsolatedAsyncioTestCase):
+class MemoryManagerDeciderRunnerTests(unittest.IsolatedAsyncioTestCase):
     async def _run_with_final_content(self, content: object) -> bool:
-        runner = MemoryManagerJudgeResetContextRunner()
+        runner = DeciderRunner()
 
         with mock.patch(
             "src.core.memory_manager.stream",

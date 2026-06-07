@@ -24,11 +24,11 @@ from src.core.agent_turn import (
 from src.tools.tool import Tool
 from src.commons import WAKE_MM_SUMMARY_FLAG
 from src.core.memory_manager import (
-    MemoryManagerJudgeResetContextRunner,
-    MemoryManagerSummarizerRunner,
+    DeciderRunner,
+    SummarizerRunner,
 )
 from src.core.model_config import ModelConfig
-from src.toolkits import build_memory_manager_summarizer_tools
+from src.toolkits import build_summarizer_tools
 
 MEMORY_MANAGER_CONTEXT_USED_THRESHOLD_STEP_PERCENT = 3
 
@@ -107,12 +107,12 @@ class Agent(AgentBase):
         self._on_resumed = on_resumed or noop
 
         self._user_msg_queue: deque[QueuedUserMessage] = deque()
-        self._memory_manager_summarizer_runner = MemoryManagerSummarizerRunner()
-        self._memory_manager_judge_runner = MemoryManagerJudgeResetContextRunner()
-        self._memory_manager_summarizer_task: asyncio.Task[None] | None = None
-        self._memory_manager_judge_task: asyncio.Task[bool] | None = None
-        self._memory_manager_summarizer_awaken_count = 0
-        self._memory_manager_judge_awaken_count = 0
+        self._summarizer_runner = SummarizerRunner()
+        self._decider_runner = DeciderRunner()
+        self._summarizer_task: asyncio.Task[None] | None = None
+        self._decider_task: asyncio.Task[bool] | None = None
+        self._summarizer_awaken_count = 0
+        self._decider_awaken_count = 0
         self._pause_requested = False
         self._paused = False
         self._run_in_progress = False
@@ -145,8 +145,8 @@ class Agent(AgentBase):
         store = ConversationStore.load_from_conversation_file_name(conversation_file_name=conversation_file_name)
         messages = store.build_messages_from_history()
         self._init_messages = store.init_messages
-        self._memory_manager_summarizer_awaken_count = store.memory_manager_summarizer_awaken_count
-        self._memory_manager_judge_awaken_count = store.memory_manager_judge_awaken_count
+        self._summarizer_awaken_count = store.summarizer_awaken_count
+        self._decider_awaken_count = store.decider_awaken_count
         self._pause_requested = store.pause_requested
         self._paused = store.paused
 
@@ -301,8 +301,8 @@ class Agent(AgentBase):
         if self._conversation_store is None:
             return
         self._conversation_store.update_memory_manager_state(
-            summarizer_awaken_count=self._memory_manager_summarizer_awaken_count,
-            judge_awaken_count=self._memory_manager_judge_awaken_count,
+            summarizer_awaken_count=self._summarizer_awaken_count,
+            decider_awaken_count=self._decider_awaken_count,
         )
 
     @staticmethod
@@ -336,17 +336,17 @@ class Agent(AgentBase):
 
         task.add_done_callback(_on_done)
 
-    def _attach_memory_manager_summarizer_task_callbacks(self, *, task: asyncio.Task[None]) -> None:
+    def _attach_summarizer_task_callbacks(self, *, task: asyncio.Task[None]) -> None:
         self._attach_background_task_exception_logger(
             task=task,
-            task_name="memory_manager_summarizer_task",
+            task_name="summarizer_task",
             agent_name=self.name,
         )
 
-    def _attach_memory_manager_judge_result_handler(self, *, task: asyncio.Task[bool]) -> None:
+    def _attach_decider_result_handler(self, *, task: asyncio.Task[bool]) -> None:
         self._attach_background_task_exception_logger(
             task=task,
-            task_name="memory_manager_judge_task",
+            task_name="decider_task",
             agent_name=self.name,
         )
 
@@ -354,22 +354,22 @@ class Agent(AgentBase):
             try:
                 loop = asyncio.get_running_loop()
             except RuntimeError:
-                logger.warning("Agent[%s] judge task 完成时事件循环不可用，跳过结果处理", self.name)
+                logger.warning("Agent[%s] decider task 完成时事件循环不可用，跳过结果处理", self.name)
                 return
-            loop.create_task(self._sync_memory_manager_judge_result(done_task))
+            loop.create_task(self._sync_decider_result(done_task))
 
         task.add_done_callback(_on_done)
 
-    async def _sync_memory_manager_judge_result(self, judge_task: asyncio.Task[bool]) -> None:
+    async def _sync_decider_result(self, decider_task: asyncio.Task[bool]) -> None:
         try:
-            should_reset_context = await judge_task
+            should_reset_context = await decider_task
         except asyncio.CancelledError:
             raise
         except Exception:
             # 异常已经在回调里打过日志，这里只负责阻断后续 reset 流程。
             return
 
-        logger.info("Agent[%s] memory manager judge 结果（should_reset_context=%s）", self.name, should_reset_context)
+        logger.info("Agent[%s] memory manager decider 结果（should_reset_context=%s）", self.name, should_reset_context)
         if not should_reset_context:
             return
 
@@ -388,7 +388,7 @@ class Agent(AgentBase):
     async def _wait_until_worker_paused_for_reset(self) -> None:
         while not self._paused:
             if not self._run_in_progress and self._pause_requested:
-                self._enter_paused_state(log_reason="judge 结果返回时 worker 已空闲，直接进入 paused")
+                self._enter_paused_state(log_reason="decider 结果返回时 worker 已空闲，直接进入 paused")
                 return
             await asyncio.sleep(0.05)
 
@@ -401,15 +401,15 @@ class Agent(AgentBase):
 
     def _build_reset_carryover_messages(self) -> list[dict[str, Any]]:
         business_messages = self._messages[len(self._init_messages):]
-        last_summary_flag_index: int | None = None
+        last_summarizer_flag_index: int | None = None
         for index, message in enumerate(business_messages):
             if message.get("role") == "user" and message.get("content") == WAKE_MM_SUMMARY_FLAG:
-                last_summary_flag_index = index
+                last_summarizer_flag_index = index
 
-        if last_summary_flag_index is None:
+        if last_summarizer_flag_index is None:
             return [dict(message) for message in business_messages]
 
-        carryover_messages = business_messages[last_summary_flag_index + 1:]
+        carryover_messages = business_messages[last_summarizer_flag_index + 1:]
         return [dict(message) for message in carryover_messages]
 
     async def _handle_memory_manager_reset_request(self) -> None:
@@ -462,59 +462,59 @@ class Agent(AgentBase):
         )
         conversation_store.update_memory_manager_last_triggered_threshold(last_triggered_threshold=current_threshold)
 
-        summarizer_task = self._memory_manager_summarizer_task
+        summarizer_task = self._summarizer_task
         if summarizer_task is None or summarizer_task.done():
-            summarizer_round = self._memory_manager_summarizer_awaken_count + 1
+            summarizer_round = self._summarizer_awaken_count + 1
             worker_messages_snapshot = [dict(message) for message in self._messages]
-            summarizer_tools = build_memory_manager_summarizer_tools(provider=self._model_config.provider)
+            summarizer_tools = build_summarizer_tools(provider=self._model_config.provider)
             logger.info(
-                "Agent[%s] 启动 memory_manager_summarizer_task（round=%s messages=%s）",
+                "Agent[%s] 启动 summarizer_task（round=%s messages=%s）",
                 self.name,
                 summarizer_round,
                 len(worker_messages_snapshot),
             )
             summarizer_task = asyncio.create_task(
-                self._memory_manager_summarizer_runner.run(
+                self._summarizer_runner.run(
                     worker_messages=worker_messages_snapshot,
                     model_config=self._model_config,
                     tools=summarizer_tools,
-                    is_first_time_awaken=self._memory_manager_summarizer_awaken_count == 0,
+                    is_first_time_awaken=self._summarizer_awaken_count == 0,
                     conversation_file_name=conversation_store.conversation_file_name,
                     awaken_round=summarizer_round,
                 )
             )
-            self._attach_memory_manager_summarizer_task_callbacks(task=summarizer_task)
-            self._memory_manager_summarizer_task = summarizer_task
+            self._attach_summarizer_task_callbacks(task=summarizer_task)
+            self._summarizer_task = summarizer_task
             self._append_runtime_message({"role": "user", "content": WAKE_MM_SUMMARY_FLAG})
-            self._memory_manager_summarizer_awaken_count = summarizer_round
+            self._summarizer_awaken_count = summarizer_round
             self._persist_memory_manager_state()
 
-        judge_task = self._memory_manager_judge_task
-        if judge_task is None or judge_task.done():
-            judge_round = self._memory_manager_judge_awaken_count + 1
+        decider_task = self._decider_task
+        if decider_task is None or decider_task.done():
+            decider_round = self._decider_awaken_count + 1
             worker_messages_snapshot = [dict(message) for message in self._messages]
-            judge_tools = build_memory_manager_summarizer_tools(provider=self._model_config.provider)
+            decider_tools = build_summarizer_tools(provider=self._model_config.provider)
             logger.info(
-                "Agent[%s] 启动 memory_manager_judge_task（round=%s messages=%s）",
+                "Agent[%s] 启动 decider_task（round=%s messages=%s）",
                 self.name,
-                judge_round,
+                decider_round,
                 len(worker_messages_snapshot),
             )
-            self._memory_manager_judge_task = asyncio.create_task(
-                self._memory_manager_judge_runner.run(
+            self._decider_task = asyncio.create_task(
+                self._decider_runner.run(
                     worker_messages=worker_messages_snapshot,
                     model_config=self._model_config,
-                    tools=judge_tools,
+                    tools=decider_tools,
                     conversation_file_name=conversation_store.conversation_file_name,
-                    awaken_round=judge_round,
+                    awaken_round=decider_round,
                 )
             )
-            self._attach_memory_manager_judge_result_handler(task=self._memory_manager_judge_task)
-            judge_task = self._memory_manager_judge_task
-            self._memory_manager_judge_awaken_count = judge_round
+            self._attach_decider_result_handler(task=self._decider_task)
+            decider_task = self._decider_task
+            self._decider_awaken_count = decider_round
             self._persist_memory_manager_state()
-        if judge_task is None:
-            logger.warning("memory manager judge task 未初始化，本次跳过 judge")
+        if decider_task is None:
+            logger.warning("memory manager decider task 未初始化，本次跳过 decider")
 
     def _append_runtime_message(self, message: dict[str, Any]) -> None:
         # 这个函数被用的地方都是在 run 函数的后方，
@@ -558,8 +558,8 @@ class Agent(AgentBase):
             raise RuntimeError("conversation_store 未初始化，无法 reset_context")
 
         self._init_messages = build_init_messages(provider=self._model_config.provider)
-        self._memory_manager_summarizer_awaken_count = 0
-        self._memory_manager_judge_awaken_count = 0
+        self._summarizer_awaken_count = 0
+        self._decider_awaken_count = 0
         self._pause_requested = False
         self._paused = False
 
@@ -631,7 +631,7 @@ class Agent(AgentBase):
                     self._append_runtime_message(tool_message)
 
                 # 在这里maybe wake memory manager，最后一条msg是tool result msg
-                # 这个格式是合法的，可以在这个基础上跑 summary、judge任务
+                # 这个格式是合法的，可以在这个基础上跑 summarizer、decider 任务
                 await self._maybe_wake_memory_manager(
                     prompt_tokens=self._resolve_prompt_tokens(usage=turn_result.usage)
                 )

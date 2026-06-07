@@ -33,7 +33,7 @@ def build_worker_tools(*, cwd_state: CwdState, provider: str) -> list[Tool]:
     return _build_tools(caller_kind="worker", cwd_state=cwd_state, provider=provider)
 
 
-def build_memory_manager_summarizer_tools(*, provider: str) -> list[Tool]:
+def build_summarizer_tools(*, provider: str) -> list[Tool]:
     cwd_state = CwdState(initial_cwd=str(SUMMARIES_DIR))
     return _build_tools(
         caller_kind="summarizer",
