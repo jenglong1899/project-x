@@ -1,3 +1,15 @@
+#
+
+在上下文不是很长的时候，把 summarizer 的推理努力程度调成low，等到后面再调成medium。这样可以减少 summarizer 过度工作的问题。
+
+#
+
+实现文件引用语法。
+
+#
+
+前端老是conversation switch，这个逻辑要改掉
+
 # 
 
 conversation.switched 和 paused 好像没有关联吧？你都能切换对话了，那肯定是在运行中啊。
