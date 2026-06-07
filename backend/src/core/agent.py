@@ -392,6 +392,21 @@ class Agent(AgentBase):
                 return
             await asyncio.sleep(0.05)
 
+    async def _wait_for_summarizer_before_reset(self) -> None:
+        summarizer_task = self._summarizer_task
+        if summarizer_task is None or summarizer_task.done():
+            return
+
+        logger.info("Agent[%s] reset_context 前等待 summarizer_task 完成", self.name)
+        try:
+            await summarizer_task
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            # summarizer 的异常会由后台任务回调统一记录；这里不阻断 reset，
+            # 否则 decider 已经决定需要重置时，会因为摘要失败而卡住上下文回收。
+            logger.warning("Agent[%s] summarizer_task 失败，reset_context 继续执行", self.name)
+
     def _enter_paused_state(self, *, log_reason: str) -> None:
         self._pause_requested = False
         self._paused = True
@@ -415,6 +430,7 @@ class Agent(AgentBase):
     async def _handle_memory_manager_reset_request(self) -> None:
         self.request_pause()
         await self._wait_until_worker_paused_for_reset()
+        await self._wait_for_summarizer_before_reset()
         conversation_store = self._require_conversation_store()
         carryover_messages = self._build_reset_carryover_messages()
         conversation_store.update_memory_manager_reset_carryover_messages(messages=carryover_messages)

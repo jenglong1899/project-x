@@ -662,7 +662,10 @@ class AgentCallbackTests(unittest.IsolatedAsyncioTestCase):
                     agent._safe_drain_user_message_queue()
                     run_task = asyncio.create_task(agent.run())
                     await summarizer_runner.started.wait()
+                    await asyncio.sleep(0.1)
                     self.assertEqual(switch_events, [[]])
+                    self.assertIsNotNone(agent._memory_manager_reset_task)
+                    self.assertFalse(agent._memory_manager_reset_task.done())
                     summarizer_runner.allow_finish.set()
                     result = await run_task
                     await _wait_for_memory_manager_background_tasks(agent)

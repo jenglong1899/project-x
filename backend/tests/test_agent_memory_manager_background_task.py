@@ -136,6 +136,43 @@ class AgentMemoryManagerBackgroundTaskTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(paused_events, ["paused"])
         self.assertEqual(reset_observations, [True])
 
+    async def test_delayed_decider_reset_waits_for_summarizer_when_worker_is_idle(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            with mock.patch("src.core.agent.ConversationStore") as store_cls:
+                store_cls.find_latest_conversation_file_name.return_value = None
+                store_cls.side_effect = lambda *, init_messages: ConversationStore(init_messages=init_messages, originals_dir=Path(temp_dir))
+                agent = Agent(
+                    name="demo-agent",
+                    model_config=ModelConfig(model="demo", base_url="https://example.com", api_key="key"),
+                    init_messages=[{"role": "user", "content": "user instruction"}],
+                    tools=[],
+                )
+                agent.start_conversation()
+                agent.enqueue_user_message(frontend_msg_id="1", user_message="hi")
+                agent._safe_drain_user_message_queue()
+                agent._require_conversation_store().update_memory_manager_last_triggered_threshold(last_triggered_threshold=0)
+
+                summarizer_runner = _BlockingSummarizerRunner()
+                decider_runner = _DelayedDeciderRunner(should_reset_context=True)
+                agent._summarizer_runner = summarizer_runner
+                agent._decider_runner = decider_runner
+
+                with mock.patch("src.core.init_prompts.build_init_messages", return_value=[{"role": "user", "content": "reset init"}]):
+                    await agent._maybe_wake_memory_manager(prompt_tokens=10_000)
+                    await summarizer_runner.started.wait()
+                    decider_runner.allow_finish.set()
+                    await asyncio.sleep(0.1)
+
+                    self.assertIsNotNone(agent._memory_manager_reset_task)
+                    self.assertFalse(agent._memory_manager_reset_task.done())
+
+                    summarizer_runner.allow_finish.set()
+                    await asyncio.sleep(0)
+                    await asyncio.sleep(0.1)
+
+        self.assertIsNotNone(agent._memory_manager_reset_task)
+        self.assertTrue(agent._memory_manager_reset_task.done())
+
     async def test_reset_carryover_keeps_messages_after_latest_summary_flag(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             with mock.patch("src.core.agent.ConversationStore") as store_cls:
