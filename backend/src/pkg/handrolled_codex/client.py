@@ -397,6 +397,7 @@ class CodexClient:
             model: str,
             messages: list[dict[str, Any]],
             tools: list[Tool],
+            reasoning_effort: str = "medium",
             on_text_delta: Callable[[str], None],
             on_reasoning_delta: Callable[[str], None],
             on_tool_call_delta: Optional[Callable[[dict[str, Any]], None]] = None,
@@ -407,7 +408,7 @@ class CodexClient:
             instructions = str(messages[0].get("content") or "").strip()
             payload_messages = messages[1:]
 
-        reasoning = {"effort": "medium", "summary": "auto"}
+        reasoning = {"effort": reasoning_effort, "summary": "auto"}
         include = ["reasoning.encrypted_content"]
         body = {
             "model": model,

@@ -58,6 +58,8 @@ class SummarizerRunner:
                 model_config=model_config,
                 messages=forked_messages,
                 tools=tools,
+                # 在medium时，summarizer会有过度工作的问题
+                reasoning_effort="low",
                 on_ai_content_delta=noop,
                 on_ai_reasoning_delta=noop,
                 on_ai_tool_call_started=noop,
