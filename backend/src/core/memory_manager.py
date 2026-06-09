@@ -14,8 +14,8 @@ RESET_CONTEXT_MAGIC_WORD = "PROJECT-X-RESET-CONTEXT"
 
 
 class SummarizerRunner:
+    @staticmethod
     async def run(
-            self,
             *,
             worker_messages: list[dict[str, Any]],
             model_config: ModelConfig,
@@ -100,8 +100,8 @@ class SummarizerRunner:
 
 
 class DeciderRunner:
+    @staticmethod
     async def run(
-            self,
             *,
             worker_messages: list[dict[str, Any]],
             model_config: ModelConfig,
